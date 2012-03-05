@@ -28,6 +28,7 @@ class ProbabilisticMatrixFactorization(object):
         if self.ratings.shape[1] != 4:
             raise TypeError("invalid rating tuple length")
 
+        self.rated = set((i, j) for i, j, rating, weight in self.ratings)
 
         self.converged = False
 
@@ -41,6 +42,34 @@ class ProbabilisticMatrixFactorization(object):
         self.items = np.random.random((self.num_items, self.latent_d))
 
     # TODO: sparse matrix rep might be faster than this ratings array?
+
+    def add_rating(self, i, j, rating, weight=1):
+        self.add_ratings([i, j, rating, weight])
+
+    def add_ratings(self, extra):
+        rows, cols = self.ratings.shape
+
+        extra = np.array(extra, copy=False)
+        if len(extra.shape) == 1:
+            if extra.shape[0] != cols:
+                raise TypeError("bad shape for extra")
+            new_rows = 1
+        elif len(extra.shape) == 2:
+            if extra.shape[1] != cols:
+                raise TypeError("bad shape for extra")
+            new_rows = extra.shape[0]
+        else:
+            raise TypeError("bad shape for extra")
+
+        try:
+            self.ratings.resize(rows + new_rows, cols)
+        except ValueError:
+            self.ratings = self.ratings.copy()
+            self.ratings.resize(rows + new_rows, cols)
+
+        self.ratings[rows:, :] = extra
+        self.converged = False
+
 
     def log_likelihood(self, users=None, items=None):
         if users is None:

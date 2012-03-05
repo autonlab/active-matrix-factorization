@@ -1,21 +1,11 @@
 #!/usr/bin/env python
 from __future__ import division
 
-import itertools
+import itertools as itools
 
 import numpy as np
 
 from pmf import ProbabilisticMatrixFactorization
-
-def matrix_cofactor(matrix):
-    C = np.zeros(matrix.shape)
-    nrows, ncols = C.shape
-    for row in xrange(nrows):
-        rs = np.array(range(row)+range(row+1,nrows))[:,np.newaxis]
-        for col in xrange(ncols):
-            minor = matrix[rs, np.array(range(col)+range(col+1,ncols))]
-            C[row, col] = (-1)**(row+col) * np.linalg.det(minor)
-    return C
 
 
 def tripexpect(mean, cov, a, b, c):
@@ -33,7 +23,7 @@ def quadexpect(mean, cov, a, b, c, d):
     e = mean[a] * mean[b] * mean[c] * mean[d]
 
     # pairs of means times cov of the other two
-    for w, x in itertools.combinations(abcd, 2):
+    for w, x in itools.combinations(abcd, 2):
         y, z = abcd.difference([w, x])
         e += mean[w] * mean[x] * cov[y, z]
 
@@ -41,6 +31,12 @@ def quadexpect(mean, cov, a, b, c, d):
     e += cov[a,b]*cov[c,d] + cov[a,c]*cov[b,d] + cov[a,d]*cov[b,c]
 
     return e
+
+def exp_squared(mean, cov, a, b):
+    '''E[X_a^2 X_b^2] for N(mean, cov)'''
+    return 4 * mean[a] * mean[b] * cov[a,b] + 2*cov[a,b]**2 + \
+            (mean[a]**2 + cov[a,a]) * (mean[b]**2 + cov[b,b])
+
 
 def project_psd(mat, min_eig=0):
     '''
@@ -64,18 +60,13 @@ class ActivePMF(object):
         # the actual PMF model
         self.pmf = ProbabilisticMatrixFactorization(rating_tuples, latent_d)
 
-        # easy access to relevant PMF params
-        self.latent_d = d = latent_d
-        self.num_users = n = self.pmf.num_users
-        self.num_items = m = self.pmf.num_items
-
-        self.sigma_sq = self.pmf.sigma_sq
-        self.sigma_u_sq = self.pmf.sigma_u_sq
-        self.sigma_v_sq = self.pmf.sigma_v_sq
-
         # parameters of the normal approximation
         self.mean = None
         self.cov = None
+
+        n = self.num_users
+        m = self.num_items
+        d = self.latent_d
 
         self.approx_dim = k = (n + m) * d
         self.num_params = k + k * (k+1) / 2 # means and covariances
@@ -91,11 +82,26 @@ class ActivePMF(object):
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
+    # easy access to relevant PMF attributes
+    ratings = property(lambda self: self.pmf.ratings)
+    rated = property(lambda self: self.pmf.rated)
+
+    sigma_sq = property(lambda self: self.pmf.sigma_sq)
+    sigma_u_sq = property(lambda self: self.pmf.sigma_u_sq)
+    sigma_v_sq = property(lambda self: self.pmf.sigma_v_sq)
+
+    latent_d = property(lambda self: self.pmf.latent_d)
+    num_users = property(lambda self: self.pmf.num_users)
+    num_items = property(lambda self: self.pmf.num_items)
+
+    add_rating = property(lambda self: self.pmf.add_rating)
+    add_ratings = property(lambda self: self.pmf.add_ratings)
+
+
     def train_pmf(self):
         '''Train the underlying PMF model to convergence.'''
         self.pmf.full_train()
         self.converged = False
-
 
 
     def initialize_approx(self):
@@ -106,6 +112,7 @@ class ActivePMF(object):
         # set mean to PMF's MAP values
         self.mean = np.hstack((self.pmf.users.reshape(-1),
                                self.pmf.items.reshape(-1)))
+        self.mean += np.random.normal(0, 2, self.mean.shape)
 
         # set covariance to a random positive-definite matrix
         s = np.random.normal(0, 2, (self.approx_dim, self.approx_dim))
@@ -141,7 +148,7 @@ class ActivePMF(object):
 
         # terms based on the squared error
         sqerr = 0
-        for i, j, rating, weight in self.pmf.ratings:
+        for i, j, rating, weight in self.ratings:
             sqerr += rating**2
 
             for k in xrange(self.latent_d):
@@ -172,7 +179,6 @@ class ActivePMF(object):
         det_sign, log_det = np.linalg.slogdet(cov)
         div += log_det / 2
 
-        print "\tKL: %g" % div
         return div
 
 
@@ -196,7 +202,7 @@ class ActivePMF(object):
         grad_cov = np.zeros_like(cov)
 
         # TODO: vectorize as much as possible?
-        for i, j, rating, weight in self.pmf.ratings:
+        for i, j, rating, weight in self.ratings:
             for k in xrange(self.latent_d):
                 uki = u[k, i]
                 vkj = v[k, j]
@@ -212,7 +218,7 @@ class ActivePMF(object):
                         rest = args[:i] + args[i+1:]
                         grad_mean[a] += tripexpect(mean, cov, *rest) / sig
 
-                    for a, b in itertools.combinations(args, 2):
+                    for a, b in itools.combinations(args, 2):
                         oth = set(args).difference([a,b])
                         c = oth.pop()
                         d = oth.pop()
@@ -240,8 +246,6 @@ class ActivePMF(object):
                 grad_cov[uki,vkj] -= 1
                 grad_cov[vkj,uki] -= 1
 
-        print "\tafter sqerr: means: %g, covs: %g" % (np.abs(grad_mean).mean(), np.abs(grad_cov).mean())
-
         # gradient of - E[U_ki^2] / (2 sigma_u^2), same for V
         grad_mean[us] += mean[us] / self.sigma_u_sq
         grad_mean[vs] += mean[vs] / self.sigma_v_sq
@@ -249,22 +253,16 @@ class ActivePMF(object):
         grad_cov[us,us] -= 1 # adds to diagonals only
         grad_cov[vs,vs] -= 1
 
-        print "\tafter regularization: means: %g, covs: %g" % (np.abs(grad_mean).mean(), np.abs(grad_cov).mean())
-
         # gradient of -ln(|cov|)/2
-        # need each cofactor of the matrix divided by its determinant:
+        # need each cofactor of the matrix divided by its determinant;
         # this is just the transpose of its inverse
         # (see http://stackoverflow.com/a/6528024/344821)
-        grad_cov += np.linalg.inv(cov).T / 2
-        #det_cov = np.linalg.det(cov)
-        #print det_cov
-        #grad_cov -= matrix_cofactor(cov) / det_cov / 2
-
-        print "\tafter entropy: means: %g, covs: %g" % (np.abs(grad_mean).mean(), np.abs(grad_cov).mean())
 
         # XXX: assuming cov is invertible. this is true because we're
         # projecting, but wouldn't necessarily be true with e.g. barrier method
-        # XXX: check signs here? not positive it's correct
+
+        grad_cov += np.linalg.inv(cov).T / 2
+
 
         return grad_mean, grad_cov
 
@@ -288,18 +286,13 @@ class ActivePMF(object):
         '''
         # TODO: consider a log-barrier to stay PSD?
         if self.converged:
-            return False
+            if self.pmf.converged:
+                return False
+            else:
+                self.converged = False
 
-        print "Mean diff of means: %g" % (
-                np.abs(self.mean - np.hstack((self.pmf.users.reshape(-1),
-                                              self.pmf.items.reshape(-1))))
-                .mean())
-        print "Mean cov: %g" % np.abs(self.cov).mean()
         initial_kl = self.kl_divergence()
         grad_mean, grad_cov = self.gradient()
-        print "Mean partials: means %g, cov %g" % (
-                np.abs(grad_mean).mean(),
-                np.abs(grad_cov).mean())
 
         # try different learning rates
         while not self.converged:
@@ -318,7 +311,6 @@ class ActivePMF(object):
 
                 break
             else:
-                print new_kl, initial_kl
                 self.learning_rate *= .5
 
             if self.learning_rate < 1e-10:
@@ -327,6 +319,27 @@ class ActivePMF(object):
         return not self.converged
 
 
+    def pred_variance(self, i, j):
+        var = 0
+        mean = self.mean
+        cov = self.cov
+        u = self.u
+        v = self.v
+
+        # E[U_ki V_kj U_li V_lj] for k != l
+        for k in xrange(self.latent_d - 1):
+            for l in xrange(k+1, self.latent_d):
+                var += 2 * quadexpect(mean, cov, u[k,i], v[k,j], u[l,i], v[l,j])
+
+        # E[U_ki^2 V_kj^2]
+        for k in xrange(self.latent_d):
+            var += exp_squared(mean, cov, u[k,i], v[k,j])
+
+        # (sum E[U_ki V_kj])^2
+        twoexp = mean[u[:,i]] * mean[v[:,j]] + cov[u[:,i], v[:,j]]
+        var -= twoexp.sum() ** 2
+
+        return var
 
     def pick_query_point(self, pool=None):
         '''
@@ -334,17 +347,25 @@ class ActivePMF(object):
         query, based on the element of the matrix with the highest variance
         under the approximation.
         '''
-        pass
+        if pool is None:
+            # default to all unobserved elements
+            p = itools.product(xrange(self.num_users), xrange(self.num_items))
+            pool = set(p).difference(self.rated)
+
+        return max(pool, key=lambda (i,j): self.pred_variance(i, j))
 
 
 def make_fake_data_apmf():
     from pmf import fake_ratings
-    ratings, true_o, true_d = fake_ratings(num_users=10, num_items=10, num_ratings=5)
+    ratings, u, v = fake_ratings(num_users=10, num_items=10, num_ratings=5)
 
     apmf = ActivePMF(ratings, latent_d=5)
+    apmf.true_u = u
+    apmf.true_v = v
 
     print "Training PMF:"
-    apmf.train_pmf()
+    while apmf.pmf.update():
+        print "\tLL: %g" % apmf.pmf.log_likelihood()
     print "Done training.\n"
 
     print "Initial values for approximation:"
@@ -374,9 +395,55 @@ if __name__ == '__main__':
         kls.append(kl)
         print "KL:", kl
 
+    print "Mean diff of means: %g" % (
+            np.abs(apmf.mean - np.hstack((apmf.pmf.users.reshape(-1),
+                                          apmf.pmf.items.reshape(-1))))
+            .mean())
+    print "Mean cov: %g" % np.abs(apmf.cov).mean()
+
+    var = np.zeros((apmf.num_users, apmf.num_items))
+    for i, j in itools.product(xrange(apmf.num_users), xrange(apmf.num_items)):
+        var[i, j] = float('nan') if (i, j) in apmf.rated else apmf.pred_variance(i, j)
+
+    query_user, query_item = apmf.pick_query_point()
+    print "Query point: %d, %d" % (query_user, query_item)
+
     from pmf import plt
     plt.figure()
     plt.plot(kls)
     plt.xlabel("Iteration")
     plt.ylabel("KL")
+
+    plt.figure()
+    plt.imshow(var.T, interpolation='nearest', origin='lower')
+    plt.xlabel("User")
+    plt.ylabel("Item")
+    plt.title("Prediction Variances")
+    plt.colorbar()
+
     plt.show()
+
+
+    query_rating = np.dot(apmf.true_u[i], apmf.true_v[j]) + np.random.normal(scale=.25)
+    apmf.add_rating(query_user, query_item, query_rating)
+    print "Rating for %d, %d: %g" % (query_user, query_item, query_rating)
+
+    print '\n'
+    print "-" * 80
+    print "Retraining PMF"
+    apmf.train_pmf()
+    print "Done retraining.\n"
+
+    print "\nFinding approximation:"
+    apmf.initialize_approx()
+    kls = []
+    while apmf.update():
+        kl = apmf.kl_divergence() # TODO: avoid repeated computation here
+        kls.append(kl)
+        print "KL:", kl
+
+    print "Mean diff of means: %g" % (
+            np.abs(apmf.mean - np.hstack((apmf.pmf.users.reshape(-1),
+                                          apmf.pmf.items.reshape(-1))))
+            .mean())
+    print "Mean cov: %g" % np.abs(apmf.cov).mean()
