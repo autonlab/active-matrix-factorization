@@ -10,18 +10,20 @@ http://blog.smellthedata.com/2009/06/netflix-prize-tribute-recommendation.html
 
 from __future__ import division
 
+import itertools
+import random
+
+import numpy as np
+
 import pylab
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-
-import numpy as np
-import random
 
 
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1):
         self.latent_d = latent_d
-        self.learning_rate = .0001
+        self.learning_rate = 1e-4
 
         self.sigma_sq = 1
         self.sigma_u_sq = 10
@@ -34,13 +36,15 @@ class ProbabilisticMatrixFactorization(object):
         if self.ratings.shape[1] != 4:
             raise TypeError("invalid rating tuple length")
 
+        self.num_users = n = int(np.max(self.ratings[:, 0]) + 1)
+        self.num_items = m = int(np.max(self.ratings[:, 1]) + 1)
+
         self.rated = set((i, j) for i, j, rating, weight in self.ratings)
+        self.unrated = set(itertools.product(xrange(n), xrange(m)))\
+                .difference(self.rated)
 
-        self.num_users = int(np.max(self.ratings[:, 0]) + 1)
-        self.num_items = int(np.max(self.ratings[:, 1]) + 1)
-
-        self.users = np.random.random((self.num_users, self.latent_d))
-        self.items = np.random.random((self.num_items, self.latent_d))
+        self.users = np.random.random((n, self.latent_d))
+        self.items = np.random.random((m, self.latent_d))
 
 
     def add_rating(self, i, j, rating, weight=1):
@@ -59,6 +63,13 @@ class ProbabilisticMatrixFactorization(object):
         assert np.max(extra[:,0] + 1) <= self.num_users
         assert np.max(extra[:,1] + 1) <= self.num_items
 
+        new_items = set((int(i), int(j)) for i, j in extra[:,:2])
+
+        if not new_items.issubset(self.unrated):
+            raise ValueError("can't rate already rated items")
+        self.rated.update(new_items)
+        self.unrated.difference_update(new_items)
+
         self.ratings = np.append(self.ratings, extra, 0)
         # TODO: this can be done faster with .resize()...
         #       but the commented-out version is way broken
@@ -70,7 +81,6 @@ class ProbabilisticMatrixFactorization(object):
         #     self.ratings.resize(rows + new_rows, cols)
         # self.ratings[rows:, :] = extra
 
-        self.rated.update((int(i), int(j)) for i, j in extra[:,:2])
 
 
     def log_likelihood(self, users=None, items=None):
@@ -89,15 +99,15 @@ class ProbabilisticMatrixFactorization(object):
                 - np.linalg.norm(items) / (2 * self.sigma_v_sq))
 
 
-    def try_updates(self, grad_u, grad_v):
-        lr = self.learning_rate
+    def try_updates(self, grad_u, grad_v, lr):
         new_users = (1 - lr / (2*self.sigma_u_sq)) * self.users + lr * grad_u
         new_items = (1 - lr / (2*self.sigma_v_sq)) * self.items + lr * grad_v
-
         return new_users, new_items
 
 
     def fit_lls(self):
+        lr = self.learning_rate
+
         old_ll = self.log_likelihood()
         converged = False
 
@@ -112,22 +122,22 @@ class ProbabilisticMatrixFactorization(object):
 
             # take one step, trying different learning rates if necessary
             while True:
-                #print "  setting learning rate =", self.learning_rate
-                new_users, new_items = self.try_updates(grad_u, grad_v)
+                #print "  setting learning rate =", lr
+                new_users, new_items = self.try_updates(grad_u, grad_v, lr)
                 new_ll = self.log_likelihood(new_users, new_items)
 
                 if new_ll > old_ll:
                     self.users = new_users
                     self.items = new_items
-                    self.learning_rate *= 1.25
+                    lr *= 1.25
 
                     if new_ll - old_ll < .1:
                         converged = True
                     break
                 else:
-                    self.learning_rate *= .5
+                    lr *= .5
 
-                    if self.learning_rate < 1e-10:
+                    if lr < 1e-10:
                         converged = True
                         break
 
@@ -138,6 +148,9 @@ class ProbabilisticMatrixFactorization(object):
     def fit(self):
         for ll in self.fit_lls():
             pass
+
+    def predicted_matrix(self):
+        return np.dot(self.users, self.items.T)
 
 
     def print_latent_vectors(self):

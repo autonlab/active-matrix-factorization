@@ -5,7 +5,9 @@ Code to do active learning on a PMF model.
 
 from __future__ import division
 
+from copy import deepcopy
 import itertools as itools
+import random
 
 import numpy as np
 
@@ -21,22 +23,34 @@ def tripexpect(mean, cov, a, b, c):
 
 def quadexpect(mean, cov, a, b, c, d):
     '''E[X_a X_b X_c X_d] for N(mean, cov)'''
-    abcd = set((a, b, c, d))
-    if len(abcd) != 4:
-        raise ValueError("quadexpect only works for distinct indices")
+    # TODO: try method of Kan (2008), see if it's faster?
+    abcd = [a, b, c, d]
 
-    # product of the means
-    e = mean[a] * mean[b] * mean[c] * mean[d]
+    #if len(set(abcd)) != 4:
+    #    raise ValueError("quadexpect only works for distinct indices")
 
-    # pairs of means times cov of the other two
-    for w, x in itools.combinations(abcd, 2):
-        y, z = abcd.difference([w, x])
-        e += mean[w] * mean[x] * cov[y, z]
+    ma, mb, mc, md = mean[abcd]
 
-    # pairs of covs
-    e += cov[a,b]*cov[c,d] + cov[a,c]*cov[b,d] + cov[a,d]*cov[b,c]
+    return (
+            # product of the means
+            ma * mb * mc * md
 
-    return e
+            # pairs of means times cov of the other two
+            + ma * mb * cov[c,d]
+            + ma * mc * cov[b,d]
+            + ma * md * cov[b,c]
+            + mb * mc * cov[a,d]
+            + mb * md * cov[a,c]
+            + mc * md * cov[a,b]
+
+            # pairs of covariances (Isserlis)
+            + cov[a,b] * cov[c,d]
+            + cov[a,c] * cov[b,d]
+            + cov[a,d] * cov[b,c]
+    )
+    # for w, x in itools.combinations(abcd, 2):
+    #     y, z = abcd.difference([w, x])
+    #     e += mean[w] * mean[x] * cov[y, z]
 
 def exp_squared(mean, cov, a, b):
     '''E[X_a^2 X_b^2] for N(mean, cov)'''
@@ -91,8 +105,10 @@ class ActivePMF(object):
 
 
     # easy access to relevant PMF attributes
+    # TODO: just do inheritance...
     ratings = property(lambda self: self.pmf.ratings)
     rated = property(lambda self: self.pmf.rated)
+    unrated = property(lambda self: self.pmf.unrated)
 
     sigma_sq = property(lambda self: self.pmf.sigma_sq)
     sigma_u_sq = property(lambda self: self.pmf.sigma_u_sq)
@@ -104,6 +120,8 @@ class ActivePMF(object):
 
     add_rating = property(lambda self: self.pmf.add_rating)
     add_ratings = property(lambda self: self.pmf.add_ratings)
+
+    predicted_matrix = property(lambda self: self.pmf.predicted_matrix)
 
     def train_pmf(self):
         '''Train the underlying PMF model to convergence.'''
@@ -123,6 +141,10 @@ class ActivePMF(object):
         s = np.random.normal(0, 2, (self.approx_dim, self.approx_dim))
         self.cov = project_psd(s, min_eig=self.min_eig)
 
+
+    def mean_meandiff(self):
+        p = np.hstack((self.pmf.users.reshape(-1), self.pmf.items.reshape(-1)))
+        return np.abs(self.mean - p).mean()
 
 
     # NOTE: PMF supports weighted ratings, this doesn't
@@ -152,6 +174,8 @@ class ActivePMF(object):
                 muki = mean[uki]
                 mvkj = mean[vkj]
 
+                # TODO: most execution time is spent on this inner quadexcept.
+                # see if it can be vectorized / common results cached / sthng?
                 for l in xrange(self.latent_d):
                     if l == k: continue
                     sqerr += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
@@ -262,14 +286,13 @@ class ActivePMF(object):
         return grad_mean, grad_cov
 
 
-    def try_updates(self, grad_mean, grad_cov):
+    def try_updates(self, grad_mean, grad_cov, lr):
         '''
         Returns the parameters used by taking a step in the direction of
         the passed gradient.
         '''
-        new_mean = self.mean - self.learning_rate * grad_mean
-        new_cov = project_psd(self.cov - self.learning_rate * grad_cov,
-                              min_eig=self.min_eig)
+        new_mean = self.mean - lr * grad_mean
+        new_cov = project_psd(self.cov - lr * grad_cov, min_eig=self.min_eig)
         return new_mean, new_cov
 
 
@@ -292,6 +315,7 @@ class ActivePMF(object):
         # TODO: some kind of regularization to stay near orig params?
         # TODO: watch for divergence and restart?
 
+        lr = self.learning_rate
         old_kl = self.kl_divergence()
         converged = False
 
@@ -300,23 +324,23 @@ class ActivePMF(object):
 
             # take one step, trying different learning rates if necessary
             while True:
-                #print "  setting learning rate =", self.learning_rate
-                new_mean, new_cov = self.try_updates(grad_mean, grad_cov)
+                #print "  setting learning rate =", lr
+                new_mean, new_cov = self.try_updates(grad_mean, grad_cov, lr)
                 new_kl = self.kl_divergence(new_mean, new_cov)
 
                 # TODO: configurable momentum, stopping conditions
                 if new_kl < old_kl:
                     self.mean = new_mean
                     self.cov = new_cov
-                    self.learning_rate *= 1.25
+                    lr *= 1.25
 
                     if old_kl - new_kl < .005:
                         converged = True
                     break
                 else:
-                    self.learning_rate *= .5
+                    lr *= .5
 
-                    if self.learning_rate < 1e-10:
+                    if lr < 1e-10:
                         converged = True
                         break
 
@@ -354,32 +378,40 @@ class ActivePMF(object):
         under the approximation.
         '''
         if pool is None:
-            # default to all unobserved elements
-            p = itools.product(xrange(self.num_users), xrange(self.num_items))
-            pool = set(p).difference(self.rated)
-
+            pool = self.unrated
         return max(pool, key=lambda (i,j): self.pred_variance(i, j))
 
 
 ################################################################################
 ### Testing code
 
-def make_fake_data_apmf():
-    from pmf import fake_ratings
-    ratings, u, v = fake_ratings(num_users=10, num_items=10, num_ratings=5)
+def make_fake_data_apmf(noise=.25, num_users=10, num_items=10,
+                        rating_prob=.3, latent_d=10):
+    u = np.random.normal(0, 2, (num_users, latent_d))
+    v = np.random.normal(0, 2, (num_items, latent_d))
 
-    apmf = ActivePMF(ratings, latent_d=5)
-    apmf.true_u = u
-    apmf.true_v = v
+    ratings = np.dot(u, v.T) + \
+            np.random.normal(0, noise, (num_users, num_items))
 
-    print "Training PMF:"
-    for ll in apmf.pmf.fit_lls():
-        print "\tLL: %g" % ll
-    print "Done training.\n"
-    return apmf
+    mask = np.random.binomial(1, rating_prob, ratings.shape)
+    # make sure every row/col has at least one rating
+    for i in xrange(num_users):
+        if mask[i,:].sum() == 0:
+            mask[i, random.randrange(num_items)] = 1
+    for j in xrange(num_items):
+        if mask[i,:].sum() == 0:
+            mask[random.randrange(num_users), j] = 1
+
+    rates = np.zeros((mask.sum(), 4))
+    for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
+        rates[idx] = [i, j, ratings[i, j], 1]
+
+    apmf = ActivePMF(rates, latent_d=5)
+    return apmf, ratings
 
 
 def plot_variances(apmf, vmax=None):
+    from pmf import plt
     var = np.zeros((apmf.num_users, apmf.num_items))
     total = 0
     for i, j in itools.product(xrange(apmf.num_users), xrange(apmf.num_items)):
@@ -398,7 +430,8 @@ def plot_variances(apmf, vmax=None):
 
     return var
 
-if __name__ == '__main__':
+
+def onestep_test():
     # import cPickle as pickle
     # try:
     #     with open('apmf_fake.pkl') as f:
@@ -407,7 +440,12 @@ if __name__ == '__main__':
     #     apmf = make_fake_data_apmf()
     #     with open('apmf_fake.pkl', 'w') as f:
     #         pickle.dump(apmf, f)
-    apmf = make_fake_data_apmf()
+    apmf, true_ratings = make_fake_data_apmf()
+
+    print "Training PMF:"
+    for ll in apmf.pmf.fit_lls():
+        print "\tLL: %g" % ll
+    print "Done training.\n"
 
     print "\nFinding approximation:"
     apmf.initialize_approx()
@@ -416,15 +454,12 @@ if __name__ == '__main__':
         kls.append(kl)
         print "KL:", kl
 
-    print "Mean diff of means: %g" % (
-            np.abs(apmf.mean - np.hstack((apmf.pmf.users.reshape(-1),
-                                          apmf.pmf.items.reshape(-1))))
-            .mean())
-    print "Mean cov: %g" % np.abs(apmf.cov).mean()
-
+    print "Mean diff of means: %g; mean cov %g" % (
+            apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
 
     query_user, query_item = apmf.pick_query_point()
-    print "Query point: %d, %d" % (query_user, query_item)
+    print "Query point %d, %d; %d/%d known" % (query_user, query_item,
+            len(apmf.rated), apmf.num_users * apmf.num_items)
 
     from pmf import plt
     plt.figure()
@@ -437,8 +472,7 @@ if __name__ == '__main__':
     maxvar1 = var1[np.isfinite(var1).nonzero()].max()
     print maxvar1
 
-    query_rating = np.dot(apmf.true_u[query_user], apmf.true_v[query_item]) \
-            + np.random.normal(scale=.25)
+    query_rating = true_ratings[query_user, query_item]
     apmf.add_rating(query_user, query_item, query_rating)
     print "Rating for %d, %d: %g" % (query_user, query_item, query_rating)
 
@@ -450,22 +484,18 @@ if __name__ == '__main__':
 
     print "\nFinding approximation:"
     #apmf.initialize_approx() # TODO: reinitialize the approximation?
-    print "Mean diff of means: %g" % (
-            np.abs(apmf.mean - np.hstack((apmf.pmf.users.reshape(-1),
-                                          apmf.pmf.items.reshape(-1))))
-            .mean())
-    print "Mean cov: %g" % np.abs(apmf.cov).mean()
+
+    print "Mean diff of means: %g; mean cov %g" % (
+            apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+
     newkls = [apmf.kl_divergence()]
     print "KL:", newkls[0]
     for kl in apmf.fit_normal_kls():
         newkls.append(kl)
         print "KL:", kl
 
-    print "Mean diff of means: %g" % (
-            np.abs(apmf.mean - np.hstack((apmf.pmf.users.reshape(-1),
-                                          apmf.pmf.items.reshape(-1))))
-            .mean())
-    print "Mean cov: %g" % np.abs(apmf.cov).mean()
+    print "Mean diff of means: %g; mean cov %g" % (
+            apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
 
     plt.figure()
     plot_variances(apmf, maxvar1)
@@ -476,3 +506,76 @@ if __name__ == '__main__':
     plt.ylabel("KL")
 
     plt.show()
+
+
+def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
+    print "Training PMF:"
+    for ll in apmf.pmf.fit_lls():
+        print "\tLL: %g" % ll
+
+    apmf.initialize_approx()
+
+    if fit_normal:
+        print "Fitting normal:"
+        for kl in apmf.fit_normal_kls():
+            print "\tKL: %g" % kl
+
+        print "Mean diff of means: %g; mean cov %g" % (
+                apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+
+    rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum())
+    print "RMSE: %g" % rmse
+    yield len(apmf.rated), rmse
+
+    total = apmf.num_users * apmf.num_items
+
+    while apmf.unrated:
+        print
+        #print '=' * 80
+        i, j = picker(apmf)
+        apmf.add_rating(i, j, true[i, j])
+        print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
+
+        print "Training PMF:"
+        for ll in apmf.pmf.fit_lls():
+            print "\tLL: %g" % ll
+
+        if fit_normal:
+            print "Fitting normal:"
+            for kl in apmf.fit_normal_kls():
+                print "\tKL: %g" % kl
+
+            print "Mean diff of means: %g; mean cov %g" % (
+                    apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+
+        rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum())
+        print "RMSE: %g" % rmse
+        yield len(apmf.rated), rmse
+
+
+def main(num_users=10, num_items=10, plot=True):
+    apmf, true = make_fake_data_apmf(num_users=num_users, num_items=num_items)
+
+    uncertainty_sampling = list(full_test(deepcopy(apmf), true))
+    print
+    print '=' * 80
+    print '=' * 80
+    print '=' * 80
+
+    pick_rand = lambda apmf: random.choice(list(apmf.unrated))
+    random_sampling = list(full_test(deepcopy(apmf), true, pick_rand, False))
+
+    if plot:
+        from pmf import plt
+        plt.figure()
+        plt.xlabel("# of rated elements")
+        plt.ylabel("RMSE")
+
+        plt.plot(*zip(*uncertainty_sampling), label="Uncertainty Sampling")
+        plt.plot(*zip(*random_sampling), label="Random")
+
+        plt.legend()
+        plt.show()
+
+if __name__ == '__main__':
+    main()
