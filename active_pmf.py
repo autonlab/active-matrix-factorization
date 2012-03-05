@@ -544,6 +544,7 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
             print "Fitting normal:"
             for kl in apmf.fit_normal_kls():
                 print "\tKL: %g" % kl
+                assert kl > 0
 
             print "Mean diff of means: %g; mean cov %g" % (
                     apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
@@ -553,7 +554,7 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
         yield len(apmf.rated), rmse
 
 
-def main(num_users=10, num_items=10, plot=True):
+def main(num_users=10, num_items=10, plot=True, saveplot=None):
     apmf, true = make_fake_data_apmf(num_users=num_users, num_items=num_items)
 
     uncertainty_sampling = list(full_test(deepcopy(apmf), true))
@@ -575,7 +576,14 @@ def main(num_users=10, num_items=10, plot=True):
         plt.plot(*zip(*random_sampling), label="Random")
 
         plt.legend()
-        plt.show()
+        if saveplot is None:
+            plt.show()
+        else:
+            plt.savefig(saveplot)
 
 if __name__ == '__main__':
-    main()
+    import sys
+    if len(sys.argv) >= 1:
+        main(saveplot=sys.argv[1])
+    else:
+        main()
