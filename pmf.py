@@ -1,7 +1,12 @@
 #!/usr/bin/env python
+'''
+An implementation of Probabilistic Matrix Factorization:
+    Salakhutdinov, R., & Mnih, A. (2007). Probabilistic Matrix Factorization.
+    Advances in Neural Information Processing Systems.
 
-# based on code by Danny Tarlow:
-# http://blog.smellthedata.com/2009/06/netflix-prize-tribute-recommendation.html
+Loosely based on code by Danny Tarlow:
+http://blog.smellthedata.com/2009/06/netflix-prize-tribute-recommendation.html
+'''
 
 from __future__ import division
 
@@ -11,6 +16,7 @@ import matplotlib.cm as cm
 
 import numpy as np
 import random
+
 
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1):
@@ -36,7 +42,6 @@ class ProbabilisticMatrixFactorization(object):
         self.users = np.random.random((self.num_users, self.latent_d))
         self.items = np.random.random((self.num_items, self.latent_d))
 
-    # TODO: sparse matrix rep might be faster than this ratings array?
 
     def add_rating(self, i, j, rating, weight=1):
         self.add_ratings([i, j, rating, weight])
@@ -79,17 +84,15 @@ class ProbabilisticMatrixFactorization(object):
             r_hat = np.dot(users[i], items[j])
             sq_error += weight * (rating - r_hat)**2
 
-        # NOTE: using sigma_U = sigma_V here
         return (- sq_error / (2 * self.sigma_sq)
                 - np.linalg.norm(users) / (2 * self.sigma_u_sq)
                 - np.linalg.norm(items) / (2 * self.sigma_v_sq))
 
 
-    def try_updates(self, updates_o, updates_d):
+    def try_updates(self, grad_u, grad_v):
         lr = self.learning_rate
-
-        new_users = (1 - lr / (2*self.sigma_u_sq)) * self.users + lr * updates_o
-        new_items = (1 - lr / (2*self.sigma_v_sq)) * self.items + lr * updates_d
+        new_users = (1 - lr / (2*self.sigma_u_sq)) * self.users + lr * grad_u
+        new_items = (1 - lr / (2*self.sigma_v_sq)) * self.items + lr * grad_v
 
         return new_users, new_items
 
@@ -102,17 +105,15 @@ class ProbabilisticMatrixFactorization(object):
             # calculate the gradient
             grad_u = np.zeros((self.num_users, self.latent_d))
             grad_v = np.zeros((self.num_items, self.latent_d))
-
             for i, j, rating, wt in self.ratings:
                 r_hat = np.dot(self.users[i], self.items[j])
                 grad_u[i, :] += self.items[j, :] * ((rating - r_hat) * wt)
                 grad_v[j, :] += self.users[i, :] * ((rating - r_hat) * wt)
 
-            # try different learning rates
+            # take one step, trying different learning rates if necessary
             while True:
                 #print "  setting learning rate =", self.learning_rate
                 new_users, new_items = self.try_updates(grad_u, grad_v)
-
                 new_ll = self.log_likelihood(new_users, new_items)
 
                 if new_ll > old_ll:
@@ -153,6 +154,9 @@ class ProbabilisticMatrixFactorization(object):
         self.users.dump(prefix + "%sd_users.pickle" % self.latent_d)
         self.items.dump(prefix + "%sd_items.pickle" % self.latent_d)
 
+
+################################################################################
+### Testing code
 
 def fake_ratings(noise=.25, num_users=100, num_items=100, num_ratings=30,
                  latent_dimension=10):

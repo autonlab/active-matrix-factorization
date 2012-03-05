@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+'''
+Code to do active learning on a PMF model.
+'''
+
 from __future__ import division
 
 import itertools as itools
@@ -7,6 +11,8 @@ import numpy as np
 
 from pmf import ProbabilisticMatrixFactorization
 
+################################################################################
+### Helpers
 
 def tripexpect(mean, cov, a, b, c):
     '''E[X_a X_b X_c] for N(mean, cov)'''
@@ -54,6 +60,9 @@ def project_psd(mat, min_eig=0):
         mat = (mat + mat.T) / 2
     return mat
 
+
+################################################################################
+### Main code
 
 class ActivePMF(object):
     def __init__(self, rating_tuples, latent_d=1):
@@ -351,6 +360,9 @@ class ActivePMF(object):
 
         return max(pool, key=lambda (i,j): self.pred_variance(i, j))
 
+
+################################################################################
+### Testing code
 
 def make_fake_data_apmf():
     from pmf import fake_ratings
