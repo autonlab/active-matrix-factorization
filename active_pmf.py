@@ -78,7 +78,6 @@ class ActivePMF(object):
 
         # training options for the normal approximation
         self.learning_rate = 1e-4
-        self.converged = False
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
@@ -97,11 +96,9 @@ class ActivePMF(object):
     add_rating = property(lambda self: self.pmf.add_rating)
     add_ratings = property(lambda self: self.pmf.add_ratings)
 
-
     def train_pmf(self):
         '''Train the underlying PMF model to convergence.'''
-        self.pmf.full_train()
-        self.converged = False
+        self.pmf.fit()
 
 
     def initialize_approx(self):
@@ -112,21 +109,10 @@ class ActivePMF(object):
         # set mean to PMF's MAP values
         self.mean = np.hstack((self.pmf.users.reshape(-1),
                                self.pmf.items.reshape(-1)))
-        self.mean += np.random.normal(0, 2, self.mean.shape)
 
         # set covariance to a random positive-definite matrix
         s = np.random.normal(0, 2, (self.approx_dim, self.approx_dim))
         self.cov = project_psd(s, min_eig=self.min_eig)
-
-
-    def fit_normal(self):
-        '''
-        Fit the multivariate normal over the elements of U and V that
-        best approximates the distribution defined by the current PMF model,
-        using gradient descent.
-        '''
-        while self.update():
-            pass
 
 
 
@@ -278,45 +264,55 @@ class ActivePMF(object):
         return new_mean, new_cov
 
 
-
-    def update(self):
+    def fit_normal(self):
         '''
-        Do one step of the gradient descent search to find the best
-        approximation of the PMF model.
+        Fit the multivariate normal over the elements of U and V that
+        best approximates the distribution defined by the current PMF model,
+        using gradient descent.
+        '''
+        for kl in self.fit_normal_kls():
+            pass
+
+
+    def fit_normal_kls(self):
+        '''
+        Find the best normal approximation of the PMF model, yielding the
+        current KL divergence at each step.
         '''
         # TODO: consider a log-barrier to stay PSD?
-        if self.converged:
-            if self.pmf.converged:
-                return False
-            else:
-                self.converged = False
+        # TODO: some kind of regularization to stay near orig params?
+        # TODO: watch for divergence and restart?
 
-        initial_kl = self.kl_divergence()
-        grad_mean, grad_cov = self.gradient()
+        old_kl = self.kl_divergence()
+        converged = False
 
-        # try different learning rates
-        while not self.converged:
-            print "  setting learning rate =", self.learning_rate
-            new_mean, new_cov = self.try_updates(grad_mean, grad_cov)
-            new_kl = self.kl_divergence(new_mean, new_cov)
+        while not converged:
+            grad_mean, grad_cov = self.gradient()
 
-            # TODO: configurable momentum, stopping conditions
-            if new_kl < initial_kl:
-                self.mean = new_mean
-                self.cov = new_cov
-                self.learning_rate *= 1.25
+            # take one step, trying different learning rates if necessary
+            while True:
+                #print "  setting learning rate =", self.learning_rate
+                new_mean, new_cov = self.try_updates(grad_mean, grad_cov)
+                new_kl = self.kl_divergence(new_mean, new_cov)
 
-                if initial_kl - new_kl < .005:
-                    self.converged = True
+                # TODO: configurable momentum, stopping conditions
+                if new_kl < old_kl:
+                    self.mean = new_mean
+                    self.cov = new_cov
+                    self.learning_rate *= 1.25
 
-                break
-            else:
-                self.learning_rate *= .5
+                    if old_kl - new_kl < .005:
+                        converged = True
+                    break
+                else:
+                    self.learning_rate *= .5
 
-            if self.learning_rate < 1e-10:
-                self.converged = True
+                    if self.learning_rate < 1e-10:
+                        converged = True
+                        break
 
-        return not self.converged
+            yield new_kl
+            old_kl = new_kl
 
 
     def pred_variance(self, i, j):
@@ -341,6 +337,7 @@ class ActivePMF(object):
 
         return var
 
+
     def pick_query_point(self, pool=None):
         '''
         Use the approximation of the PMF model to select the next point to
@@ -364,34 +361,46 @@ def make_fake_data_apmf():
     apmf.true_v = v
 
     print "Training PMF:"
-    while apmf.pmf.update():
-        print "\tLL: %g" % apmf.pmf.log_likelihood()
+    for ll in apmf.pmf.fit_lls():
+        print "\tLL: %g" % ll
     print "Done training.\n"
-
-    print "Initial values for approximation:"
-    apmf.initialize_approx()
-    print apmf.mean
-    print
-    print apmf.cov
-
     return apmf
 
-if __name__ == '__main__':
-    import cPickle as pickle
 
-    try:
-        with open('apmf_fake.pkl') as f:
-            apmf = pickle.load(f)
-    except:
-        apmf = make_fake_data_apmf()
-        with open('apmf_fake.pkl', 'w') as f:
-            pickle.dump(apmf, f)
+def plot_variances(apmf, vmax=None):
+    var = np.zeros((apmf.num_users, apmf.num_items))
+    total = 0
+    for i, j in itools.product(xrange(apmf.num_users), xrange(apmf.num_items)):
+        if (i, j) in apmf.rated:
+            var[i, j] = float('nan')
+        else:
+            var[i, j] = apmf.pred_variance(i, j)
+            total += var[i,j]
+
+    plt.imshow(var.T, interpolation='nearest', origin='lower', 
+            norm=plt.Normalize(0, vmax))
+    plt.xlabel("User")
+    plt.ylabel("Item")
+    plt.title("Prediction Variances; total = %g" % total)
+    plt.colorbar()
+
+    return var
+
+if __name__ == '__main__':
+    # import cPickle as pickle
+    # try:
+    #     with open('apmf_fake.pkl') as f:
+    #         apmf = pickle.load(f)
+    # except:
+    #     apmf = make_fake_data_apmf()
+    #     with open('apmf_fake.pkl', 'w') as f:
+    #         pickle.dump(apmf, f)
+    apmf = make_fake_data_apmf()
 
     print "\nFinding approximation:"
     apmf.initialize_approx()
     kls = []
-    while apmf.update():
-        kl = apmf.kl_divergence() # TODO: avoid repeated computation here
+    for kl in apmf.fit_normal_kls():
         kls.append(kl)
         print "KL:", kl
 
@@ -401,9 +410,6 @@ if __name__ == '__main__':
             .mean())
     print "Mean cov: %g" % np.abs(apmf.cov).mean()
 
-    var = np.zeros((apmf.num_users, apmf.num_items))
-    for i, j in itools.product(xrange(apmf.num_users), xrange(apmf.num_items)):
-        var[i, j] = float('nan') if (i, j) in apmf.rated else apmf.pred_variance(i, j)
 
     query_user, query_item = apmf.pick_query_point()
     print "Query point: %d, %d" % (query_user, query_item)
@@ -415,16 +421,12 @@ if __name__ == '__main__':
     plt.ylabel("KL")
 
     plt.figure()
-    plt.imshow(var.T, interpolation='nearest', origin='lower')
-    plt.xlabel("User")
-    plt.ylabel("Item")
-    plt.title("Prediction Variances")
-    plt.colorbar()
+    var1 = plot_variances(apmf)
+    maxvar1 = var1[np.isfinite(var1).nonzero()].max()
+    print maxvar1
 
-    plt.show()
-
-
-    query_rating = np.dot(apmf.true_u[i], apmf.true_v[j]) + np.random.normal(scale=.25)
+    query_rating = np.dot(apmf.true_u[query_user], apmf.true_v[query_item]) \
+            + np.random.normal(scale=.25)
     apmf.add_rating(query_user, query_item, query_rating)
     print "Rating for %d, %d: %g" % (query_user, query_item, query_rating)
 
@@ -435,11 +437,16 @@ if __name__ == '__main__':
     print "Done retraining.\n"
 
     print "\nFinding approximation:"
-    apmf.initialize_approx()
-    kls = []
-    while apmf.update():
-        kl = apmf.kl_divergence() # TODO: avoid repeated computation here
-        kls.append(kl)
+    #apmf.initialize_approx() # TODO: reinitialize the approximation?
+    print "Mean diff of means: %g" % (
+            np.abs(apmf.mean - np.hstack((apmf.pmf.users.reshape(-1),
+                                          apmf.pmf.items.reshape(-1))))
+            .mean())
+    print "Mean cov: %g" % np.abs(apmf.cov).mean()
+    newkls = [apmf.kl_divergence()]
+    print "KL:", newkls[0]
+    for kl in apmf.fit_normal_kls():
+        newkls.append(kl)
         print "KL:", kl
 
     print "Mean diff of means: %g" % (
@@ -447,3 +454,13 @@ if __name__ == '__main__':
                                           apmf.pmf.items.reshape(-1))))
             .mean())
     print "Mean cov: %g" % np.abs(apmf.cov).mean()
+
+    plt.figure()
+    plot_variances(apmf, maxvar1)
+
+    plt.figure()
+    plt.plot(newkls)
+    plt.xlabel("Retraining Iteration")
+    plt.ylabel("KL")
+
+    plt.show()

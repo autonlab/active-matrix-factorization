@@ -30,13 +30,8 @@ class ProbabilisticMatrixFactorization(object):
 
         self.rated = set((i, j) for i, j, rating, weight in self.ratings)
 
-        self.converged = False
-
         self.num_users = int(np.max(self.ratings[:, 0]) + 1)
         self.num_items = int(np.max(self.ratings[:, 1]) + 1)
-
-        print (self.num_users, self.num_items, self.latent_d)
-        print self.ratings
 
         self.users = np.random.random((self.num_users, self.latent_d))
         self.items = np.random.random((self.num_items, self.latent_d))
@@ -49,26 +44,28 @@ class ProbabilisticMatrixFactorization(object):
     def add_ratings(self, extra):
         rows, cols = self.ratings.shape
 
-        extra = np.array(extra, copy=False)
-        if len(extra.shape) == 1:
-            if extra.shape[0] != cols:
-                raise TypeError("bad shape for extra")
-            new_rows = 1
-        elif len(extra.shape) == 2:
+        extra = np.array(extra, copy=False, ndmin=2)
+        if len(extra.shape) == 2:
             if extra.shape[1] != cols:
                 raise TypeError("bad shape for extra")
-            new_rows = extra.shape[0]
         else:
             raise TypeError("bad shape for extra")
 
-        try:
-            self.ratings.resize(rows + new_rows, cols)
-        except ValueError:
-            self.ratings = self.ratings.copy()
-            self.ratings.resize(rows + new_rows, cols)
+        assert np.max(extra[:,0] + 1) <= self.num_users
+        assert np.max(extra[:,1] + 1) <= self.num_items
 
-        self.ratings[rows:, :] = extra
-        self.converged = False
+        self.ratings = np.append(self.ratings, extra, 0)
+        # TODO: this can be done faster with .resize()...
+        #       but the commented-out version is way broken
+        # new_rows = extra.shape[0]
+        # try:
+        #     self.ratings.resize(rows + new_rows, cols)
+        # except ValueError:
+        #     self.ratings = self.ratings.copy()
+        #     self.ratings.resize(rows + new_rows, cols)
+        # self.ratings[rows:, :] = extra
+
+        self.rated.update((int(i), int(j)) for i, j in extra[:,:2])
 
 
     def log_likelihood(self, users=None, items=None):
@@ -97,50 +94,49 @@ class ProbabilisticMatrixFactorization(object):
         return new_users, new_items
 
 
-    def update(self):
-        if self.converged:
-            return False
+    def fit_lls(self):
+        old_ll = self.log_likelihood()
+        converged = False
 
-        # calculate the gradient
-        updates_o = np.zeros((self.num_users, self.latent_d))
-        updates_d = np.zeros((self.num_items, self.latent_d))
+        while not converged:
+            # calculate the gradient
+            grad_u = np.zeros((self.num_users, self.latent_d))
+            grad_v = np.zeros((self.num_items, self.latent_d))
 
-        for i, j, rating, weight in self.ratings:
-            r_hat = np.dot(self.users[i], self.items[j])
+            for i, j, rating, wt in self.ratings:
+                r_hat = np.dot(self.users[i], self.items[j])
+                grad_u[i, :] += self.items[j, :] * ((rating - r_hat) * wt)
+                grad_v[j, :] += self.users[i, :] * ((rating - r_hat) * wt)
 
-            updates_o[i, :] += self.items[j, :] * ((rating - r_hat) * weight)
-            updates_d[j, :] += self.users[i, :] * ((rating - r_hat) * weight)
+            # try different learning rates
+            while True:
+                #print "  setting learning rate =", self.learning_rate
+                new_users, new_items = self.try_updates(grad_u, grad_v)
 
-        initial_lik = self.log_likelihood()
+                new_ll = self.log_likelihood(new_users, new_items)
 
-        # try different learning rates
-        while not self.converged:
-            print "  setting learning rate =", self.learning_rate
-            new_users, new_items = self.try_updates(updates_o, updates_d)
+                if new_ll > old_ll:
+                    self.users = new_users
+                    self.items = new_items
+                    self.learning_rate *= 1.25
 
-            new_lik = self.log_likelihood(new_users, new_items)
+                    if new_ll - old_ll < .1:
+                        converged = True
+                    break
+                else:
+                    self.learning_rate *= .5
 
-            if new_lik > initial_lik:
-                self.users = new_users
-                self.items = new_items
-                self.learning_rate *= 1.25
+                    if self.learning_rate < 1e-10:
+                        converged = True
+                        break
 
-                if new_lik - initial_lik < .1:
-                    self.converged = True
+            yield new_ll
+            old_ll = new_ll
 
-                break
-            else:
-                self.learning_rate *= .5
 
-            if self.learning_rate < 1e-10:
-                self.converged = True
-
-        return not self.converged
-
-    def full_train(self):
-        while self.update():
+    def fit(self):
+        for ll in self.fit_lls():
             pass
-
 
 
     def print_latent_vectors(self):
@@ -228,14 +224,13 @@ if __name__ == "__main__":
 
     pmf = ProbabilisticMatrixFactorization(ratings, latent_d=5)
 
-    liks = []
-    while pmf.update():
-        lik = pmf.log_likelihood()
-        liks.append(lik)
-        print "L=", lik
+    lls = []
+    for ll in pmf.fit_lls():
+        lls.append(ll)
+        print "L=", ll
 
     plt.figure()
-    plt.plot(liks)
+    plt.plot(lls)
     plt.xlabel("Iteration")
     plt.ylabel("Log Likelihood")
 
