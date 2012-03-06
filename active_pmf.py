@@ -22,35 +22,28 @@ def tripexpect(mean, cov, a, b, c):
             mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]
 
 def quadexpect(mean, cov, a, b, c, d):
-    '''E[X_a X_b X_c X_d] for N(mean, cov)'''
+    '''E[X_a X_b X_c X_d] for N(mean, cov) and distinct a/b/c/d'''
     # TODO: try method of Kan (2008), see if it's faster?
     abcd = [a, b, c, d]
-
-    #if len(set(abcd)) != 4:
-    #    raise ValueError("quadexpect only works for distinct indices")
-
     ma, mb, mc, md = mean[abcd]
 
     return (
-            # product of the means
-            ma * mb * mc * md
+        # product of the means
+        ma * mb * mc * md
 
-            # pairs of means times cov of the other two
-            + ma * mb * cov[c,d]
-            + ma * mc * cov[b,d]
-            + ma * md * cov[b,c]
-            + mb * mc * cov[a,d]
-            + mb * md * cov[a,c]
-            + mc * md * cov[a,b]
+        # pairs of means times cov of the other two
+        + ma * mb * cov[c,d]
+        + ma * mc * cov[b,d]
+        + ma * md * cov[b,c]
+        + mb * mc * cov[a,d]
+        + mb * md * cov[a,c]
+        + mc * md * cov[a,b]
 
-            # pairs of covariances (Isserlis)
-            + cov[a,b] * cov[c,d]
-            + cov[a,c] * cov[b,d]
-            + cov[a,d] * cov[b,c]
+        # pairs of covariances (Isserlis)
+        + cov[a,b] * cov[c,d]
+        + cov[a,c] * cov[b,d]
+        + cov[a,d] * cov[b,c]
     )
-    # for w, x in itools.combinations(abcd, 2):
-    #     y, z = abcd.difference([w, x])
-    #     e += mean[w] * mean[x] * cov[y, z]
 
 def exp_squared(mean, cov, a, b):
     '''E[X_a^2 X_b^2] for N(mean, cov)'''
@@ -146,6 +139,23 @@ class ActivePMF(object):
         p = np.hstack((self.pmf.users.reshape(-1), self.pmf.items.reshape(-1)))
         return np.abs(self.mean - p).mean()
 
+    def _exp_dotprod_sq(self, i, j, mean, cov):
+        '''E[ (U_i^T V_j)^2 ]'''
+        u = self.u
+        v = self.v
+
+        # TODO: vectorize as much as possible
+        exp = 0
+        for k in xrange(self.latent_d):
+            uki = u[k,i]
+            vkj = v[k,j]
+
+            exp += exp_squared(mean, cov, uki, vkj)
+
+            for l in xrange(k+1, self.latent_d):
+                exp += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
+        return exp
+
 
     # NOTE: PMF supports weighted ratings, this doesn't
     def kl_divergence(self, mean=None, cov=None):
@@ -161,33 +171,19 @@ class ActivePMF(object):
         us = u.reshape(-1)
         vs = v.reshape(-1)
 
-        div = 0
-
         # terms based on the squared error
-        sqerr = 0
-        for i, j, rating, weight in self.ratings:
-            sqerr += rating**2
+        div = (
+            sum(
+                # E[ (U_i^T V_j)^2 ]
+                self._exp_dotprod_sq(i, j, mean, cov)
 
-            for k in xrange(self.latent_d):
-                uki = u[k, i]
-                vkj = v[k, j]
-                muki = mean[uki]
-                mvkj = mean[vkj]
+                # - 2 R_ij E[U_i^T V_j]
+                - 2 * rating *
+                    (mean[u[:,i]] * mean[v[:,j]] + cov[u[:,i], v[:,j]]).sum()
 
-                # TODO: most execution time is spent on this inner quadexcept.
-                # see if it can be vectorized / common results cached / sthng?
-                for l in xrange(self.latent_d):
-                    if l == k: continue
-                    sqerr += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
-                
-                # E[U_ki^2 V_kj^2]
-                sqerr += 4 * muki * mvkj * cov[uki, vkj] \
-                        + 2 * cov[uki, vkj]**2 \
-                        + (muki**2 + cov[uki,uki]) * (mvkj**2 + cov[vkj, vkj])
-
-                # - 2 Rij E[U_kj V_kj]
-                sqerr -= 2 * rating * (muki * mvkj + cov[uki, vkj])
-        div += sqerr / (2 * self.sigma_sq)
+                for i, j, rating, weight in self.ratings)
+            + (self.ratings[:,2] ** 2).sum() # sum (R_ij^2)
+        ) / (2 * self.sigma_sq)
 
         # regularization terms
         # cov[us, us] only gives us diagonal terms, unlike in matlab
@@ -220,7 +216,7 @@ class ActivePMF(object):
         grad_mean = np.zeros_like(mean)
         grad_cov = np.zeros_like(cov)
 
-        # TODO: vectorize as much as possible?
+        # TODO: vectorize as much as possible
         for i, j, rating, weight in self.ratings:
             for k in xrange(self.latent_d):
                 uki = u[k, i]
@@ -268,7 +264,7 @@ class ActivePMF(object):
         # gradient of - E[U_ki^2] / (2 sigma_u^2), same for V
         grad_mean[us] += mean[us] / self.sigma_u_sq
         grad_mean[vs] += mean[vs] / self.sigma_v_sq
-                
+
         grad_cov[us,us] -= 1 # adds to diagonals only
         grad_cov[vs,vs] -= 1
 
@@ -311,10 +307,6 @@ class ActivePMF(object):
         Find the best normal approximation of the PMF model, yielding the
         current KL divergence at each step.
         '''
-        # TODO: consider a log-barrier to stay PSD?
-        # TODO: some kind of regularization to stay near orig params?
-        # TODO: watch for divergence and restart?
-
         lr = self.learning_rate
         old_kl = self.kl_divergence()
         converged = False
@@ -349,26 +341,19 @@ class ActivePMF(object):
 
 
     def pred_variance(self, i, j):
-        var = 0
         mean = self.mean
         cov = self.cov
-        u = self.u
-        v = self.v
 
-        # E[U_ki V_kj U_li V_lj] for k != l
-        for k in xrange(self.latent_d - 1):
-            for l in xrange(k+1, self.latent_d):
-                var += 2 * quadexpect(mean, cov, u[k,i], v[k,j], u[l,i], v[l,j])
+        us = self.u[:, i]
+        vs = self.v[:, j]
 
-        # E[U_ki^2 V_kj^2]
-        for k in xrange(self.latent_d):
-            var += exp_squared(mean, cov, u[k,i], v[k,j])
+        return (
+            # E[ (U_i^T V_j)^2 ]
+            self._exp_dotprod_sq(i, j, mean, cov)
 
-        # (sum E[U_ki V_kj])^2
-        twoexp = mean[u[:,i]] * mean[v[:,j]] + cov[u[:,i], v[:,j]]
-        var -= twoexp.sum() ** 2
-
-        return var
+            # - E[U_i^T V_j] ^ 2
+            - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
+        )
 
 
     def pick_query_point(self, pool=None):
@@ -386,7 +371,7 @@ class ActivePMF(object):
 ### Testing code
 
 def make_fake_data_apmf(noise=.25, num_users=10, num_items=10,
-                        rating_prob=.3, latent_d=10):
+                        rating_prob=.3, latent_d=10, fit_d=5):
     u = np.random.normal(0, 2, (num_users, latent_d))
     v = np.random.normal(0, 2, (num_items, latent_d))
 
@@ -394,19 +379,23 @@ def make_fake_data_apmf(noise=.25, num_users=10, num_items=10,
             np.random.normal(0, noise, (num_users, num_items))
 
     mask = np.random.binomial(1, rating_prob, ratings.shape)
-    # make sure every row/col has at least one rating
-    for i in xrange(num_users):
-        if mask[i,:].sum() == 0:
-            mask[i, random.randrange(num_items)] = 1
-    for j in xrange(num_items):
-        if mask[i,:].sum() == 0:
-            mask[random.randrange(num_users), j] = 1
 
+    # make sure every row/col has at least one rating
+    for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
+        mask[random.randrange(num_items), zero_col] = 1
+
+    for zero_row in np.logical_not(mask.sum(axis=1)).nonzero()[0]:
+        mask[zero_row, random.randrange(num_users)] = 1
+
+    assert (mask.sum(axis=0) > 0).all()
+    assert (mask.sum(axis=1) > 0).all()
+
+    # convert into the list-of-ratings form we want
     rates = np.zeros((mask.sum(), 4))
     for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
         rates[idx] = [i, j, ratings[i, j], 1]
 
-    apmf = ActivePMF(rates, latent_d=5)
+    apmf = ActivePMF(rates, latent_d=fit_d)
     return apmf, ratings
 
 
@@ -421,7 +410,7 @@ def plot_variances(apmf, vmax=None):
             var[i, j] = apmf.pred_variance(i, j)
             total += var[i,j]
 
-    plt.imshow(var.T, interpolation='nearest', origin='lower', 
+    plt.imshow(var.T, interpolation='nearest', origin='lower',
             norm=plt.Normalize(0, vmax))
     plt.xlabel("User")
     plt.ylabel("Item")
@@ -429,83 +418,6 @@ def plot_variances(apmf, vmax=None):
     plt.colorbar()
 
     return var
-
-
-def onestep_test():
-    # import cPickle as pickle
-    # try:
-    #     with open('apmf_fake.pkl') as f:
-    #         apmf = pickle.load(f)
-    # except:
-    #     apmf = make_fake_data_apmf()
-    #     with open('apmf_fake.pkl', 'w') as f:
-    #         pickle.dump(apmf, f)
-    apmf, true_ratings = make_fake_data_apmf()
-
-    print "Training PMF:"
-    for ll in apmf.pmf.fit_lls():
-        print "\tLL: %g" % ll
-    print "Done training.\n"
-
-    print "\nFinding approximation:"
-    apmf.initialize_approx()
-    kls = []
-    for kl in apmf.fit_normal_kls():
-        kls.append(kl)
-        print "KL:", kl
-
-    print "Mean diff of means: %g; mean cov %g" % (
-            apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
-
-    query_user, query_item = apmf.pick_query_point()
-    print "Query point %d, %d; %d/%d known" % (query_user, query_item,
-            len(apmf.rated), apmf.num_users * apmf.num_items)
-
-    from pmf import plt
-    plt.figure()
-    plt.plot(kls)
-    plt.xlabel("Iteration")
-    plt.ylabel("KL")
-
-    plt.figure()
-    var1 = plot_variances(apmf)
-    maxvar1 = var1[np.isfinite(var1).nonzero()].max()
-    print maxvar1
-
-    query_rating = true_ratings[query_user, query_item]
-    apmf.add_rating(query_user, query_item, query_rating)
-    print "Rating for %d, %d: %g" % (query_user, query_item, query_rating)
-
-    print '\n'
-    print "-" * 80
-    print "Retraining PMF"
-    apmf.train_pmf()
-    print "Done retraining.\n"
-
-    print "\nFinding approximation:"
-    #apmf.initialize_approx() # TODO: reinitialize the approximation?
-
-    print "Mean diff of means: %g; mean cov %g" % (
-            apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
-
-    newkls = [apmf.kl_divergence()]
-    print "KL:", newkls[0]
-    for kl in apmf.fit_normal_kls():
-        newkls.append(kl)
-        print "KL:", kl
-
-    print "Mean diff of means: %g; mean cov %g" % (
-            apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
-
-    plt.figure()
-    plot_variances(apmf, maxvar1)
-
-    plt.figure()
-    plt.plot(newkls)
-    plt.xlabel("Retraining Iteration")
-    plt.ylabel("KL")
-
-    plt.show()
 
 
 def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
@@ -554,8 +466,8 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
         yield len(apmf.rated), rmse
 
 
-def main(num_users=10, num_items=10, plot=True, saveplot=None):
-    apmf, true = make_fake_data_apmf(num_users=num_users, num_items=num_items)
+def main(plot=True, saveplot=None, **kwargs):
+    apmf, true = make_fake_data_apmf(**kwargs)
 
     uncertainty_sampling = list(full_test(deepcopy(apmf), true))
     print
@@ -582,8 +494,22 @@ def main(num_users=10, num_items=10, plot=True, saveplot=None):
             plt.savefig(saveplot)
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) >= 1:
-        main(saveplot=sys.argv[1])
-    else:
-        main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--latent-d', '-D', type=int, default=5)
+    parser.add_argument('--gen-d', '-d', type=int, default=5)
+    parser.add_argument('--noise', type=float, default=.25)
+    parser.add_argument('--num-users', '-N', type=int, default=10)
+    parser.add_argument('--num-items', '-M', type=int, default=10)
+    parser.add_argument('--rating-prob', '-r', type=float, default=0)
+    parser.add_argument('outfile', default=None)
+    args = parser.parse_args()
+
+    try:
+        main(num_users=args.num_users, num_items=args.num_items,
+                latent_d=args.gen_d, fit_d=args.latent_d,
+                noise=args.noise,
+                rating_prob=args.rating_prob,
+                saveplot=args.outfile)
+    except:
+        import pdb; pdb.post_mortem()
