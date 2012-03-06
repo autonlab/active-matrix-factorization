@@ -369,10 +369,10 @@ class ActivePMF(object):
 ################################################################################
 ### Testing code
 
-def make_fake_data_apmf(noise=.25, num_users=10, num_items=10,
-                        rating_prob=.3, latent_d=10, fit_d=5):
-    u = np.random.normal(0, 2, (num_users, latent_d))
-    v = np.random.normal(0, 2, (num_items, latent_d))
+def make_fake_data(noise=.25, num_users=10, num_items=10,
+                        rating_prob=0, rank=5):
+    u = np.random.normal(0, 2, (num_users, rank))
+    v = np.random.normal(0, 2, (num_items, rank))
 
     ratings = np.dot(u, v.T) + \
             np.random.normal(0, noise, (num_users, num_items))
@@ -394,8 +394,7 @@ def make_fake_data_apmf(noise=.25, num_users=10, num_items=10,
     for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
         rates[idx] = [i, j, ratings[i, j], 1]
 
-    apmf = ActivePMF(rates, latent_d=fit_d)
-    return apmf, ratings
+    return ratings, rates
 
 
 def plot_variances(apmf, vmax=None):
@@ -465,8 +464,9 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
         yield len(apmf.rated), rmse
 
 
-def main(plot=True, saveplot=None, **kwargs):
-    apmf, true = make_fake_data_apmf(**kwargs)
+def compare(plot=True, saveplot=None, latent_d=5, **kwargs):
+    true, ratings = make_fake_data(**kwargs)
+    apmf = ActivePMF(ratings, latent_d=latent_d)
 
     uncertainty_sampling = list(full_test(deepcopy(apmf), true))
     print
@@ -492,23 +492,28 @@ def main(plot=True, saveplot=None, **kwargs):
         else:
             plt.savefig(saveplot)
 
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--latent-d', '-D', type=int, default=5)
-    parser.add_argument('--gen-d', '-d', type=int, default=5)
+    parser.add_argument('--gen-rank', '-R', type=int, default=5)
     parser.add_argument('--noise', type=float, default=.25)
     parser.add_argument('--num-users', '-N', type=int, default=10)
     parser.add_argument('--num-items', '-M', type=int, default=10)
     parser.add_argument('--rating-prob', '-r', type=float, default=0)
-    parser.add_argument('outfile', default=None)
+    parser.add_argument('--plot', action='store_true', default=True)
+    parser.add_argument('--no-plot', action='store_false', dest='plot')
+    parser.add_argument('outfile', nargs='?', default=None)
     args = parser.parse_args()
 
     try:
-        main(num_users=args.num_users, num_items=args.num_items,
-                latent_d=args.gen_d, fit_d=args.latent_d,
+        compare(num_users=args.num_users, num_items=args.num_items,
+                rank=args.gen_rank, latent_d=args.latent_d,
                 noise=args.noise,
                 rating_prob=args.rating_prob,
-                saveplot=args.outfile)
+                plot=args.plot, saveplot=args.outfile)
     except:
         import pdb; pdb.post_mortem()
+
+if __name__ == '__main__':
+    main()
