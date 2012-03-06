@@ -225,8 +225,7 @@ class ActivePMF(object):
                 mvkj = mean[vkj]
 
                 # gradient of - E[ U_ki V_kj U_li V_lj ] / sigma^2
-                for l in xrange(self.latent_d):
-                    if l == k: continue
+                for l in xrange(k+1, self.latent_d):
                     args = (uki, vkj, u[l,i], v[l,j])
 
                     for i, a in enumerate(args):
@@ -237,9 +236,9 @@ class ActivePMF(object):
                         oth = set(args).difference([a,b])
                         c = oth.pop()
                         d = oth.pop()
-                        inc = mean[c] * mean[d] + cov[c, d]
-                        grad_cov[a, b] += inc / sig
-                        grad_cov[b, a] += inc / sig
+                        inc = (mean[c] * mean[d] + cov[c, d]) / sig
+                        grad_cov[a, b] += inc
+                        grad_cov[b, a] += inc
 
                 # gradient of - E[ U_ki^2 V_kj^2 ] / (2 sigma^2)
                 grad_mean[uki] += (4 * mvkj * cov[uki,vkj]
@@ -247,9 +246,9 @@ class ActivePMF(object):
                 grad_mean[vkj] += (4 * muki * cov[uki,vkj]
                              + 2 * mvkj * (mvkj**2 + cov[uki,uki])) / (2*sig)
 
-                inc = 4 * (muki * mvkj + cov[uki,vkj])
-                grad_cov[uki,vkj] += inc / (2*sig)
-                grad_cov[vkj,uki] += inc / (2*sig)
+                inc = 2 * (muki * mvkj + cov[uki,vkj]) / sig
+                grad_cov[uki,vkj] += inc
+                grad_cov[vkj,uki] += inc
 
                 grad_cov[uki,uki] += (mvkj**2 + cov[vkj,vkj]) / (2*sig)
                 grad_cov[vkj,vkj] += (muki**2 + cov[uki,uki]) / (2*sig)
