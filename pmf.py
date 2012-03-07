@@ -99,12 +99,12 @@ class ProbabilisticMatrixFactorization(object):
         old_ll = self.log_likelihood()
         converged = False
 
-        sig = 2 * self.sigma_sq
+        sig = self.sigma_sq
 
         while not converged:
             # calculate the gradient
-            grad_u = -self.users / (2 * self.sigma_u_sq)
-            grad_v = -self.items / (2 * self.sigma_v_sq)
+            grad_u = -self.users / self.sigma_u_sq
+            grad_v = -self.items / self.sigma_v_sq
 
             for i, j, rating in self.ratings:
                 r_hat = np.dot(self.users[i], self.items[j])
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     lls = []
     for ll in pmf.fit_lls():
         lls.append(ll)
-        print "L=", ll
+        print "LL =", ll
 
     plt.figure()
     plt.plot(lls)
