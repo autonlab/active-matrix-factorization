@@ -192,9 +192,9 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             grad_cov[a, b] += inc
             grad_cov[b, a] += inc
 
-        # TODO: check that these gradients are all correct
         for i, j, rating in self.ratings:
             # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
+            # (doubled because of symmetry, cancels with 2 in denom)
             for k in xrange(self.latent_d-1):
                 uki = u[k, i]
                 vkj = v[k, j]
@@ -202,10 +202,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                 uli = u[k+1:, i]
                 vlj = v[k+1:, j]
 
-                grad_mean[uki] += tripexpect(mean, cov, vkj, uli, vlj).sum()
-                grad_mean[vkj] += tripexpect(mean, cov, uki, uli, vlj).sum()
-                grad_mean[uli] += tripexpect(mean, cov, uki, vkj, vlj).sum()
-                grad_mean[vlj] += tripexpect(mean, cov, uki, vkj, uli).sum()
+                grad_mean[uki] += tripexpect(mean,cov, vkj,uli,vlj).sum() / sig
+                grad_mean[vkj] += tripexpect(mean,cov, uki,uli,vlj).sum() / sig
+                grad_mean[uli] += tripexpect(mean,cov, uki,vkj,vlj).sum() / sig
+                grad_mean[vlj] += tripexpect(mean,cov, uki,vkj,uli).sum() / sig
 
                 inc_cov_quadexp_grad(uki,vkj, uli,vlj)
                 inc_cov_quadexp_grad(uki,uli, vkj,vlj)
@@ -216,37 +216,38 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
             # everything else can just be vectorized over k
             uki = u[:,i]
-            vkj = v[:,i]
+            vkj = v[:,j]
 
             muki = mean[uki]
             mvkj = mean[vkj]
 
-            # gradient of E[ U_ki^2 V_kj^2 ] / (2 sigma^2)
+            # gradient of \sum_k E[ U_ki^2 V_kj^2 ] / (2 sigma^2)
             grad_mean[uki] += (2 * mvkj * cov[uki,vkj]
-                         + muki * (mvkj**2 + cov[vkj,vkj])) / sig
+                               + muki * (mvkj**2 + cov[vkj,vkj])) / sig
             grad_mean[vkj] += (2 * muki * cov[uki,vkj]
-                         + mvkj * (mvkj**2 + cov[uki,uki])) / sig
+                               + mvkj * (muki**2 + cov[uki,uki])) / sig
+
+            grad_cov[uki,uki] += (mvkj**2 + cov[vkj,vkj]) / (2*sig)
+            grad_cov[vkj,vkj] += (muki**2 + cov[uki,uki]) / (2*sig)
 
             inc = 2 * (muki * mvkj + cov[uki,vkj]) / sig
             grad_cov[uki,vkj] += inc
             grad_cov[vkj,uki] += inc
 
-            grad_cov[uki,uki] += (mvkj**2 + cov[vkj,vkj]) / (2*sig)
-            grad_cov[vkj,vkj] += (muki**2 + cov[uki,uki]) / (2*sig)
-
             # gradient of - \sum_k Rij E[U_ki V_kj] / sigma^2
-            grad_mean[uki] -= muki * rating / sig
-            grad_mean[vkj] -= mvkj * rating / sig
+            grad_mean[uki] -= mvkj * (rating / sig)
+            grad_mean[vkj] -= muki * (rating / sig)
 
-            grad_cov[uki,vkj] -= self.latent_d * rating / sig
-            grad_cov[vkj,uki] -= self.latent_d * rating / sig
+            grad_cov[uki,vkj] -= rating / sig
+            grad_cov[vkj,uki] -= rating / sig
 
-        # gradient of - E[U_ki^2] / (2 sigma_u^2), same for V
+
+        # gradient of \sum_i \sum_k E[U_ki^2] / (2 sigma_u^2), same for V
         grad_mean[us] += mean[us] / self.sigma_u_sq
         grad_mean[vs] += mean[vs] / self.sigma_v_sq
 
-        grad_cov[us,us] -= 1 / (2 * self.sigma_u_sq)
-        grad_cov[vs,vs] -= 1 / (2 * self.sigma_v_sq)
+        grad_cov[us,us] += 1 / (2 * self.sigma_u_sq)
+        grad_cov[vs,vs] += 1 / (2 * self.sigma_v_sq)
 
         # gradient of -ln(|cov|)/2
         # need each cofactor of the matrix divided by its determinant;
@@ -282,7 +283,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             while True:
                 #print "  setting learning rate =", lr
                 new_mean = self.mean - lr * grad_mean
-                new_cov = project_psd(self.cov - lr*grad_cov, min_eig=self.min_eig)
+                new_cov = project_psd(self.cov - lr * grad_cov,
+                                      min_eig=self.min_eig)
                 new_kl = self.kl_divergence(new_mean, new_cov)
 
                 # TODO: configurable momentum, stopping conditions
