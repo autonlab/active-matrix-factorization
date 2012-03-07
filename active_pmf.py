@@ -349,10 +349,10 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
 
     # make sure every row/col has at least one rating
     for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
-        mask[random.randrange(num_items), zero_col] = 1
+        mask[random.randrange(num_users), zero_col] = 1
 
     for zero_row in np.logical_not(mask.sum(axis=1)).nonzero()[0]:
-        mask[zero_row, random.randrange(num_users)] = 1
+        mask[zero_row, random.randrange(num_items)] = 1
 
     assert (mask.sum(axis=0) > 0).all()
     assert (mask.sum(axis=1) > 0).all()
