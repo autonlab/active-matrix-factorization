@@ -212,60 +212,70 @@ class ActivePMF(object):
         sig = self.sigma_sq
 
         # note that we're actually only differentiating by one triangular half
-        # of the covariance matrix, but we make grad_cov symmetric anyway
+        # of the covariance matrix, but we make grad_cov the full square anyway
         grad_mean = np.zeros_like(mean)
         grad_cov = np.zeros_like(cov)
 
+        def inc_cov_quadexp_grad(a,b, c,d):
+            inc = np.sum(mean[c] * mean[d] + cov[c, d]) / sig
+            grad_cov[a, b] += inc
+            grad_cov[b, a] += inc
+
         # TODO: vectorize as much as possible
         for i, j, rating, weight in self.ratings:
-            for k in xrange(self.latent_d):
+            # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
+            for k in xrange(self.latent_d-1):
                 uki = u[k, i]
                 vkj = v[k, j]
-                muki = mean[uki]
-                mvkj = mean[vkj]
+                # vectorize out our sums over l
+                uli = u[k+1:, i]
+                vlj = v[k+1:, j]
 
-                # gradient of - E[ U_ki V_kj U_li V_lj ] / sigma^2
-                for l in xrange(k+1, self.latent_d):
-                    args = (uki, vkj, u[l,i], v[l,j])
+                grad_mean[uki] += tripexpect(mean, cov, vkj, uli, vlj).sum()
+                grad_mean[vkj] += tripexpect(mean, cov, uki, uli, vlj).sum()
+                grad_mean[uli] += tripexpect(mean, cov, uki, vkj, vlj).sum()
+                grad_mean[vlj] += tripexpect(mean, cov, uki, vkj, uli).sum()
 
-                    for i, a in enumerate(args):
-                        rest = args[:i] + args[i+1:]
-                        grad_mean[a] += tripexpect(mean, cov, *rest) / sig
+                inc_cov_quadexp_grad(uki,vkj, uli,vlj)
+                inc_cov_quadexp_grad(uki,uli, vkj,vlj)
+                inc_cov_quadexp_grad(uki,vlj, vkj,uli)
+                inc_cov_quadexp_grad(vkj,uli, uki,vlj)
+                inc_cov_quadexp_grad(vkj,vlj, uki,uli)
+                inc_cov_quadexp_grad(uli,vlj, uki,vkj)
 
-                    for a, b in itools.combinations(args, 2):
-                        oth = set(args).difference([a,b])
-                        c = oth.pop()
-                        d = oth.pop()
-                        inc = (mean[c] * mean[d] + cov[c, d]) / sig
-                        grad_cov[a, b] += inc
-                        grad_cov[b, a] += inc
+            # everything else can just be vectorized over k
+            uki = u[:,i]
+            vkj = v[:,i]
 
-                # gradient of - E[ U_ki^2 V_kj^2 ] / (2 sigma^2)
-                grad_mean[uki] += (4 * mvkj * cov[uki,vkj]
-                             + 2 * muki * (mvkj**2 + cov[vkj,vkj])) / (2*sig)
-                grad_mean[vkj] += (4 * muki * cov[uki,vkj]
-                             + 2 * mvkj * (mvkj**2 + cov[uki,uki])) / (2*sig)
+            muki = mean[uki]
+            mvkj = mean[vkj]
 
-                inc = 2 * (muki * mvkj + cov[uki,vkj]) / sig
-                grad_cov[uki,vkj] += inc
-                grad_cov[vkj,uki] += inc
+            # gradient of E[ U_ki^2 V_kj^2 ] / (2 sigma^2)
+            grad_mean[uki] += (2 * mvkj * cov[uki,vkj]
+                         + muki * (mvkj**2 + cov[vkj,vkj])) / sig
+            grad_mean[vkj] += (2 * muki * cov[uki,vkj]
+                         + mvkj * (mvkj**2 + cov[uki,uki])) / sig
 
-                grad_cov[uki,uki] += (mvkj**2 + cov[vkj,vkj]) / (2*sig)
-                grad_cov[vkj,vkj] += (muki**2 + cov[uki,uki]) / (2*sig)
+            inc = 2 * (muki * mvkj + cov[uki,vkj]) / sig
+            grad_cov[uki,vkj] += inc
+            grad_cov[vkj,uki] += inc
 
-                # gradient of Rij E[U_ki V_kj] / sigma^2
-                grad_mean[uki] -= mvkj * rating / sig
-                grad_mean[vkj] -= muki * rating / sig
+            grad_cov[uki,uki] += (mvkj**2 + cov[vkj,vkj]) / (2*sig)
+            grad_cov[vkj,vkj] += (muki**2 + cov[uki,uki]) / (2*sig)
 
-                grad_cov[uki,vkj] -= 1
-                grad_cov[vkj,uki] -= 1
+            # gradient of - \sum_k Rij E[U_ki V_kj] / sigma^2
+            grad_mean[uki] -= muki * rating / sig
+            grad_mean[vkj] -= mvkj * rating / sig
+
+            grad_cov[uki,vkj] -= self.latent_d * rating / sig
+            grad_cov[vkj,uki] -= self.latent_d * rating / sig
 
         # gradient of - E[U_ki^2] / (2 sigma_u^2), same for V
         grad_mean[us] += mean[us] / self.sigma_u_sq
         grad_mean[vs] += mean[vs] / self.sigma_v_sq
 
-        grad_cov[us,us] -= 1 # adds to diagonals only
-        grad_cov[vs,vs] -= 1
+        grad_cov[us,us] -= 1 / (2 * self.sigma_u_sq)
+        grad_cov[vs,vs] -= 1 / (2 * self.sigma_v_sq)
 
         # gradient of -ln(|cov|)/2
         # need each cofactor of the matrix divided by its determinant;
