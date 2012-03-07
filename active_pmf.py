@@ -93,7 +93,7 @@ class ActivePMF(object):
         self.v = np.arange(n * d, (n+m) * d).reshape(m, d).T
 
         # training options for the normal approximation
-        self.learning_rate = 1e-4
+        self.normal_learning_rate = 1e-4
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
@@ -196,7 +196,7 @@ class ActivePMF(object):
         return div
 
 
-    def gradient(self, mean=None, cov=None):
+    def normal_gradient(self, mean=None, cov=None):
         if mean is None: mean = self.mean
         if cov is None: cov = self.cov
         if mean is None or cov is None:
@@ -284,16 +284,6 @@ class ActivePMF(object):
         return grad_mean, grad_cov
 
 
-    def try_updates(self, grad_mean, grad_cov, lr):
-        '''
-        Returns the parameters used by taking a step in the direction of
-        the passed gradient.
-        '''
-        new_mean = self.mean - lr * grad_mean
-        new_cov = project_psd(self.cov - lr * grad_cov, min_eig=self.min_eig)
-        return new_mean, new_cov
-
-
     def fit_normal(self):
         '''
         Fit the multivariate normal over the elements of U and V that
@@ -309,17 +299,18 @@ class ActivePMF(object):
         Find the best normal approximation of the PMF model, yielding the
         current KL divergence at each step.
         '''
-        lr = self.learning_rate
+        lr = self.normal_learning_rate
         old_kl = self.kl_divergence()
         converged = False
 
         while not converged:
-            grad_mean, grad_cov = self.gradient()
+            grad_mean, grad_cov = self.normal_gradient()
 
             # take one step, trying different learning rates if necessary
             while True:
                 #print "  setting learning rate =", lr
-                new_mean, new_cov = self.try_updates(grad_mean, grad_cov, lr)
+                new_mean = self.mean - lr * grad_mean
+                new_cov = project_psd(self.cov - lr*grad_cov, min_eig=self.min_eig)
                 new_kl = self.kl_divergence(new_mean, new_cov)
 
                 # TODO: configurable momentum, stopping conditions
