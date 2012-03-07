@@ -30,16 +30,13 @@ class ProbabilisticMatrixFactorization(object):
         self.sigma_v_sq = 10
 
         self.ratings = np.array(rating_tuples, dtype=float)
-        if self.ratings.shape[1] == 3:
-            self.ratings = np.hstack((self.ratings,
-                                      np.ones((len(rating_tuples), 1))))
-        if self.ratings.shape[1] != 4:
+        if self.ratings.shape[1] != 3:
             raise TypeError("invalid rating tuple length")
 
         self.num_users = n = int(np.max(self.ratings[:, 0]) + 1)
         self.num_items = m = int(np.max(self.ratings[:, 1]) + 1)
 
-        self.rated = set((i, j) for i, j, rating, weight in self.ratings)
+        self.rated = set((i, j) for i, j, rating in self.ratings)
         self.unrated = set(itertools.product(xrange(n), xrange(m)))\
                 .difference(self.rated)
 
@@ -47,17 +44,14 @@ class ProbabilisticMatrixFactorization(object):
         self.items = np.random.random((m, self.latent_d))
 
 
-    def add_rating(self, i, j, rating, weight=1):
-        self.add_ratings([i, j, rating, weight])
+    def add_rating(self, i, j, rating):
+        self.add_ratings([i, j, rating])
 
     def add_ratings(self, extra):
         rows, cols = self.ratings.shape
 
         extra = np.array(extra, copy=False, ndmin=2)
-        if len(extra.shape) == 2:
-            if extra.shape[1] != cols:
-                raise TypeError("bad shape for extra")
-        else:
+        if len(extra.shape) != 2 or extra.shape[1] != cols:
             raise TypeError("bad shape for extra")
 
         assert np.max(extra[:,0] + 1) <= self.num_users
@@ -90,9 +84,9 @@ class ProbabilisticMatrixFactorization(object):
             items = self.items
 
         sq_error = 0
-        for i, j, rating, weight in self.ratings:
+        for i, j, rating in self.ratings:
             r_hat = np.dot(users[i], items[j])
-            sq_error += weight * (rating - r_hat)**2
+            sq_error += (rating - r_hat)**2
 
         return (- sq_error / (2 * self.sigma_sq)
                 - np.linalg.norm(users) / (2 * self.sigma_u_sq)
@@ -112,10 +106,10 @@ class ProbabilisticMatrixFactorization(object):
             grad_u = -self.users / (2 * self.sigma_u_sq)
             grad_v = -self.items / (2 * self.sigma_v_sq)
 
-            for i, j, rating, wt in self.ratings:
+            for i, j, rating in self.ratings:
                 r_hat = np.dot(self.users[i], self.items[j])
-                grad_u[i, :] += self.items[j, :] * ((rating - r_hat) * wt) / sig
-                grad_v[j, :] += self.users[i, :] * ((rating - r_hat) * wt) / sig
+                grad_u[i, :] += self.items[j, :] * ((rating - r_hat) / sig)
+                grad_v[j, :] += self.users[i, :] * ((rating - r_hat) / sig)
 
             # take one step, trying different learning rates if necessary
             while True:

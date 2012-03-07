@@ -157,7 +157,6 @@ class ActivePMF(object):
         return exp
 
 
-    # NOTE: PMF supports weighted ratings, this doesn't
     def kl_divergence(self, mean=None, cov=None):
         '''KL(PMF || approximation), up to an additive constant'''
         if mean is None: mean = self.mean
@@ -181,7 +180,7 @@ class ActivePMF(object):
                 - 2 * rating *
                     (mean[u[:,i]] * mean[v[:,j]] + cov[u[:,i], v[:,j]]).sum()
 
-                for i, j, rating, weight in self.ratings)
+                for i, j, rating in self.ratings)
             + (self.ratings[:,2] ** 2).sum() # sum (R_ij^2)
         ) / (2 * self.sigma_sq)
 
@@ -222,7 +221,7 @@ class ActivePMF(object):
             grad_cov[b, a] += inc
 
         # TODO: check that these gradients are all correct
-        for i, j, rating, weight in self.ratings:
+        for i, j, rating in self.ratings:
             # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
             for k in xrange(self.latent_d-1):
                 uki = u[k, i]
@@ -394,9 +393,9 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     assert (mask.sum(axis=1) > 0).all()
 
     # convert into the list-of-ratings form we want
-    rates = np.zeros((mask.sum(), 4))
+    rates = np.zeros((mask.sum(), 3))
     for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
-        rates[idx] = [i, j, ratings[i, j], 1]
+        rates[idx] = [i, j, ratings[i, j]]
 
     return ratings, rates
 
