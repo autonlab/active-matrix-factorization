@@ -221,7 +221,7 @@ class ActivePMF(object):
             grad_cov[a, b] += inc
             grad_cov[b, a] += inc
 
-        # TODO: vectorize as much as possible
+        # TODO: check that these gradients are all correct
         for i, j, rating, weight in self.ratings:
             # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
             for k in xrange(self.latent_d-1):
@@ -280,13 +280,7 @@ class ActivePMF(object):
         # gradient of -ln(|cov|)/2
         # need each cofactor of the matrix divided by its determinant;
         # this is just the transpose of its inverse
-        # (see http://stackoverflow.com/a/6528024/344821)
-
-        # XXX: assuming cov is invertible. this is true because we're
-        # projecting, but wouldn't necessarily be true with e.g. barrier method
-
         grad_cov += np.linalg.inv(cov).T / 2
-
 
         return grad_mean, grad_cov
 
