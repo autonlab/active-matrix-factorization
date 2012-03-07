@@ -71,10 +71,10 @@ def project_psd(mat, min_eig=0):
 ################################################################################
 ### Main code
 
-class ActivePMF(object):
+class ActivePMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=1):
         # the actual PMF model
-        self.pmf = ProbabilisticMatrixFactorization(rating_tuples, latent_d)
+        super(ActivePMF, self).__init__(rating_tuples, latent_d)
 
         # parameters of the normal approximation
         self.mean = None
@@ -97,46 +97,20 @@ class ActivePMF(object):
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
-    # easy access to relevant PMF attributes
-    # TODO: just do inheritance...
-    ratings = property(lambda self: self.pmf.ratings)
-    rated = property(lambda self: self.pmf.rated)
-    unrated = property(lambda self: self.pmf.unrated)
-
-    sigma_sq = property(lambda self: self.pmf.sigma_sq)
-    sigma_u_sq = property(lambda self: self.pmf.sigma_u_sq)
-    sigma_v_sq = property(lambda self: self.pmf.sigma_v_sq)
-
-    latent_d = property(lambda self: self.pmf.latent_d)
-    num_users = property(lambda self: self.pmf.num_users)
-    num_items = property(lambda self: self.pmf.num_items)
-
-    add_rating = property(lambda self: self.pmf.add_rating)
-    add_ratings = property(lambda self: self.pmf.add_ratings)
-
-    predicted_matrix = property(lambda self: self.pmf.predicted_matrix)
-
-    def train_pmf(self):
-        '''Train the underlying PMF model to convergence.'''
-        self.pmf.fit()
-
-
     def initialize_approx(self):
         '''
         Also sets up the normal approximation to be near the PMF result
         (throwing away any old approximation).
         '''
         # set mean to PMF's MAP values
-        self.mean = np.hstack((self.pmf.users.reshape(-1),
-                               self.pmf.items.reshape(-1)))
+        self.mean = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
 
         # set covariance to a random positive-definite matrix
         s = np.random.normal(0, 2, (self.approx_dim, self.approx_dim))
         self.cov = project_psd(s, min_eig=self.min_eig)
 
-
     def mean_meandiff(self):
-        p = np.hstack((self.pmf.users.reshape(-1), self.pmf.items.reshape(-1)))
+        p = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
         return np.abs(self.mean - p).mean()
 
     def _exp_dotprod_sq(self, i, j, mean, cov):
@@ -155,7 +129,6 @@ class ActivePMF(object):
             for l in xrange(k+1, self.latent_d):
                 exp += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
         return exp
-
 
     def kl_divergence(self, mean=None, cov=None):
         '''KL(PMF || approximation), up to an additive constant'''
@@ -194,7 +167,6 @@ class ActivePMF(object):
         div += log_det / 2
 
         return div
-
 
     def normal_gradient(self, mean=None, cov=None):
         if mean is None: mean = self.mean
@@ -414,7 +386,7 @@ def plot_variances(apmf, vmax=None):
 
 def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
     print "Training PMF:"
-    for ll in apmf.pmf.fit_lls():
+    for ll in apmf.fit_lls():
         print "\tLL: %g" % ll
 
     apmf.initialize_approx()
@@ -441,7 +413,7 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
         print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
 
         print "Training PMF:"
-        for ll in apmf.pmf.fit_lls():
+        for ll in apmf.fit_lls():
             print "\tLL: %g" % ll
 
         if fit_normal:
