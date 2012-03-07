@@ -99,31 +99,29 @@ class ProbabilisticMatrixFactorization(object):
                 - np.linalg.norm(items) / (2 * self.sigma_v_sq))
 
 
-    def try_updates(self, grad_u, grad_v, lr):
-        new_users = (1 - lr / (2*self.sigma_u_sq)) * self.users + lr * grad_u
-        new_items = (1 - lr / (2*self.sigma_v_sq)) * self.items + lr * grad_v
-        return new_users, new_items
-
-
     def fit_lls(self):
         lr = self.learning_rate
 
         old_ll = self.log_likelihood()
         converged = False
 
+        sig = 2 * self.sigma_sq
+
         while not converged:
             # calculate the gradient
-            grad_u = np.zeros((self.num_users, self.latent_d))
-            grad_v = np.zeros((self.num_items, self.latent_d))
+            grad_u = -self.users / (2 * self.sigma_u_sq)
+            grad_v = -self.items / (2 * self.sigma_v_sq)
+
             for i, j, rating, wt in self.ratings:
                 r_hat = np.dot(self.users[i], self.items[j])
-                grad_u[i, :] += self.items[j, :] * ((rating - r_hat) * wt)
-                grad_v[j, :] += self.users[i, :] * ((rating - r_hat) * wt)
+                grad_u[i, :] += self.items[j, :] * ((rating - r_hat) * wt) / sig
+                grad_v[j, :] += self.users[i, :] * ((rating - r_hat) * wt) / sig
 
             # take one step, trying different learning rates if necessary
             while True:
                 #print "  setting learning rate =", lr
-                new_users, new_items = self.try_updates(grad_u, grad_v, lr)
+                new_users = self.users + lr * grad_u
+                new_items = self.items + lr * grad_v
                 new_ll = self.log_likelihood(new_users, new_items)
 
                 if new_ll > old_ll:
