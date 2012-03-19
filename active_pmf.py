@@ -366,7 +366,7 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
 
 
 def plot_variances(apmf, vmax=None):
-    from pmf import plt
+    from matplotlib import pyplot as plt
     var = np.zeros((apmf.num_users, apmf.num_items))
     total = 0
     for i, j in itools.product(xrange(apmf.num_users), xrange(apmf.num_items)):
@@ -446,7 +446,7 @@ def compare(plot=True, saveplot=None, latent_d=5, **kwargs):
     random_sampling = list(full_test(deepcopy(apmf), true, pick_rand, False))
 
     if plot:
-        from pmf import plt
+        from matplotlib import pyplot as plt
         plt.figure()
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")

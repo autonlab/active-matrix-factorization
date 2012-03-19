@@ -15,11 +15,6 @@ import random
 
 import numpy as np
 
-import pylab
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-
-
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1):
         self.latent_d = latent_d
@@ -180,11 +175,15 @@ def fake_ratings(noise=.25, num_users=100, num_items=100, num_ratings=30,
 
 
 def plot_ratings(ratings):
-    pylab.plot(ratings[:, 1], ratings[:, 2], 'bx')
-    pylab.show()
+    import matplotlib.pyplot as plt
+    plt.plot(ratings[:, 1], ratings[:, 2], 'bx')
+    plt.show()
 
 
 def plot_latent_vectors(U, V):
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+
     fig = plt.figure()
     ax = fig.add_subplot(121)
     cmap = cm.jet
@@ -199,6 +198,9 @@ def plot_latent_vectors(U, V):
 
 
 def plot_predicted_ratings(U, V):
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+
     u_rows, u_cols = U.shape
     v_rows, v_cols = V.shape
 
@@ -223,12 +225,10 @@ def plot_predicted_ratings(U, V):
     plt.axis("off")
 
 
-if __name__ == "__main__":
-    DATASET = 'fake'
+def main():
+    import matplotlib.pyplot as plt
 
-    if DATASET == 'fake':
-        (ratings, true_o, true_d) = fake_ratings()
-
+    (ratings, true_o, true_d) = fake_ratings()
     #plot_ratings(ratings)
 
     pmf = ProbabilisticMatrixFactorization(ratings, latent_d=5)
@@ -249,3 +249,6 @@ if __name__ == "__main__":
 
     pmf.print_latent_vectors()
     #pmf.save_latent_vectors("models/")
+
+if __name__ == '__main__':
+    main()
