@@ -7,7 +7,9 @@ from __future__ import division
 
 from copy import deepcopy
 import itertools as itools
+import math
 import random
+import sys # XXX
 
 import numpy as np
 
@@ -307,10 +309,36 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             old_kl = new_kl
 
 
-    def pred_variance(self, i, j):
+    def approx_pred_means_vars(self):
+        '''
+        Returns the mean and variance of the predicted R matrix under
+        the normal approximation.
+        '''
+        p_mean = np.zeros((self.num_users, self.num_items))
+        p_var = np.zeros((self.num_users, self.num_items))
+
         mean = self.mean
         cov = self.cov
 
+        for i in xrange(self.num_users):
+            us = self.u[:, i]
+            for j in xrange(self.num_items):
+                vs = self.v[:, j]
+                p_mean[i, j] = m = (mean[us] * mean[vs] + cov[us, vs]).sum()
+                p_var[i, j] = self._exp_dotprod_sq(i, j, mean, cov) - m**2
+
+        return p_mean, p_var
+
+
+    def pred_variance(self, ij):
+        '''
+        The variance in our prediction for R_ij, according to the current
+        approximation.
+        '''
+        i, j = ij
+
+        mean = self.mean
+        cov = self.cov
         us = self.u[:, i]
         vs = self.v[:, j]
 
@@ -322,16 +350,68 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
         )
 
+    def exp_approx_entropy(self, ij, use_pmf=True):
+        '''
+        The expected entropy in our approximation of U and V if we know Rij,
+        calculated according to our current belief about the distribution of
+        Rij, up to a constant common to all (i,j) pairs.
+        '''
+        from scipy.integrate import quad
+        i, j = ij
 
-    def pick_query_point(self, pool=None):
+        # TODO: use PMF's distribution for Rij or the normal approximation's?
+        if use_pmf:
+            mean = np.dot(self.users[i,:], self.items[j,:])
+            var = self.sigma_sq
+        else:
+            us = self.u[:, i]
+            vs = self.v[:, j]
+
+            mean = (self.mean[us] * self.mean[vs] + self.cov[us, vs]).sum()
+            var = self._exp_dotprod_sq(i, j, self.mean, self.cov) - mean**2
+
+        scale = math.sqrt(2 * math.pi) * var
+
+        def weighted_entropy_with_ij_val(v):
+            assert isinstance(v, float)
+            print ".",
+            sys.stdout.flush()
+            apmf = deepcopy(self)
+            apmf.add_rating(i, j, v)
+            apmf.fit() # XXX is this necessary?
+            apmf.fit_normal()
+
+            sign, logdet = np.linalg.slogdet(apmf.cov)
+            assert sign == 1
+            return logdet * np.exp(0.5 * ((v - mean) / var)**2) / scale
+
+        # only take the expectation out to 1.96 sigma (95% of probability mass)
+        left = mean - 1.96 * var
+        right = mean + 1.96 * var
+
+        print "Integrating (%d, %d) from %g to %g..." % (i, j, left, right),
+        sys.stdout.flush() # XXX
+        est, abserr = quad(weighted_entropy_with_ij_val, left, right,
+                epsabs=1e-3, epsrel=1e-3)
+        print "done (%g, %g)" % (est, abserr)
+        return -est
+
+
+
+    def pick_query_point(self, pool=None, key=None):
         '''
         Use the approximation of the PMF model to select the next point to
-        query, based on the element of the matrix with the highest variance
-        under the approximation.
+        query, choosing elements according to key, which should be a function
+        that takes an ActivePMF instance and a user-item pair as arguments.
+        Defaults to pred_variance.
+
+        The choices can be limited to an iterable pool (default self.unrated).
         '''
         if pool is None:
             pool = self.unrated
-        return max(pool, key=lambda (i,j): self.pred_variance(i, j))
+        if key is None:
+            key = ActivePMF.pred_variance
+        return max(pool, key=lambda ij: key(self, ij))
 
 
 ################################################################################
@@ -385,8 +465,38 @@ def plot_variances(apmf, vmax=None):
 
     return var
 
+def plot_predictions(apmf, real):
+    from matplotlib import pyplot as plt
 
-def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
+    pred = apmf.predicted_matrix()
+    a_mean, a_var = apmf.approx_pred_means_vars()
+    a_std = np.sqrt(a_var)
+
+    xs = (real, pred, a_mean)
+    norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
+
+    plt.subplot(2, 2, 1)
+    plt.imshow(real, norm=norm, interpolation='nearest')
+    plt.title("Real")
+    plt.colorbar()
+
+    plt.subplot(2, 2, 2)
+    plt.imshow(pred, norm=norm, interpolation='nearest')
+    plt.title("Predicted")
+    plt.colorbar()
+
+    plt.subplot(2, 2, 3)
+    plt.imshow(a_mean, norm=norm, interpolation='nearest')
+    plt.title("Approximation: Means")
+    plt.colorbar()
+
+    plt.subplot(2, 2, 4)
+    plt.imshow(np.sqrt(a_std), interpolation='nearest')
+    plt.title("Approximation: Std Devs")
+    plt.colorbar()
+
+
+def full_test(apmf, real, picker_key=ActivePMF.pred_variance, fit_normal=True):
     print "Training PMF:"
     for ll in apmf.fit_lls():
         print "\tLL: %g" % ll
@@ -397,12 +507,13 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
         print "Fitting normal:"
         for kl in apmf.fit_normal_kls():
             print "\tKL: %g" % kl
+            assert kl > -1e5
 
         print "Mean diff of means: %g; mean cov %g" % (
                 apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
 
     total = apmf.num_users * apmf.num_items
-    rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum() / total)
+    rmse = apmf.rmse(real)
     print "RMSE: %g" % rmse
     yield len(apmf.rated), rmse
 
@@ -410,8 +521,8 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
     while apmf.unrated:
         print
         #print '=' * 80
-        i, j = picker(apmf)
-        apmf.add_rating(i, j, true[i, j])
+        i, j = apmf.pick_query_point(key=picker_key)
+        apmf.add_rating(i, j, real[i, j])
         print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
 
         print "Training PMF:"
@@ -422,28 +533,39 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
             print "Fitting normal:"
             for kl in apmf.fit_normal_kls():
                 print "\tKL: %g" % kl
-                assert kl > 0
+                assert kl > -1e5
 
             print "Mean diff of means: %g; mean cov %g" % (
                     apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
 
-        rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum() / total)
+        rmse = apmf.rmse(real)
         print "RMSE: %g" % rmse
         yield len(apmf.rated), rmse
 
 
 def compare(plot=True, saveplot=None, latent_d=5, **kwargs):
-    true, ratings = make_fake_data(**kwargs)
+    real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
-    uncertainty_sampling = list(full_test(deepcopy(apmf), true))
-    print
-    print '=' * 80
-    print '=' * 80
-    print '=' * 80
+    keys = [
+        ("U/V Entropy (PMF Prediction)",
+            lambda *a,**k: ActivePMF.exp_approx_entropy(*a, use_pmf=True, **k),
+            True),
+        ("U/V Entropy (Normal Prediction)",
+            lambda *a,**k: ActivePMF.exp_approx_entropy(*a, use_pmf=False, **k),
+            True),
+        ("Prediction Variance", ActivePMF.pred_variance, True),
+        ("Random", lambda apmf, ij: random.random(), False),
+    ]
 
-    pick_rand = lambda apmf: random.choice(list(apmf.unrated))
-    random_sampling = list(full_test(deepcopy(apmf), true, pick_rand, False))
+    results = []
+    for name, key, do_fit in keys:
+        print '=' * 80
+        print "Starting", name
+        print '=' * 80
+        results.append(list(full_test(deepcopy(apmf), real, key, do_fit)))
+        print '=' * 80
+        print '=' * 80
 
     if plot:
         from matplotlib import pyplot as plt
@@ -451,14 +573,15 @@ def compare(plot=True, saveplot=None, latent_d=5, **kwargs):
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")
 
-        plt.plot(*zip(*uncertainty_sampling), label="Uncertainty Sampling")
-        plt.plot(*zip(*random_sampling), label="Random")
+        for (name, key, do_fit), result in zip(keys, results):
+            plt.plot(*zip(*result), label=name)
 
         plt.legend()
         if saveplot is None:
             plt.show()
         else:
             plt.savefig(saveplot)
+
 
 def main():
     import argparse
@@ -480,8 +603,12 @@ def main():
                 noise=args.noise,
                 rating_prob=args.rating_prob,
                 plot=args.plot, saveplot=args.outfile)
-    except:
-        import pdb; pdb.post_mortem()
+    except Exception:
+        import pdb, traceback
+        print
+        traceback.print_exc()
+        print
+        pdb.post_mortem()
 
 if __name__ == '__main__':
     main()

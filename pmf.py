@@ -18,7 +18,10 @@ import numpy as np
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1):
         self.latent_d = latent_d
+
         self.learning_rate = 1e-4
+        self.min_learning_rate = 1e-10
+        self.stop_thresh = 1e-2
 
         self.sigma_sq = 1
         self.sigma_u_sq = 10
@@ -87,24 +90,27 @@ class ProbabilisticMatrixFactorization(object):
                 - np.linalg.norm(users) / (2 * self.sigma_u_sq)
                 - np.linalg.norm(items) / (2 * self.sigma_v_sq))
 
+    def gradient(self):
+        grad_u = -self.users / self.sigma_u_sq
+        grad_v = -self.items / self.sigma_v_sq
+
+        sig = self.sigma_sq
+        for i, j, rating in self.ratings:
+            r_hat = np.dot(self.users[i], self.items[j])
+            grad_u[i, :] += self.items[j, :] * ((rating - r_hat) / sig)
+            grad_v[j, :] += self.users[i, :] * ((rating - r_hat) / sig)
+
+        return grad_u, grad_v
+
 
     def fit_lls(self):
         lr = self.learning_rate
 
         old_ll = self.log_likelihood()
+
         converged = False
-
-        sig = self.sigma_sq
-
         while not converged:
-            # calculate the gradient
-            grad_u = -self.users / self.sigma_u_sq
-            grad_v = -self.items / self.sigma_v_sq
-
-            for i, j, rating in self.ratings:
-                r_hat = np.dot(self.users[i], self.items[j])
-                grad_u[i, :] += self.items[j, :] * ((rating - r_hat) / sig)
-                grad_v[j, :] += self.users[i, :] * ((rating - r_hat) / sig)
+            grad_u, grad_v = self.gradient()
 
             # take one step, trying different learning rates if necessary
             while True:
@@ -118,13 +124,13 @@ class ProbabilisticMatrixFactorization(object):
                     self.items = new_items
                     lr *= 1.25
 
-                    if new_ll - old_ll < .1:
+                    if new_ll - old_ll < self.stop_thresh:
                         converged = True
                     break
                 else:
                     lr *= .5
 
-                    if lr < 1e-10:
+                    if lr < self.min_learning_rate:
                         converged = True
                         break
 
@@ -139,6 +145,8 @@ class ProbabilisticMatrixFactorization(object):
     def predicted_matrix(self):
         return np.dot(self.users, self.items.T)
 
+    def rmse(self, real):
+        return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
 
     def print_latent_vectors(self):
         print "Users:"
