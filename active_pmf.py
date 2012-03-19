@@ -589,16 +589,24 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         yield len(apmf.rated), rmse
 
 
+# cli name => (legend name, method, fit the approximation, spawn processes)
 KEY_OPTIONS = {
     "uv-entropy-approx": (
         "U/V Entropy (Normal Prediction)",
         ActivePMF.exp_approx_entropy_byapprox,
-        True),
-    "uv-entropy-pred": ("U/V Entropy (PMF Prediction)",
+        True, True),
+    "uv-entropy-pred": (
+        "U/V Entropy (PMF Prediction)",
         ActivePMF.exp_approx_entropy,
-        True),
-    "pred-variance": ("Prediction Variance", ActivePMF.pred_variance, True),
-    "random": ("Random", ActivePMF.random_weighting, False),
+        True, True),
+    "pred-variance": (
+        "Prediction Variance",
+        ActivePMF.pred_variance,
+        True, False),
+    "random": (
+        "Random",
+        ActivePMF.random_weighting,
+        False, False),
 }
 
 def compare(key_names, plot=True, saveplot=None, latent_d=5,
@@ -609,12 +617,12 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
     keys = [KEY_OPTIONS[k] for k in key_names]
 
     results = []
-    for name, key, do_fit in keys:
+    for name, key, do_fit, spawn in keys:
         print '=' * 80
         print "Starting", name
         print '=' * 80
         results.append(list(full_test(deepcopy(apmf), real, key, do_fit,
-            processes=processes)))
+            processes=processes if spawn else 1)))
         print '=' * 80
         print '=' * 80
 
@@ -624,7 +632,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")
 
-        for (name, key, do_fit), result in zip(keys, results):
+        for (name, key, do_fit, spawn), result in zip(keys, results):
             plt.plot(*zip(*result), label=name)
 
         plt.legend()
