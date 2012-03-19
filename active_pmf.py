@@ -631,6 +631,8 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
 
 
 def main():
+    key_names = KEY_OPTIONS.keys()
+
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--latent-d', '-D', type=int, default=5)
@@ -643,7 +645,7 @@ def main():
     parser.add_argument('--no-plot', action='store_false', dest='plot')
     parser.add_argument('--processes', '-P', type=int, default=None)
     parser.add_argument('--outfile', default=None)
-    parser.add_argument('keys', nargs='*', default=KEY_OPTIONS.keys())
+    parser.add_argument('keys', nargs='*', default=key_names, choices=key_names)
     args = parser.parse_args()
 
     try:
