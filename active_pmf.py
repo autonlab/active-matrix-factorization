@@ -401,11 +401,11 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
         print "Mean diff of means: %g; mean cov %g" % (
                 apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
 
-    rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum())
+    total = apmf.num_users * apmf.num_items
+    rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum() / total)
     print "RMSE: %g" % rmse
     yield len(apmf.rated), rmse
 
-    total = apmf.num_users * apmf.num_items
 
     while apmf.unrated:
         print
@@ -427,7 +427,7 @@ def full_test(apmf, true, picker=ActivePMF.pick_query_point, fit_normal=True):
             print "Mean diff of means: %g; mean cov %g" % (
                     apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
 
-        rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum())
+        rmse = np.sqrt(((true - apmf.predicted_matrix())**2).sum() / total)
         print "RMSE: %g" % rmse
         yield len(apmf.rated), rmse
 
