@@ -667,6 +667,11 @@ def main():
                 k, ', '.join(key_names)))
             sys.exit(1)
 
+    # if we're not running interactively, use Agg
+    if args.outfile:
+        import matplotlib
+        matplotlib.use('Agg')
+
     try:
         compare(args.keys or key_names,
                 num_users=args.num_users, num_items=args.num_items,
