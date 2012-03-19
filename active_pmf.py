@@ -364,13 +364,17 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             mean = np.dot(self.users[i,:], self.items[j,:])
             var = self.sigma_sq
         else:
+            # TODO: this isn't actually right (using the normal distribution
+            # with matching mean/variance instead of the actual, unknown
+            # distribution)
             us = self.u[:, i]
             vs = self.v[:, j]
 
             mean = (self.mean[us] * self.mean[vs] + self.cov[us, vs]).sum()
             var = self._exp_dotprod_sq(i, j, self.mean, self.cov) - mean**2
 
-        scale = math.sqrt(2 * math.pi) * var
+        std = math.sqrt(var)
+        scale = math.sqrt(2 * math.pi) * std
 
         def weighted_entropy_with_ij_val(v):
             assert isinstance(v, float)
@@ -383,11 +387,11 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
             sign, logdet = np.linalg.slogdet(apmf.cov)
             assert sign == 1
-            return logdet * np.exp(0.5 * ((v - mean) / var)**2) / scale
+            return -logdet * np.exp(0.5 * (v - mean)**2 / var) / scale
 
-        # only take the expectation out to 1.96 sigma (95% of probability mass)
-        left = mean - 1.96 * var
-        right = mean + 1.96 * var
+        # only take the expectation out to 1.96 sigma (95% of normal mass)
+        left = mean - 1.96 * std
+        right = mean + 1.96 * std
 
         print "Integrating (%d, %d) from %g to %g..." % (i, j, left, right),
         sys.stdout.flush() # XXX
