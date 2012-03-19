@@ -445,6 +445,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         processes = Pool(procs)
 
         vals = processes.map(ActivePMFEvaluator(self, key), pool)
+
+        processes.close()
+        processes.join() # map is blocking, but this kills zombies
+
         return max(zip(pool, vals), key=operator.itemgetter(1))[0]
 
 
