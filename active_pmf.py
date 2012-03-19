@@ -631,7 +631,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
 
 
 def main():
-    key_names = KEY_OPTIONS.keys()
+    key_names = set(KEY_OPTIONS.keys())
 
     import argparse
     parser = argparse.ArgumentParser()
@@ -645,11 +645,18 @@ def main():
     parser.add_argument('--no-plot', action='store_false', dest='plot')
     parser.add_argument('--processes', '-P', type=int, default=None)
     parser.add_argument('--outfile', default=None)
-    parser.add_argument('keys', nargs='*', default=key_names, choices=key_names)
+    parser.add_argument('keys', nargs='*', default=list(key_names))
     args = parser.parse_args()
 
+    for k in args.keys:
+        if k not in key_names:
+            import sys
+            sys.stderr.write("Invalid key name %s; options are %s.\n" % (
+                k, ', '.join(key_names)))
+            sys.exit(1)
+
     try:
-        compare(args.keys,
+        compare(args.keys or key_names,
                 num_users=args.num_users, num_items=args.num_items,
                 rank=args.gen_rank, latent_d=args.latent_d,
                 noise=args.noise,
