@@ -8,8 +8,8 @@ from __future__ import division
 from copy import deepcopy
 import itertools as itools
 import math
+import operator
 import random
-import sys # XXX
 
 import numpy as np
 
@@ -72,6 +72,16 @@ def project_psd(mat, min_eig=0):
 
 ################################################################################
 ### Main code
+
+# helper for multiprocessing
+class ActivePMFEvaluator(object):
+    def __init__(self, apmf, key):
+        self.apmf = apmf
+        self.key_name = key.__name__
+
+    def __call__(self, ij):
+        return getattr(self.apmf, self.key_name)(ij)
+
 
 class ActivePMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=1):
@@ -350,6 +360,12 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
         )
 
+    def random_weighting(self, ij):
+        return random.random()
+
+    def exp_approx_entropy_byapprox(self, ij):
+        return self.exp_approx_entropy(ij, False)
+
     def exp_approx_entropy(self, ij, use_pmf=True):
         '''
         The expected entropy in our approximation of U and V if we know Rij,
@@ -378,8 +394,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         def weighted_entropy_with_ij_val(v):
             assert isinstance(v, float)
-            print ".",
-            sys.stdout.flush()
             apmf = deepcopy(self)
             apmf.add_rating(i, j, v)
             apmf.fit() # XXX is this necessary?
@@ -393,16 +407,17 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         left = mean - 1.96 * std
         right = mean + 1.96 * std
 
-        print "Integrating (%d, %d) from %g to %g..." % (i, j, left, right),
-        sys.stdout.flush() # XXX
         est, abserr = quad(weighted_entropy_with_ij_val, left, right,
-                epsabs=1e-3, epsrel=1e-3)
-        print "done (%g, %g)" % (est, abserr)
-        return -est
-
+                epsabs=1e-2, epsrel=1e-2)
+        print "(%d, %d) integrated from %g to %g:\t %g +- %g" % (
+                i, j, left, right, est, abserr)
+        return est
 
 
     def pick_query_point(self, pool=None, key=None):
+        return self.pick_query_point_multiprocessing(pool, key)
+
+    def pick_query_point_single(self, pool=None, key=None):
         '''
         Use the approximation of the PMF model to select the next point to
         query, choosing elements according to key, which should be a function
@@ -416,6 +431,22 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         if key is None:
             key = ActivePMF.pred_variance
         return max(pool, key=lambda ij: key(self, ij))
+
+    def pick_query_point_multiprocessing(self, pool=None, key=None, procs=None):
+        # NOTE: key has to be a method of ActivePMF
+        if pool is None:
+            pool = self.unrated
+        if key is None:
+            key = ActivePMF.pred_variance
+
+        # TODO: use np.save instead of pickle to transfer data
+        # (or maybe shared memory? http://stackoverflow.com/q/5033799/344821)
+        from multiprocessing import Pool
+        processes = Pool(procs)
+
+        vals = processes.map(ActivePMFEvaluator(self, key), pool)
+        return max(zip(pool, vals), key=operator.itemgetter(1))[0]
+
 
 
 ################################################################################
@@ -500,7 +531,8 @@ def plot_predictions(apmf, real):
     plt.colorbar()
 
 
-def full_test(apmf, real, picker_key=ActivePMF.pred_variance, fit_normal=True):
+def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
+              fit_normal=True, processes=None):
     print "Training PMF:"
     for ll in apmf.fit_lls():
         print "\tLL: %g" % ll
@@ -525,7 +557,13 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance, fit_normal=True):
     while apmf.unrated:
         print
         #print '=' * 80
-        i, j = apmf.pick_query_point(key=picker_key)
+
+        if processes == 1:
+            i, j = apmf.pick_query_point_single(key=picker_key)
+        else:
+            i, j = apmf.pick_query_point_multiprocessing(
+                    key=picker_key, procs=processes)
+
         apmf.add_rating(i, j, real[i, j])
         print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
 
@@ -547,27 +585,32 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance, fit_normal=True):
         yield len(apmf.rated), rmse
 
 
-def compare(plot=True, saveplot=None, latent_d=5, **kwargs):
+KEY_OPTIONS = {
+    "uv-entropy-approx": (
+        "U/V Entropy (Normal Prediction)",
+        ActivePMF.exp_approx_entropy_byapprox,
+        True),
+    "uv-entropy-pred": ("U/V Entropy (PMF Prediction)",
+        ActivePMF.exp_approx_entropy,
+        True),
+    "pred-variance": ("Prediction Variance", ActivePMF.pred_variance, True),
+    "random": ("Random", ActivePMF.random_weighting, False),
+}
+
+def compare(key_names, plot=True, saveplot=None, latent_d=5,
+            processes=None, **kwargs):
     real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
-    keys = [
-        ("U/V Entropy (PMF Prediction)",
-            lambda *a,**k: ActivePMF.exp_approx_entropy(*a, use_pmf=True, **k),
-            True),
-        ("U/V Entropy (Normal Prediction)",
-            lambda *a,**k: ActivePMF.exp_approx_entropy(*a, use_pmf=False, **k),
-            True),
-        ("Prediction Variance", ActivePMF.pred_variance, True),
-        ("Random", lambda apmf, ij: random.random(), False),
-    ]
+    keys = [KEY_OPTIONS[k] for k in key_names]
 
     results = []
     for name, key, do_fit in keys:
         print '=' * 80
         print "Starting", name
         print '=' * 80
-        results.append(list(full_test(deepcopy(apmf), real, key, do_fit)))
+        results.append(list(full_test(deepcopy(apmf), real, key, do_fit,
+            processes=processes)))
         print '=' * 80
         print '=' * 80
 
@@ -598,15 +641,19 @@ def main():
     parser.add_argument('--rating-prob', '-r', type=float, default=0)
     parser.add_argument('--plot', action='store_true', default=True)
     parser.add_argument('--no-plot', action='store_false', dest='plot')
-    parser.add_argument('outfile', nargs='?', default=None)
+    parser.add_argument('--processes', '-P', type=int, default=None)
+    parser.add_argument('--outfile', default=None)
+    parser.add_argument('keys', nargs='*', default=KEY_OPTIONS.keys())
     args = parser.parse_args()
 
     try:
-        compare(num_users=args.num_users, num_items=args.num_items,
+        compare(args.keys,
+                num_users=args.num_users, num_items=args.num_items,
                 rank=args.gen_rank, latent_d=args.latent_d,
                 noise=args.noise,
                 rating_prob=args.rating_prob,
-                plot=args.plot, saveplot=args.outfile)
+                plot=args.plot, saveplot=args.outfile,
+                processes=args.processes)
     except Exception:
         import pdb, traceback
         print
