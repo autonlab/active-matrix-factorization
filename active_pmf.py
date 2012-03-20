@@ -69,11 +69,10 @@ def project_psd(mat, min_eig=0):
         mat = (mat + mat.T) / 2
     return mat
 
-
 ################################################################################
-### Main code
+### Helpers
 
-# helper for multiprocessing
+# avoid pickling methods
 class ActivePMFEvaluator(object):
     def __init__(self, apmf, key):
         self.apmf = apmf
@@ -82,6 +81,35 @@ class ActivePMFEvaluator(object):
     def __call__(self, ij):
         return getattr(self.apmf, self.key_name)(ij)
 
+# decorators to set properties of different active learning criteria
+def do_normal_fit(val):
+    def decorator(f):
+        f.do_normal_fit = val
+        return f
+    return decorator
+
+def spawn_processes(val):
+    def decorator(f):
+        f.spawn_processes = val
+        return f
+    return decorator
+
+def nice_name(name):
+    def decorator(f):
+        f.nice_name = name
+        return f
+    return decorator
+
+def minimize(f):
+    f.chooser = min
+    return f
+def maximize(f):
+    f.chooser = max
+    return f
+
+
+################################################################################
+### Main code
 
 class ActivePMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=1):
@@ -109,22 +137,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
-    def initialize_approx(self):
-        '''
-        Also sets up the normal approximation to be near the PMF result
-        (throwing away any old approximation).
-        '''
-        # set mean to PMF's MAP values
-        self.mean = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
-
-        # set covariance to a random positive-definite matrix
-        s = np.random.normal(0, 2, (self.approx_dim, self.approx_dim))
-        self.cov = project_psd(s, min_eig=self.min_eig)
-
-    def mean_meandiff(self):
-        p = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
-        return np.abs(self.mean - p).mean()
-
     def _exp_dotprod_sq(self, i, j, mean, cov):
         '''E[ (U_i^T V_j)^2 ]'''
         u = self.u
@@ -142,8 +154,23 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                 exp += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
         return exp
 
+    ############################################################################
+    ### Gradient descent to find the normal approximation
+
+    def initialize_approx(self):
+        '''
+        Sets up the normal approximation to be near the MAP PMF result
+        (throwing away any old approximation).
+        '''
+        # set mean to PMF's MAP values
+        self.mean = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
+
+        # set covariance to a random positive-definite matrix
+        s = np.random.normal(0, 2, (self.approx_dim, self.approx_dim))
+        self.cov = project_psd(s, min_eig=self.min_eig)
+
     def kl_divergence(self, mean=None, cov=None):
-        '''KL(PMF || approximation), up to an additive constant'''
+        '''KL(PMF model || approximation), up to an additive constant'''
         if mean is None: mean = self.mean
         if cov is None: cov = self.cov
         if mean is None or cov is None:
@@ -319,6 +346,17 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             old_kl = new_kl
 
 
+    ############################################################################
+    ### Helpers to get various things based on the current approximation
+
+    def mean_meandiff(self):
+        '''
+        Mean absolute difference between the means of the normal approximation
+        and the MAP values.
+        '''
+        p = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
+        return np.abs(self.mean - p).mean()
+
     def approx_pred_means_vars(self):
         '''
         Returns the mean and variance of the predicted R matrix under
@@ -330,6 +368,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         mean = self.mean
         cov = self.cov
 
+        # TODO: vectorize
         for i in xrange(self.num_users):
             us = self.u[:, i]
             for j in xrange(self.num_items):
@@ -339,7 +378,58 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         return p_mean, p_var
 
+    def approx_pred_covs(self):
+        '''
+        Returns the covariance between elements of the predicted R matrix
+        under the normal approximation.
+        '''
+        ijs = list(itools.product(xrange(self.num_users),
+                                  xrange(self.num_items)))
+        pred_covs = np.zeros((len(ijs), len(ijs)))
+        # covariance of U_i.V_j with U_a.V_b
 
+        mean = self.mean
+        cov = self.cov
+
+        # TODO: vectorize
+        for idx1, (i, j) in ijs:
+            for idx2, (a, b) in ijs:
+                if idx1 == idx2:
+                    # variance of U_i.V_j
+                    us = self.u[:, i]
+                    vs = self.v[:, j]
+
+                    m = (mean[us] * mean[vs] + cov[us, vs]).sum()
+                    pred_covs[idx1, idx2] = \
+                            self._exp_dotprod_sq(i, j, mean, cov) - m**2
+
+                elif i == a:
+                    # cov of U_i.V_j with U_i.V_b, j != b
+                    pass
+
+                elif j == b:
+                    # cov of U_i.V_j with U_a.V_j, i != a
+                    pass
+
+                else:
+                    # cov of U_i.V_j with U_a.V_b, i != a, j != b
+                    pass
+
+
+    ############################################################################
+    ### Various criteria to use to pick query points
+
+    @do_normal_fit(False)
+    @spawn_processes(False)
+    @nice_name("Random")
+    @maximize
+    def random_weighting(self, ij):
+        return random.random()
+
+    @do_normal_fit(True)
+    @spawn_processes(False)
+    @nice_name("Prediction Variance")
+    @maximize
     def pred_variance(self, ij):
         '''
         The variance in our prediction for R_ij, according to the current
@@ -360,23 +450,121 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
         )
 
-    def random_weighting(self, ij):
-        return random.random()
+    def _approx_entropy(self):
+        '''Entropy of the normal approximation, up to an additive constant'''
+        sign, logdet = np.linalg.slogdet(self.cov)
+        assert sign == 1
+        return logdet
 
+    @do_normal_fit(True)
+    @spawn_processes(True)
+    @nice_name("U/V Expected Entropy (MAP)")
+    @minimize
+    def exp_approx_entropy(self, ij):
+        '''
+        The expected entropy in our approximation of U and V if we know Rij,
+        calculated according to our current MAP belief about the distribution
+        of Rij, up to a constant common to all (i,j) pairs.
+        '''
+        return self._integrate_prediction(ij, ActivePMF._approx_entropy,
+                use_map=True)
+
+    @do_normal_fit(True)
+    @spawn_processes(True)
+    @nice_name("U/V Expected Entropy (Approximation)")
+    @minimize
     def exp_approx_entropy_byapprox(self, ij):
-        return self.exp_approx_entropy(ij, False)
-
-    def exp_approx_entropy(self, ij, use_pmf=True):
         '''
         The expected entropy in our approximation of U and V if we know Rij,
         calculated according to our current belief about the distribution of
-        Rij, up to a constant common to all (i,j) pairs.
+        Rij pretending that it's normal with mean and variance defined by our
+        distribution over U and V, up to a constant common to all (i,j) pairs.
+        '''
+        return self._integrate_prediction(ij, ActivePMF._approx_entropy,
+                use_map=False)
+
+
+    def _pred_entropy_bound(self):
+        '''
+        Upper bound on the entropy of the predicted matrix, up to an additive
+        constant.
+        '''
+        p_cov = self.approx_pred_covs()
+        sign, logdet = np.linalg.slogdet(p_cov)
+        assert sign == 1
+        return logdet
+
+    @do_normal_fit(True)
+    @spawn_processes(True)
+    @nice_name("Prediction Expected Entropy Bound (MAP)")
+    @minimize
+    def exp_pred_entropy_bound(self, ij):
+        '''
+        The expected entropy in our predicted R matrix if we know Rij,
+        calculated according to our current MAP belief about the distribution
+        of Rij, up to a constant common to all (i,j) pairs.
+        '''
+        return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
+                use_map=True)
+
+    @do_normal_fit(True)
+    @spawn_processes(True)
+    @nice_name("Prediction Expected Entropy Bound (Approximation)")
+    @minimize
+    def exp_pred_entropy_bound_byapprox(self, ij):
+        '''
+        The expected entropy in our predicted R matrix if we know Rij,
+        calculated according to our current belief about the distribution of
+        Rij pretending that it's normal with mean and variance defined by our
+        distribution over U and V, up to a constant common to all (i,j) pairs.
+        '''
+        return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
+                use_map=False)
+
+
+    @do_normal_fit(True)
+    @spawn_processes(True)
+    @nice_name("Expected Total Prediction Variance (MAP)")
+    @minimize
+    def exp_total_variance(self, ij):
+        '''
+        The total expected variance in our predicted R matrix if we know Rij,
+        calculated according to our current MAP belief about the distribution
+        of Rij, up to a constant common to all (i,j) pairs.
+        '''
+        return self._integrate_prediction(ij,
+                lambda self: self.approx_pred_means_vars()[1].sum(),
+                use_map=True)
+
+    @do_normal_fit(True)
+    @spawn_processes(True)
+    @nice_name("Expected Total Prediction Variance (Approximation)")
+    @minimize
+    def exp_total_variance_byapprox(self, ij):
+        '''
+        The total expected variance in our predicted R matrix if we know Rij,
+        calculated according to our current belief about the distribution of
+        Rij pretending that it's normal with mean and variance defined by our
+        distribution over U and V, up to a constant common to all (i,j) pairs.
+        '''
+        return self._integrate_prediction(ij,
+                lambda self: self.approx_pred_means_vars()[1].sum(),
+                use_map=False)
+
+
+    def _integrate_prediction(self, ij, fn, use_map=True):
+        '''
+        Calculates \int fn(new apmf) p(R_ij) dR_ij through numerical
+        integration.
+
+        If use_map, uses the current MAP estimate of R_ij; otherwise, uses
+        the current approximation.
         '''
         from scipy.integrate import quad
         i, j = ij
 
-        # TODO: use PMF's distribution for Rij or the normal approximation's?
-        if use_pmf:
+        # which distribution for R_ij are we using?
+        if use_map:
             mean = np.dot(self.users[i,:], self.items[j,:])
             var = self.sigma_sq
         else:
@@ -390,29 +578,28 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             var = self._exp_dotprod_sq(i, j, self.mean, self.cov) - mean**2
 
         std = math.sqrt(var)
-        scale = math.sqrt(2 * math.pi) * std
-
-        def weighted_entropy_with_ij_val(v):
+        scaler = math.sqrt(2 * math.pi) * std
+        def calculate_fn(v):
             assert isinstance(v, float)
             apmf = deepcopy(self)
             apmf.add_rating(i, j, v)
-            apmf.fit() # XXX is this necessary?
+            # apmf.fit() # not necessary, at least for now
             apmf.fit_normal()
 
-            sign, logdet = np.linalg.slogdet(apmf.cov)
-            assert sign == 1
-            return -logdet * np.exp(0.5 * (v - mean)**2 / var) / scale
+            return fn(apmf) * np.exp(0.5 * (v - mean)**2 / var) / scaler
 
         # only take the expectation out to 1.96 sigma (95% of normal mass)
         left = mean - 1.96 * std
         right = mean + 1.96 * std
 
-        est, abserr = quad(weighted_entropy_with_ij_val, left, right,
-                epsabs=1e-2, epsrel=1e-2)
+        est, abserr = quad(calculate_fn, left, right, epsabs=1e-2, epsrel=1e-2)
         print "(%d, %d) integrated from %g to %g:\t %g +- %g" % (
                 i, j, left, right, est, abserr)
         return est
 
+
+    ############################################################################
+    ### Methods to actually pick a query point in active learning
 
     def pick_query_point(self, pool=None, key=None):
         return self.pick_query_point_multiprocessing(pool, key)
@@ -430,7 +617,9 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             pool = self.unrated
         if key is None:
             key = ActivePMF.pred_variance
-        return max(pool, key=lambda ij: key(self, ij))
+        chooser = getattr(key, 'chooser', max)
+
+        return chooser(pool, key=lambda ij: key(self, ij))
 
     def pick_query_point_multiprocessing(self, pool=None, key=None, procs=None):
         # NOTE: key has to be a method of ActivePMF
@@ -438,6 +627,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             pool = self.unrated
         if key is None:
             key = ActivePMF.pred_variance
+        chooser = getattr(key, 'chooser', max)
 
         # TODO: use np.save instead of pickle to transfer data
         # (or maybe shared memory? http://stackoverflow.com/q/5033799/344821)
@@ -449,7 +639,36 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         processes.close()
         processes.join() # map is blocking, but this kills zombies
 
-        return max(zip(pool, vals), key=operator.itemgetter(1))[0]
+        return chooser(zip(pool, vals), key=operator.itemgetter(1))[0]
+
+    def get_key_evals(self, pool=None, key=None, procs=None):
+        '''
+        Returns a matrix in the shape of the prediction matrix, with elements
+        set to the value of key for each element of pool (default:
+        self.unrated), and the rest of the elements set to nan.
+        '''
+        if pool is None:
+            pool = self.unrated
+        if key is None:
+            key = ActivePMF.pred_variance
+
+        evals = np.zeros((self.num_users, self.num_items))
+        evals[:] = np.nan
+
+        try:
+            if procs == 1 or not key.spawn_processes:
+                raise ImportError("hackety hack hack, shouldn't propagate")
+            from multiprocessing import Pool
+        except ImportError:
+            vals = [key(self, ij) for ij in pool]
+        else:
+            processes = Pool(procs)
+            vals = processes.map(ActivePMFEvaluator(self, key), pool)
+            processes.close()
+            processes.join()
+
+        evals[zip(*pool)] = vals
+        return evals
 
 
 
@@ -506,6 +725,7 @@ def plot_variances(apmf, vmax=None):
 
 def plot_predictions(apmf, real):
     from matplotlib import pyplot as plt
+    from matplotlib import cm
 
     pred = apmf.predicted_matrix()
     a_mean, a_var = apmf.approx_pred_means_vars()
@@ -514,25 +734,44 @@ def plot_predictions(apmf, real):
     xs = (real, pred, a_mean)
     norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
 
-    plt.subplot(2, 2, 1)
-    plt.imshow(real, norm=norm, interpolation='nearest')
-    plt.title("Real")
-    plt.colorbar()
+    rated_alphas = zip(*((i, j, -1) for i, j in apmf.rated))
+    def show_with_alpha(mat, title, subplot, alpha=.5, norm_=norm):
+        plt.subplot(subplot)
 
-    plt.subplot(2, 2, 2)
-    plt.imshow(pred, norm=norm, interpolation='nearest')
-    plt.title("Predicted")
-    plt.colorbar()
+        sm = cm.ScalarMappable(norm=norm_, cmap=cm.winter)
+        rgba = sm.to_rgba(mat)
+        rgba[rated_alphas] = alpha
+        plt.imshow(rgba, norm=norm_, cmap=cm.winter, interpolation='nearest')
 
-    plt.subplot(2, 2, 3)
-    plt.imshow(a_mean, norm=norm, interpolation='nearest')
-    plt.title("Approximation: Means")
-    plt.colorbar()
+        plt.title(title)
+        plt.colorbar()
 
-    plt.subplot(2, 2, 4)
-    plt.imshow(np.sqrt(a_std), interpolation='nearest')
-    plt.title("Approximation: Std Devs")
-    plt.colorbar()
+    show_with_alpha(real, "Real", 221)
+    show_with_alpha(pred, "MAP", 222)
+    show_with_alpha(a_mean, "Normal: Mean", 223)
+    show_with_alpha(a_std, "Normal: Std Dev", 224, 1,
+            plt.Normalize(a_std.min(), a_std.max()))
+
+
+def plot_criteria(apmf, keys):
+    from matplotlib import pyplot as plt
+    from matplotlib import cm
+
+    n = len(keys)
+    if n <= 3:
+        nr = 1
+        nc = n
+    else:
+        nc = math.ceil(math.sqrt(n))
+        nr = math.ceil(n / nc)
+
+    for idx, key in enumerate(keys):
+        evals = apmf.get_key_evals(key=key)
+
+        plt.subplot(nr, nc, idx+1)
+        plt.imshow(evals, interpolation='nearest', cmap=cm.winter)
+        plt.title(key.nice_name)
+        plt.colorbar()
 
 
 def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
@@ -589,24 +828,18 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         yield len(apmf.rated), rmse
 
 
-# cli name => (legend name, method, fit the approximation, spawn processes)
-KEY_OPTIONS = {
-    "uv-entropy-approx": (
-        "U/V Entropy (Normal Prediction)",
-        ActivePMF.exp_approx_entropy_byapprox,
-        True, True),
-    "uv-entropy-pred": (
-        "U/V Entropy (PMF Prediction)",
-        ActivePMF.exp_approx_entropy,
-        True, True),
-    "pred-variance": (
-        "Prediction Variance",
-        ActivePMF.pred_variance,
-        True, False),
-    "random": (
-        "Random",
-        ActivePMF.random_weighting,
-        False, False),
+KEY_FUNCS = {
+    "random": ActivePMF.random_weighting,
+    "pred-variance": ActivePMF.pred_variance,
+
+    "total-variance": ActivePMF.exp_total_variance,
+    "total-variance-approx": ActivePMF.exp_total_variance_byapprox,
+
+    "uv-entropy": ActivePMF.exp_approx_entropy,
+    "uv-entropy-approx": ActivePMF.exp_approx_entropy_byapprox,
+
+    #"pred-entropy-bound": ActivePMF.exp_pred_entropy_bound,
+    #"pred-entropy-bound-approx": ActivePMF.exp_pred_entropy_bound_byapprox,
 }
 
 def compare(key_names, plot=True, saveplot=None, latent_d=5,
@@ -614,15 +847,19 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
     real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
-    keys = [KEY_OPTIONS[k] for k in key_names]
-
     results = []
-    for name, key, do_fit, spawn in keys:
+    for key_name in key_names:
+        key = KEY_FUNCS[key_name]
+
         print '=' * 80
-        print "Starting", name
+        print "Starting", key.nice_name
         print '=' * 80
-        results.append(list(full_test(deepcopy(apmf), real, key, do_fit,
-            processes=processes if spawn else 1)))
+        results.append(list(full_test(
+            deepcopy(apmf),
+            real,
+            key,
+            key.do_normal_fit,
+            processes=processes if key.spawn_processes else 1)))
         print '=' * 80
         print '=' * 80
 
@@ -632,8 +869,8 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")
 
-        for (name, key, do_fit, spawn), result in zip(keys, results):
-            plt.plot(*zip(*result), label=name)
+        for key_name, result in zip(key_names, results):
+            plt.plot(*zip(*result), label=KEY_FUNCS[key_name].nice_name)
 
         plt.legend()
         if saveplot is None:
@@ -643,7 +880,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
 
 
 def main():
-    key_names = set(KEY_OPTIONS.keys())
+    key_names = set(KEY_FUNCS.keys())
 
     import argparse
     parser = argparse.ArgumentParser()
