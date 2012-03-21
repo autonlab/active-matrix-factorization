@@ -845,11 +845,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         print
         #print '=' * 80
 
-        if processes == 1:
-            i, j = apmf.pick_query_point_single(key=picker_key)
-        else:
-            i, j = apmf.pick_query_point_multiprocessing(
-                    key=picker_key, procs=processes)
+        i, j = apmf.pick_query_point(key=picker_key, procs=processes)
 
         apmf.add_rating(i, j, real[i, j])
         print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
