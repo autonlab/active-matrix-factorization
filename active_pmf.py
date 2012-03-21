@@ -6,7 +6,8 @@ Code to do active learning on a PMF model.
 from __future__ import division
 
 from copy import deepcopy
-import itertools as itools
+import functools
+from itertools import product
 import math
 import operator
 import random
@@ -51,6 +52,16 @@ def exp_squared(mean, cov, a, b):
     '''E[X_a^2 X_b^2] for N(mean, cov)'''
     return 4 * mean[a] * mean[b] * cov[a,b] + 2*cov[a,b]**2 + \
             (mean[a]**2 + cov[a,a]) * (mean[b]**2 + cov[b,b])
+
+def exp_a2bc(mean, cov, a, b, c):
+    '''E[X_a^2 X_b X_c for N(mean, cov)'''
+    ma, mb, mc = mean[[a,b,c]]
+    return (
+        (ma**2 + cov[a,a]) * (mb * mc + cov[b,c])
+        + 2 * ma * mc * cov[a,b]
+        + 2 * ma * mb * cov[a,c]
+        + 2 * cov[a,b] * cov[a,c]
+    )
 
 
 def project_psd(mat, min_eig=0):
@@ -383,37 +394,82 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         Returns the covariance between elements of the predicted R matrix
         under the normal approximation.
         '''
-        ijs = list(itools.product(xrange(self.num_users),
-                                  xrange(self.num_items)))
+        ijs = list(product(xrange(self.num_users), xrange(self.num_items)))
         pred_covs = np.zeros((len(ijs), len(ijs)))
         # covariance of U_i.V_j with U_a.V_b
 
         mean = self.mean
         cov = self.cov
 
+        qexp = functools.partial(quadexpect, mean, cov)
+        a2bc = functools.partial(exp_a2bc, mean, cov)
+
         # TODO: vectorize
-        for idx1, (i, j) in ijs:
-            for idx2, (a, b) in ijs:
-                if idx1 == idx2:
-                    # variance of U_i.V_j
-                    us = self.u[:, i]
-                    vs = self.v[:, j]
+        for idx1, (i, j) in enumerate(ijs):
+            u_i = self.u[:,i]
+            v_j = self.v[:,j]
 
-                    m = (mean[us] * mean[vs] + cov[us, vs]).sum()
-                    pred_covs[idx1, idx2] = \
-                            self._exp_dotprod_sq(i, j, mean, cov) - m**2
+            for idx2, (a, b) in enumerate(ijs):
+                if idx1 == idx2: # variance of U_i.V_j
+                    m = (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum()
+                    cv = self._exp_dotprod_sq(i, j, mean, cov) - m**2
 
-                elif i == a:
-                    # cov of U_i.V_j with U_i.V_b, j != b
-                    pass
+                elif i == a: # cov of U_i.V_j with U_i.V_b, j != b
+                    v_b = self.v[:, b]
+                    cv = 0
 
-                elif j == b:
-                    # cov of U_i.V_j with U_a.V_j, i != a
-                    pass
+                    # sum_{k,l} E[Uki Vkj Uli Vlb]
+                    for k in xrange(self.latent_d):
+                        for l in xrange(k):
+                            cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
 
-                else:
-                    # cov of U_i.V_j with U_a.V_b, i != a, j != b
-                    pass
+                        cv += a2bc(u_i[k], v_j[k], v_b[k])
+
+                        for l in xrange(k+1, self.latent_d):
+                            cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
+
+                    # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
+                    e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
+                    e_ib = mean[u_i] * mean[v_b] + cov[u_i, v_b]
+                    cv -= sum(ij_k * ib_l for ij_k, ib_l in product(e_ij, e_ib))
+
+                elif j == b: # cov of U_i.V_j with U_a.V_j, i != a
+                    u_a = self.u[:, a]
+                    cv = 0
+
+                    # sum_{k,l} E[Uki Vkj Ula Vlj]
+                    for k in xrange(self.latent_d):
+                        for l in xrange(k):
+                            cv += qexp(u_i[k], v_j[k], u_a[l], v_j[l])
+
+                        cv += a2bc(v_j[k], u_i[k], u_a[k])
+
+                        for l in xrange(k+1, self.latent_d):
+                            cv += qexp(u_i[k], v_j[k], u_a[l], v_j[l])
+
+                    # - sum_{k,l} E[Uki Vkj] E[Ula Vlj]
+                    e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
+                    e_aj = mean[u_a] * mean[v_j] + cov[u_a, v_j]
+                    cv -= sum(ij_k * aj_l for ij_k, aj_l in product(e_ij, e_aj))
+
+                else: # cov of U_i.V_j with U_a.V_b, i != a, j != b
+                    u_a = self.u[:, a]
+                    v_b = self.v[:, b]
+                    cv = 0
+
+                    # sum_{k,l} E[Uki Vkj Ula Vlb]
+                    for k in xrange(self.latent_d):
+                        for l in xrange(self.latent_d):
+                            cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
+
+                    # - sum_{k,l} E[Uki Vkj] E[Ula Vlb]
+                    e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
+                    e_ab = mean[u_a] * mean[v_b] + cov[u_a, v_b]
+                    cv -= sum(ij_k * ab_l for ij_k, ab_l in product(e_ij, e_ab))
+
+                pred_covs[idx1, idx2] = cv
+
+        return pred_covs
 
 
     ############################################################################
@@ -500,9 +556,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     @minimize
     def exp_pred_entropy_bound(self, ij):
         '''
-        The expected entropy in our predicted R matrix if we know Rij,
-        calculated according to our current MAP belief about the distribution
-        of Rij, up to a constant common to all (i,j) pairs.
+        The expectation on an upper bound of the entropy in our predicted R
+        matrix if we know Rij, calculated according to our current MAP belief
+        about the distribution of Rij, up to a constant common to all (i,j)
+        pairs.
         '''
         return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
                 use_map=True)
@@ -513,10 +570,11 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     @minimize
     def exp_pred_entropy_bound_byapprox(self, ij):
         '''
-        The expected entropy in our predicted R matrix if we know Rij,
-        calculated according to our current belief about the distribution of
-        Rij pretending that it's normal with mean and variance defined by our
-        distribution over U and V, up to a constant common to all (i,j) pairs.
+        The expectation on an upper bound of the entropy in our predicted R
+        matrix if we know Rij, calculated according to our current belief about
+        the distribution of Rij pretending that it's normal with mean and
+        variance defined by our distribution over U and V, up to a constant
+        common to all (i,j) pairs.
         '''
         return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
                 use_map=False)
@@ -601,17 +659,17 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     ############################################################################
     ### Methods to actually pick a query point in active learning
 
-    def pick_query_point(self, pool=None, key=None):
-        return self.pick_query_point_multiprocessing(pool, key)
-
-    def pick_query_point_single(self, pool=None, key=None):
+    def pick_query_point(self, pool=None, key=None, procs=None):
         '''
         Use the approximation of the PMF model to select the next point to
-        query, choosing elements according to key, which should be a function
-        that takes an ActivePMF instance and a user-item pair as arguments.
-        Defaults to pred_variance.
+        query, choosing elements according to key, which should be an ActivePMF
+        method taking a user-item pair as its argument. Defaults to
+        pred_variance.
 
         The choices can be limited to an iterable pool (default self.unrated).
+
+        Spawns procs processes (default 1 per cpu), unless key.spawn_processses
+        is False, procs is 1, or multiprocessing isn't available.
         '''
         if pool is None:
             pool = self.unrated
@@ -619,27 +677,26 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             key = ActivePMF.pred_variance
         chooser = getattr(key, 'chooser', max)
 
-        return chooser(pool, key=lambda ij: key(self, ij))
-
-    def pick_query_point_multiprocessing(self, pool=None, key=None, procs=None):
-        # NOTE: key has to be a method of ActivePMF
-        if pool is None:
-            pool = self.unrated
-        if key is None:
-            key = ActivePMF.pred_variance
-        chooser = getattr(key, 'chooser', max)
-
-        # TODO: use np.save instead of pickle to transfer data
-        # (or maybe shared memory? http://stackoverflow.com/q/5033799/344821)
-        from multiprocessing import Pool
-        processes = Pool(procs)
-
-        vals = processes.map(ActivePMFEvaluator(self, key), pool)
-
-        processes.close()
-        processes.join() # map is blocking, but this kills zombies
-
+        vals = self._get_key_vals(pool, key, procs)
         return chooser(zip(pool, vals), key=operator.itemgetter(1))[0]
+
+
+    def _get_key_vals(self, pool, key, procs):
+        try:
+            if procs == 1 or not getattr(key, 'spawn_processes', True):
+                raise ImportError("hackety hack hack, shouldn't propagate")
+            from multiprocessing import Pool
+        except ImportError:
+            vals = [key(self, ij) for ij in pool]
+        else:
+            # TODO: use np.save instead of pickle to transfer data
+            # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
+            processes = Pool(procs)
+            vals = processes.map(ActivePMFEvaluator(self, key), pool)
+            processes.close()
+            processes.join() # make sure zombies die
+
+        return vals
 
     def get_key_evals(self, pool=None, key=None, procs=None):
         '''
@@ -654,20 +711,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         evals = np.zeros((self.num_users, self.num_items))
         evals[:] = np.nan
-
-        try:
-            if procs == 1 or not key.spawn_processes:
-                raise ImportError("hackety hack hack, shouldn't propagate")
-            from multiprocessing import Pool
-        except ImportError:
-            vals = [key(self, ij) for ij in pool]
-        else:
-            processes = Pool(procs)
-            vals = processes.map(ActivePMFEvaluator(self, key), pool)
-            processes.close()
-            processes.join()
-
-        evals[zip(*pool)] = vals
+        evals[zip(*pool)] = self._get_key_vals(pool, key, procs)
         return evals
 
 
@@ -707,7 +751,7 @@ def plot_variances(apmf, vmax=None):
     from matplotlib import pyplot as plt
     var = np.zeros((apmf.num_users, apmf.num_items))
     total = 0
-    for i, j in itools.product(xrange(apmf.num_users), xrange(apmf.num_items)):
+    for i, j in product(xrange(apmf.num_users), xrange(apmf.num_items)):
         if (i, j) in apmf.rated:
             var[i, j] = float('nan')
         else:
@@ -753,7 +797,7 @@ def plot_predictions(apmf, real):
             plt.Normalize(a_std.min(), a_std.max()))
 
 
-def plot_criteria(apmf, keys):
+def plot_criteria(apmf, keys, procs=None):
     from matplotlib import pyplot as plt
     from matplotlib import cm
 
@@ -766,7 +810,7 @@ def plot_criteria(apmf, keys):
         nr = math.ceil(n / nc)
 
     for idx, key in enumerate(keys):
-        evals = apmf.get_key_evals(key=key)
+        evals = apmf.get_key_evals(key=key, procs=procs)
 
         plt.subplot(nr, nc, idx+1)
         plt.imshow(evals, interpolation='nearest', cmap=cm.winter)
@@ -838,8 +882,8 @@ KEY_FUNCS = {
     "uv-entropy": ActivePMF.exp_approx_entropy,
     "uv-entropy-approx": ActivePMF.exp_approx_entropy_byapprox,
 
-    #"pred-entropy-bound": ActivePMF.exp_pred_entropy_bound,
-    #"pred-entropy-bound-approx": ActivePMF.exp_pred_entropy_bound_byapprox,
+    "pred-entropy-bound": ActivePMF.exp_pred_entropy_bound,
+    "pred-entropy-bound-approx": ActivePMF.exp_pred_entropy_bound_byapprox,
 }
 
 def compare(key_names, plot=True, saveplot=None, latent_d=5,
