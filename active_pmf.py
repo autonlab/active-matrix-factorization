@@ -887,19 +887,23 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
     real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
+    import time
     results = []
+    times = []
     for key_name in key_names:
         key = KEY_FUNCS[key_name]
 
         print '=' * 80
         print "Starting", key.nice_name
         print '=' * 80
+        start = time.clock()
         results.append(list(full_test(
             deepcopy(apmf),
             real,
             key,
             key.do_normal_fit,
             processes=processes if key.spawn_processes else 1)))
+        times.append(time.clock() - start)
         print '=' * 80
         print '=' * 80
 
@@ -912,11 +916,15 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         for key_name, result in zip(key_names, results):
             plt.plot(*zip(*result), label=KEY_FUNCS[key_name].nice_name)
 
-        plt.legend()
+        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         if saveplot is None:
             plt.show()
         else:
             plt.savefig(saveplot)
+
+            import cPickle as pickle
+            with open(saveplot + '.pkl', 'w') as f:
+                pickle.dump(zip(key_names, results, times), f)
 
 
 def main():
