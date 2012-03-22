@@ -650,7 +650,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         left = mean - 1.96 * std
         right = mean + 1.96 * std
 
-        est, abserr = quad(calculate_fn, left, right, epsabs=1e-1, epsrel=1e-1)
+        est, abserr = quad(calculate_fn, left, right, epsrel=.02)
         print "(%d, %d) integrated from %g to %g:\t %g +- %g" % (
                 i, j, left, right, est, abserr)
         return est
@@ -825,14 +825,14 @@ def plot_criteria(apmf, keys, procs=None):
 
 def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
               fit_normal=True, processes=None):
-    print "Training PMF:"
+    print "Training PMF"
     for ll in apmf.fit_lls():
         pass #print "\tLL: %g" % ll
 
     apmf.initialize_approx()
 
     if fit_normal:
-        print "Fitting normal:"
+        print "Fitting normal"
         for kl in apmf.fit_normal_kls():
             pass #print "\tKL: %g" % kl
             assert kl > -1e5
@@ -850,17 +850,18 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         print
         #print '=' * 80
 
+        print "Picking a query point..."
         i, j = apmf.pick_query_point(key=picker_key, procs=processes)
 
         apmf.add_rating(i, j, real[i, j])
         print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
 
-        print "Training PMF:"
+        print "Training PMF"
         for ll in apmf.fit_lls():
             pass # print "\tLL: %g" % ll
 
         if fit_normal:
-            print "Fitting normal:"
+            print "Fitting normal"
             for kl in apmf.fit_normal_kls():
                 pass # print "\tKL: %g" % kl
                 assert kl > -1e5
@@ -899,7 +900,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         key = KEY_FUNCS[key_name]
 
         print '=' * 80
-        print "Starting", key.nice_name, "(%d / %d)" % (i, len(key_names))
+        print "Starting", key.nice_name, "(%d / %d)" % (i+1, len(key_names))
         print '=' * 80
         start = time.time()
         results.append(list(full_test(
