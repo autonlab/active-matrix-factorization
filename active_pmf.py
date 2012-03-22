@@ -896,14 +896,14 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         print '=' * 80
         print "Starting", key.nice_name
         print '=' * 80
-        start = time.clock()
+        start = time.time()
         results.append(list(full_test(
             deepcopy(apmf),
             real,
             key,
             key.do_normal_fit,
             processes=processes if key.spawn_processes else 1)))
-        times.append(time.clock() - start)
+        times.append(time.time() - start)
         print '=' * 80
         print '=' * 80
 
