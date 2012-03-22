@@ -484,7 +484,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(False)
-    @nice_name("Prediction Variance")
+    @nice_name("Pred Variance")
     @maximize
     def pred_variance(self, ij):
         '''
@@ -514,7 +514,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(True)
-    @nice_name("U/V Expected Entropy (MAP)")
+    @nice_name("E[U/V Entropy] (MAP)")
     @minimize
     def exp_approx_entropy(self, ij):
         '''
@@ -527,7 +527,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(True)
-    @nice_name("U/V Expected Entropy (Approximation)")
+    @nice_name("E[U/V Entropy] (Approx)")
     @minimize
     def exp_approx_entropy_byapprox(self, ij):
         '''
@@ -552,7 +552,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(True)
-    @nice_name("Prediction Expected Entropy Bound (MAP)")
+    @nice_name("E[Pred Entropy Bound] (MAP)")
     @minimize
     def exp_pred_entropy_bound(self, ij):
         '''
@@ -566,7 +566,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(True)
-    @nice_name("Prediction Expected Entropy Bound (Approximation)")
+    @nice_name("E[Pred Entropy Bound] (Approx)")
     @minimize
     def exp_pred_entropy_bound_byapprox(self, ij):
         '''
@@ -582,7 +582,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(True)
-    @nice_name("Expected Total Prediction Variance (MAP)")
+    @nice_name("E[Pred Total Variance] (MAP)")
     @minimize
     def exp_total_variance(self, ij):
         '''
@@ -596,7 +596,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
     @do_normal_fit(True)
     @spawn_processes(True)
-    @nice_name("Expected Total Prediction Variance (Approximation)")
+    @nice_name("E[Pred Total Variance] (Approx)")
     @minimize
     def exp_total_variance_byapprox(self, ij):
         '''
@@ -676,6 +676,11 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         if key is None:
             key = ActivePMF.pred_variance
         chooser = getattr(key, 'chooser', max)
+
+        if len(pool) == 0:
+            raise ValueError("can't pick a query point from an empty pool")
+        elif len(pool) == 1:
+            return iter(pool).next()
 
         vals = self._get_key_vals(pool, key, procs)
         return chooser(zip(pool, vals), key=operator.itemgetter(1))[0]
@@ -909,6 +914,8 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
 
     if plot:
         from matplotlib import pyplot as plt
+        from matplotlib.font_manager import FontProperties
+
         plt.figure()
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")
@@ -916,7 +923,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         for key_name, result in zip(key_names, results):
             plt.plot(*zip(*result), label=KEY_FUNCS[key_name].nice_name)
 
-        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        plt.legend(loc='best', props=FontProperties(size=8))
         if saveplot is None:
             plt.show()
         else:
