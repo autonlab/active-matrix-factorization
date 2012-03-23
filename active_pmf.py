@@ -1,9 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 Code to do active learning on a PMF model.
 '''
-
-from __future__ import division
 
 from copy import deepcopy
 import functools
@@ -92,6 +90,9 @@ class ActivePMFEvaluator(object):
     def __call__(self, ij):
         return getattr(self.apmf, self.key_name)(ij)
 
+def strictmap(*args, **kwargs):
+    return list(map(*args, **kwargs))
+
 # decorators to set properties of different active learning criteria
 def do_normal_fit(val):
     def decorator(f):
@@ -155,13 +156,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         # TODO: vectorize as much as possible
         exp = 0
-        for k in xrange(self.latent_d):
+        for k in range(self.latent_d):
             uki = u[k,i]
             vkj = v[k,j]
 
             exp += exp_squared(mean, cov, uki, vkj)
 
-            for l in xrange(k+1, self.latent_d):
+            for l in range(k+1, self.latent_d):
                 exp += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
         return exp
 
@@ -245,7 +246,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         for i, j, rating in self.ratings:
             # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
             # (doubled because of symmetry, cancels with 2 in denom)
-            for k in xrange(self.latent_d-1):
+            for k in range(self.latent_d-1):
                 uki = u[k, i]
                 vkj = v[k, j]
                 # vectorize out our sums over l
@@ -380,9 +381,9 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         cov = self.cov
 
         # TODO: vectorize
-        for i in xrange(self.num_users):
+        for i in range(self.num_users):
             us = self.u[:, i]
-            for j in xrange(self.num_items):
+            for j in range(self.num_items):
                 vs = self.v[:, j]
                 p_mean[i, j] = m = (mean[us] * mean[vs] + cov[us, vs]).sum()
                 p_var[i, j] = self._exp_dotprod_sq(i, j, mean, cov) - m**2
@@ -394,7 +395,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         Returns the covariance between elements of the predicted R matrix
         under the normal approximation.
         '''
-        ijs = list(product(xrange(self.num_users), xrange(self.num_items)))
+        ijs = list(product(range(self.num_users), range(self.num_items)))
         pred_covs = np.zeros((len(ijs), len(ijs)))
         # covariance of U_i.V_j with U_a.V_b
 
@@ -419,13 +420,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     cv = 0
 
                     # sum_{k,l} E[Uki Vkj Uli Vlb]
-                    for k in xrange(self.latent_d):
-                        for l in xrange(k):
+                    for k in range(self.latent_d):
+                        for l in range(k):
                             cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
 
                         cv += a2bc(u_i[k], v_j[k], v_b[k])
 
-                        for l in xrange(k+1, self.latent_d):
+                        for l in range(k+1, self.latent_d):
                             cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
 
                     # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
@@ -438,13 +439,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     cv = 0
 
                     # sum_{k,l} E[Uki Vkj Ula Vlj]
-                    for k in xrange(self.latent_d):
-                        for l in xrange(k):
+                    for k in range(self.latent_d):
+                        for l in range(k):
                             cv += qexp(u_i[k], v_j[k], u_a[l], v_j[l])
 
                         cv += a2bc(v_j[k], u_i[k], u_a[k])
 
-                        for l in xrange(k+1, self.latent_d):
+                        for l in range(k+1, self.latent_d):
                             cv += qexp(u_i[k], v_j[k], u_a[l], v_j[l])
 
                     # - sum_{k,l} E[Uki Vkj] E[Ula Vlj]
@@ -458,8 +459,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     cv = 0
 
                     # sum_{k,l} E[Uki Vkj Ula Vlb]
-                    for k in xrange(self.latent_d):
-                        for l in xrange(self.latent_d):
+                    for k in range(self.latent_d):
+                        for l in range(self.latent_d):
                             cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
 
                     # - sum_{k,l} E[Uki Vkj] E[Ula Vlb]
@@ -651,8 +652,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         right = mean + 1.96 * std
 
         est, abserr = quad(calculate_fn, left, right, epsrel=.02)
-        print "\t%20s(%d,%d) from %4.1f to %4.1f: %10g +- %.2g" % (
-                getattr(fn, '__name__', ''), i, j, left, right, est, abserr)
+        print("\t%20s(%d,%d) from %4.1f to %4.1f: %10g +- %.2g" % (
+                getattr(fn, '__name__', ''), i, j, left, right, est, abserr))
         return est
 
 
@@ -684,7 +685,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         if len(pool) == 0:
             raise ValueError("can't pick a query point from an empty pool")
         elif len(pool) == 1:
-            return iter(pool).next()
+            return next(iter(pool))
 
         vals = self._get_key_vals(pool, key, procs, worker_pool)
         return chooser(zip(pool, vals), key=operator.itemgetter(1))[0]
@@ -701,7 +702,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             if worker_pool is None:
                 return [key(self, ij) for ij in pool]
             else:
-                return worker_pool.apply(map, (evaluator, pool))
+                return worker_pool.apply(strictmap, (evaluator, pool))
         else:
             if worker_pool is None:
                 return worker_pool.map(evaluator, pool)
@@ -727,7 +728,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         evals = np.zeros((self.num_users, self.num_items))
         evals[:] = np.nan
-        evals[zip(*pool)] = self._get_key_vals(pool, key, procs)
+        evals[list(zip(*pool))] = self._get_key_vals(pool, key, procs)
         return evals
 
 
@@ -767,7 +768,7 @@ def plot_variances(apmf, vmax=None):
     from matplotlib import pyplot as plt
     var = np.zeros((apmf.num_users, apmf.num_items))
     total = 0
-    for i, j in product(xrange(apmf.num_users), xrange(apmf.num_items)):
+    for i, j in product(range(apmf.num_users), range(apmf.num_items)):
         if (i, j) in apmf.rated:
             var[i, j] = float('nan')
         else:
@@ -794,7 +795,7 @@ def plot_predictions(apmf, real):
     xs = (real, pred, a_mean)
     norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
 
-    rated_alphas = zip(*((i, j, -1) for i, j in apmf.rated))
+    rated_alphas = list(zip(*((i, j, -1) for i, j in apmf.rated)))
     def show_with_alpha(mat, title, subplot, alpha=.5, norm_=norm):
         plt.subplot(subplot)
 
@@ -836,59 +837,59 @@ def plot_criteria(apmf, keys, procs=None):
 
 def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
               fit_normal=True, processes=None):
-    print "Training PMF"
+    print("Training PMF")
     for ll in apmf.fit_lls():
         pass #print "\tLL: %g" % ll
 
     apmf.initialize_approx()
 
     if fit_normal:
-        print "Fitting normal"
+        print("Fitting normal")
         for kl in apmf.fit_normal_kls():
             pass #print "\tKL: %g" % kl
             assert kl > -1e5
 
-        print "Mean diff of means: %g; mean cov %g" % (
-                apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+        print("Mean diff of means: %g; mean cov %g" % (
+                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
     total = apmf.num_users * apmf.num_items
     rmse = apmf.rmse(real)
-    print "RMSE: %g" % rmse
+    print("RMSE: %g" % rmse)
     yield len(apmf.rated), rmse
 
 
     while apmf.unrated:
-        print
+        print()
         #print '=' * 80
 
-        print "Picking a query point..."
+        print("Picking a query point...")
         i, j = apmf.pick_query_point(key=picker_key, procs=processes)
 
         apmf.add_rating(i, j, real[i, j])
-        print "Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total)
+        print("Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total))
 
-        print "Training PMF"
+        print("Training PMF")
         for ll in apmf.fit_lls():
             pass # print "\tLL: %g" % ll
 
         if fit_normal:
-            print "Fitting normal"
+            print("Fitting normal")
             for kl in apmf.fit_normal_kls():
                 pass # print "\tKL: %g" % kl
                 assert kl > -1e5
 
-            print "Mean diff of means: %g; mean cov %g" % (
-                    apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+            print("Mean diff of means: %g; mean cov %g" % (
+                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
         rmse = apmf.rmse(real)
-        print "RMSE: %g" % rmse
+        print("RMSE: %g" % rmse)
         yield len(apmf.rated), rmse
 
 
 def _in_between_work(apmf, i, j, realval, total, fit_normal, name):
     apmf.add_rating(i, j, realval)
-    print "{:<40} Queried ({}, {}); {}/{} known".format(
-            name, i, j, len(apmf.rated), total)
+    print("{:<40} Queried ({}, {}); {}/{} known".format(
+            name, i, j, len(apmf.rated), total))
 
     apmf.fit()
     if fit_normal:
@@ -902,20 +903,20 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
     name = picker_key.nice_name
 
     rmse = apmf.rmse(real)
-    print "{:<40} Initial RMSE: {}".format(name, rmse)
+    print("{:<40} Initial RMSE: {}".format(name, rmse))
     yield len(apmf.rated), rmse
 
     while apmf.unrated:
         n = len(apmf.rated) + 1
 
-        print "{:<40} Picking query point {}...".format(name, n)
+        print("{:<40} Picking query point {}...".format(name, n))
         i, j = apmf.pick_query_point(key=picker_key, worker_pool=worker_pool)
 
         apmf = worker_pool.apply(_in_between_work,
                 (apmf, i, j, real[i,j], total, fit_normal, name))
 
         rmse = apmf.rmse(real)
-        print "{:<40} RMSE {}: {}".format(picker_key.nice_name, n, rmse)
+        print("{:<40} RMSE {}: {}".format(picker_key.nice_name, n, rmse))
         yield len(apmf.rated), rmse
 
 
@@ -943,14 +944,14 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
     # initial fit is common to all methods
-    print "Doing initial fit"
+    print("Doing initial fit")
     apmf.fit()
     apmf.initialize_approx()
     if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
-        print "Initial approximation fit"
+        print("Initial approximation fit")
         apmf.fit_normal()
-        print "Mean diff of means: {}; mean cov {}\n".format(
-                apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+        print("Mean diff of means: {}; mean cov {}\n".format(
+                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
     results = {}
 
@@ -983,13 +984,13 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")
 
-        for key_name, result in results.iteritems():
+        for key_name, result in results.items():
             plt.plot(*zip(*result), label=KEY_FUNCS[key_name].nice_name)
 
         # ridiculous line that sorts the legend by labels
-        plt.legend(*zip(*sorted(
+        plt.legend(*list(zip(*sorted(
                 zip(*plt.gca().get_legend_handles_labels()),
-                key=operator.itemgetter(1))),
+                key=operator.itemgetter(1)))),
             loc='best', prop=FontProperties(size=9))
 
         if saveplot is None:
@@ -997,9 +998,9 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         else:
             plt.savefig(saveplot)
 
-            import cPickle as pickle
+            import pickle
             with open(saveplot + '.pkl', 'w') as f:
-                pickle.dump(zip(key_names, results), f)
+                pickle.dump(list(zip(key_names, results)), f)
 
 
 def main():
@@ -1042,9 +1043,9 @@ def main():
                 processes=args.processes)
     except Exception:
         import pdb, traceback
-        print
+        print()
         traceback.print_exc()
-        print
+        print()
         pdb.post_mortem()
 
 if __name__ == '__main__':

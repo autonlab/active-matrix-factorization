@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 An implementation of Probabilistic Matrix Factorization:
     Salakhutdinov, R., & Mnih, A. (2007). Probabilistic Matrix Factorization.
@@ -7,8 +7,6 @@ An implementation of Probabilistic Matrix Factorization:
 Loosely based on code by Danny Tarlow:
 http://blog.smellthedata.com/2009/06/netflix-prize-tribute-recommendation.html
 '''
-
-from __future__ import division
 
 import itertools
 import random
@@ -35,7 +33,7 @@ class ProbabilisticMatrixFactorization(object):
         self.num_items = m = int(np.max(self.ratings[:, 1]) + 1)
 
         self.rated = set((i, j) for i, j, rating in self.ratings)
-        self.unrated = set(itertools.product(xrange(n), xrange(m)))\
+        self.unrated = set(itertools.product(range(n), range(m)))\
                 .difference(self.rated)
 
         self.users = np.random.random((n, self.latent_d))
@@ -149,13 +147,13 @@ class ProbabilisticMatrixFactorization(object):
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
 
     def print_latent_vectors(self):
-        print "Users:"
+        print("Users:")
         for i in range(self.num_users):
-            print "%d: %s" % (i, self.users[i, :])
+            print("%d: %s" % (i, self.users[i, :]))
 
-        print "\nItems:"
+        print("\nItems:")
         for j in range(self.num_items):
-            print "%d: %s" % (j, self.items[j, :])
+            print("%d: %s" % (j, self.items[j, :]))
 
 
     def save_latent_vectors(self, prefix):
@@ -175,7 +173,7 @@ def fake_ratings(noise=.25, num_users=100, num_items=100, num_ratings=30,
     # Get num_ratings ratings per user.
     ratings = []
     for i in range(num_users):
-        for j in random.sample(xrange(num_items), num_ratings):
+        for j in random.sample(range(num_items), num_ratings):
             rating = np.dot(u[i], v[j]) + np.random.normal(scale=noise)
             ratings.append((i, j, rating))
 
@@ -214,7 +212,7 @@ def plot_predicted_ratings(U, V):
 
     r_hats = -5 * np.ones((u_rows + u_cols + 1, v_rows + v_cols + 1))
 
-    for i in xrange(u_rows):
+    for i in range(u_rows):
         for j in range(u_cols):
             r_hats[i + v_cols + 1, j] = U[i, j]
 
@@ -244,7 +242,7 @@ def main():
     lls = []
     for ll in pmf.fit_lls():
         lls.append(ll)
-        print "LL =", ll
+        print("LL =", ll)
 
     plt.figure()
     plt.plot(lls)
