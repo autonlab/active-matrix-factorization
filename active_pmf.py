@@ -691,28 +691,28 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
 
     def _get_key_vals(self, pool, key, procs, worker_pool):
-        try:
-            if procs == 1 or not getattr(key, 'spawn_processes', True):
-                raise ImportError("hackety hack hack, shouldn't propagate")
-            from multiprocessing import Pool
-        except ImportError:
+        do_single = procs == 1 or not getattr(key, 'spawn_processes', True)
+
+        # TODO: use np.save instead of pickle to transfer data
+        # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
+
+        evaluator = ActivePMFEvaluator(self, key)
+        if do_single:
             if worker_pool is None:
-                vals = [key(self, ij) for ij in pool]
+                return [key(self, ij) for ij in pool]
             else:
-                vals = worker_pool.apply(map,
-                        (ActivePMFEvaluator(self, key), pool))
+                return worker_pool.apply(map, (evaluator, pool))
         else:
-            # TODO: use np.save instead of pickle to transfer data
-            # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
-            proc_pool = Pool(procs) if worker_pool is None else worker_pool
+            if worker_pool is None:
+                return worker_pool.map(evaluator, pool)
+            else:
+                from multiprocessing import Pool
+                worker_pool = Pool(procs)
+                vals = worker_pool.map(evaluator, pool)
+                worker_pool.close()
+                worker_pool.join()
+                return vals
 
-            vals = proc_pool.map(ActivePMFEvaluator(self, key), pool)
-
-            if worker_pool is None: # kill zombies
-                proc_pool.close()
-                proc_pool.join()
-
-        return vals
 
     def get_key_evals(self, pool=None, key=None, procs=None):
         '''
