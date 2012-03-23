@@ -299,7 +299,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         grad_cov[us,us] += 1 / (2 * self.sigma_u_sq)
         grad_cov[vs,vs] += 1 / (2 * self.sigma_v_sq)
 
-        # gradient of -ln(|cov|)/2
+        # gradient of ln(|cov|)/2
         # need each cofactor of the matrix divided by its determinant;
         # this is just the transpose of its inverse
         grad_cov += np.linalg.inv(cov).T / 2
@@ -579,6 +579,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
                 use_map=False)
 
+    def _total_variance(self):
+        return self.approx_pred_means_vars()[1].sum()
 
     @do_normal_fit(True)
     @spawn_processes(True)
@@ -590,8 +592,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         calculated according to our current MAP belief about the distribution
         of Rij, up to a constant common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij,
-                lambda self: self.approx_pred_means_vars()[1].sum(),
+        return self._integrate_prediction(ij, ActivePMF._total_variance,
                 use_map=True)
 
     @do_normal_fit(True)
@@ -605,8 +606,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         Rij pretending that it's normal with mean and variance defined by our
         distribution over U and V, up to a constant common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij,
-                lambda self: self.approx_pred_means_vars()[1].sum(),
+        return self._integrate_prediction(ij, ActivePMF._total_variance,
                 use_map=False)
 
 
@@ -651,15 +651,15 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         right = mean + 1.96 * std
 
         est, abserr = quad(calculate_fn, left, right, epsrel=.02)
-        print "(%d, %d) integrated from %g to %g:\t %g +- %g" % (
-                i, j, left, right, est, abserr)
+        print "\t%20s(%d,%d) from %4.1f to %4.1f: %10g +- %.2g" % (
+                getattr(fn, '__name__', ''), i, j, left, right, est, abserr)
         return est
 
 
     ############################################################################
     ### Methods to actually pick a query point in active learning
 
-    def pick_query_point(self, pool=None, key=None, procs=None):
+    def pick_query_point(self, pool=None, key=None, procs=None, worker_pool=None):
         '''
         Use the approximation of the PMF model to select the next point to
         query, choosing elements according to key, which should be an ActivePMF
@@ -670,6 +670,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         Spawns procs processes (default 1 per cpu), unless key.spawn_processses
         is False, procs is 1, or multiprocessing isn't available.
+
+        If worker_pool is passed, ignore procs and use that pool. (If
+        key.spawn_processes is False, still uses one process in that pool
+        to do all the work.)
         '''
         if pool is None:
             pool = self.unrated
@@ -682,24 +686,31 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         elif len(pool) == 1:
             return iter(pool).next()
 
-        vals = self._get_key_vals(pool, key, procs)
+        vals = self._get_key_vals(pool, key, procs, worker_pool)
         return chooser(zip(pool, vals), key=operator.itemgetter(1))[0]
 
 
-    def _get_key_vals(self, pool, key, procs):
+    def _get_key_vals(self, pool, key, procs, worker_pool):
         try:
             if procs == 1 or not getattr(key, 'spawn_processes', True):
                 raise ImportError("hackety hack hack, shouldn't propagate")
             from multiprocessing import Pool
         except ImportError:
-            vals = [key(self, ij) for ij in pool]
+            if worker_pool is None:
+                vals = [key(self, ij) for ij in pool]
+            else:
+                vals = worker_pool.apply(map,
+                        (ActivePMFEvaluator(self, key), pool))
         else:
             # TODO: use np.save instead of pickle to transfer data
             # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
-            processes = Pool(procs)
-            vals = processes.map(ActivePMFEvaluator(self, key), pool)
-            processes.close()
-            processes.join() # make sure zombies die
+            proc_pool = Pool(procs) if worker_pool is None else worker_pool
+
+            vals = proc_pool.map(ActivePMFEvaluator(self, key), pool)
+
+            if worker_pool is None: # kill zombies
+                proc_pool.close()
+                proc_pool.join()
 
         return vals
 
@@ -874,6 +885,41 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         yield len(apmf.rated), rmse
 
 
+def _in_between_work(apmf, i, j, realval, total, fit_normal, name):
+    apmf.add_rating(i, j, realval)
+    print "{:<40} Queried ({}, {}); {}/{} known".format(
+            name, i, j, len(apmf.rated), total)
+
+    apmf.fit()
+    if fit_normal:
+        apmf.fit_normal()
+
+    return apmf
+
+
+def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
+    total = real.size
+    name = picker_key.nice_name
+
+    rmse = apmf.rmse(real)
+    print "{:<40} Initial RMSE: {}".format(name, rmse)
+    yield len(apmf.rated), rmse
+
+    while apmf.unrated:
+        n = len(apmf.rated) + 1
+
+        print "{:<40} Picking query point {}...".format(name, n)
+        i, j = apmf.pick_query_point(key=picker_key, worker_pool=worker_pool)
+
+        apmf = worker_pool.apply(_in_between_work,
+                (apmf, i, j, real[i,j], total, fit_normal, name))
+
+        rmse = apmf.rmse(real)
+        print "{:<40} RMSE {}: {}".format(picker_key.nice_name, n, rmse)
+        yield len(apmf.rated), rmse
+
+
+
 KEY_FUNCS = {
     "random": ActivePMF.random_weighting,
     "pred-variance": ActivePMF.pred_variance,
@@ -890,28 +936,44 @@ KEY_FUNCS = {
 
 def compare(key_names, plot=True, saveplot=None, latent_d=5,
             processes=None, **kwargs):
+    import multiprocessing as mp
+    from threading import Thread
+
     real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
-    import time
-    results = []
-    times = []
-    for i, key_name in enumerate(key_names):
+    # initial fit is common to all methods
+    print "Doing initial fit"
+    apmf.fit()
+    apmf.initialize_approx()
+    if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
+        print "Initial approximation fit"
+        apmf.fit_normal()
+        print "Mean diff of means: {}; mean cov {}\n".format(
+                apmf.mean_meandiff(), np.abs(apmf.cov.mean()))
+
+    results = {}
+
+    worker_pool = mp.Pool(processes)
+
+    def eval_key(key_name):
         key = KEY_FUNCS[key_name]
 
-        print '=' * 80
-        print "Starting", key.nice_name, "(%d / %d)" % (i+1, len(key_names))
-        print '=' * 80
-        start = time.time()
-        results.append(list(full_test(
+        results[key_name] = list(_full_test_threaded(
             deepcopy(apmf),
             real,
             key,
             key.do_normal_fit,
-            processes=processes if key.spawn_processes else 1)))
-        times.append(time.time() - start)
-        print '=' * 80
-        print '=' * 80
+            worker_pool=worker_pool))
+
+
+    threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
+               for key_name in key_names]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+
+    worker_pool.close()
+    worker_pool.join()
 
     if plot:
         from matplotlib import pyplot as plt
@@ -921,10 +983,15 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         plt.xlabel("# of rated elements")
         plt.ylabel("RMSE")
 
-        for key_name, result in zip(key_names, results):
+        for key_name, result in results.iteritems():
             plt.plot(*zip(*result), label=KEY_FUNCS[key_name].nice_name)
 
-        plt.legend(loc='best', props=FontProperties(size=8))
+        # ridiculous line that sorts the legend by labels
+        plt.legend(*zip(*sorted(
+                zip(*plt.gca().get_legend_handles_labels()),
+                key=operator.itemgetter(1))),
+            loc='best', prop=FontProperties(size=9))
+
         if saveplot is None:
             plt.show()
         else:
@@ -932,7 +999,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
 
             import cPickle as pickle
             with open(saveplot + '.pkl', 'w') as f:
-                pickle.dump(zip(key_names, results, times), f)
+                pickle.dump(zip(key_names, results), f)
 
 
 def main():
@@ -950,7 +1017,7 @@ def main():
     parser.add_argument('--no-plot', action='store_false', dest='plot')
     parser.add_argument('--processes', '-P', type=int, default=None)
     parser.add_argument('--outfile', default=None)
-    parser.add_argument('keys', nargs='*', default=list(key_names))
+    parser.add_argument('keys', nargs='*', default=sorted(key_names))
     args = parser.parse_args()
 
     for k in args.keys:
@@ -966,7 +1033,7 @@ def main():
         matplotlib.use('Agg')
 
     try:
-        compare(args.keys or key_names,
+        compare(args.keys,
                 num_users=args.num_users, num_items=args.num_items,
                 rank=args.gen_rank, latent_d=args.latent_d,
                 noise=args.noise,
