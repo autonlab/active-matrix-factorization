@@ -699,12 +699,23 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         if procs == 1 or not getattr(key, 'spawn_processes', True):
             if worker_pool is not None:
-                return worker_pool.apply(strictmap, (evaluator, pool))
+                if not hasattr(worker_pool, 'access_lock'):
+                    return worker_pool.apply(strictmap, (evaluator, pool))
+                else:
+                    with worker_pool.access_lock:
+                        result = worker_pool.apply_async(
+                                                strictmap, (evaluator, pool))
+                    return result.get()
             else:
                 return [key(self, ij) for ij in pool]
         else:
             if worker_pool is not None:
-                return worker_pool.map(evaluator, pool)
+                if not hasattr(worker_pool, 'access_lock'):
+                    return worker_pool.map(evaluator, pool)
+                else:
+                    with worker_pool.access_lock:
+                        result = worker_pool.map_async(evaluator, pool)
+                    return result.get()
             else:
                 from multiprocessing import Pool
                 worker_pool = Pool(procs)
@@ -938,7 +949,7 @@ KEY_FUNCS = {
 def compare(key_names, plot=True, saveplot=None, latent_d=5,
             processes=None, **kwargs):
     import multiprocessing as mp
-    from threading import Thread
+    from threading import Thread, Lock
 
     real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
@@ -956,6 +967,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
     results = {}
 
     worker_pool = mp.Pool(processes)
+    worker_pool.access_lock = Lock()
 
     def eval_key(key_name):
         key = KEY_FUNCS[key_name]
@@ -1042,9 +1054,11 @@ def main():
                 plot=args.plot, saveplot=args.outfile,
                 processes=args.processes)
     except Exception:
-        import pdb, traceback
+        import traceback
         print()
         traceback.print_exc()
+
+        import pdb
         print()
         pdb.post_mortem()
 
