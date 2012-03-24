@@ -741,8 +741,9 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     u = np.random.normal(0, 2, (num_users, rank))
     v = np.random.normal(0, 2, (num_items, rank))
 
-    ratings = np.dot(u, v.T) + \
-            np.random.normal(0, noise, (num_users, num_items))
+    ratings = np.dot(u, v.T)
+    if noise:
+        ratings += np.random.normal(0, noise, (num_users, num_items))
 
     mask = np.random.binomial(1, rating_prob, ratings.shape)
 
@@ -1010,7 +1011,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--latent-d', '-D', type=int, default=5)
     parser.add_argument('--gen-rank', '-R', type=int, default=5)
-    parser.add_argument('--noise', type=float, default=.25)
+    parser.add_argument('--noise', '-n', type=float, default=.25)
     parser.add_argument('--num-users', '-N', type=int, default=10)
     parser.add_argument('--num-items', '-M', type=int, default=10)
     parser.add_argument('--rating-prob', '-r', type=float, default=0)
