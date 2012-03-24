@@ -692,19 +692,18 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
 
     def _get_key_vals(self, pool, key, procs, worker_pool):
-        do_single = procs == 1 or not getattr(key, 'spawn_processes', True)
-
         # TODO: use np.save instead of pickle to transfer data
         # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
 
         evaluator = ActivePMFEvaluator(self, key)
-        if do_single:
-            if worker_pool is None:
-                return [key(self, ij) for ij in pool]
-            else:
+
+        if procs == 1 or not getattr(key, 'spawn_processes', True):
+            if worker_pool is not None:
                 return worker_pool.apply(strictmap, (evaluator, pool))
+            else:
+                return [key(self, ij) for ij in pool]
         else:
-            if worker_pool is None:
+            if worker_pool is not None:
                 return worker_pool.map(evaluator, pool)
             else:
                 from multiprocessing import Pool
