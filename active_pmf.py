@@ -13,7 +13,10 @@ import random
 import numpy as np
 
 from pmf import ProbabilisticMatrixFactorization
-from normal_exps import tripexpect, quadexpect, exp_a2bc, exp_dotprod_sq
+try:
+    from normal_exps_cy import tripexpect, quadexpect, exp_a2bc, exp_dotprod_sq
+except ImportError:
+    from normal_exps import tripexpect, quadexpect, exp_a2bc, exp_dotprod_sq
 
 ################################################################################
 ### Helpers

@@ -1,2 +1,8 @@
 *.pyc
+__pycache__
+
+/build
+normal_exps_cy.c
+normal_exps_cy.so
+
 *.pkl
