@@ -954,7 +954,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
             plt.savefig(saveplot)
 
             import pickle
-            with open(saveplot + '.pkl', 'w') as f:
+            with open(saveplot + '.pkl', 'wb') as f:
                 pickle.dump(list(zip(key_names, results)), f)
 
 
