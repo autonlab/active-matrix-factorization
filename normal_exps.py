@@ -42,7 +42,7 @@ def exp_a2bc(mean, cov, a, b, c):
         + 2 * cov[a,b] * cov[a,c]
     )
 
-def exp_dotprod_sq(u, v, i, j, mean, cov):
+def exp_dotprod_sq(u, v, mean, cov, i, j):
     '''E[ (U_i^T V_j)^2 ]'''
     # TODO: vectorize as much as possible
     exp = 0

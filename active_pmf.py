@@ -16,6 +16,7 @@ from pmf import ProbabilisticMatrixFactorization
 try:
     from normal_exps_cy import tripexpect, quadexpect, exp_a2bc, exp_dotprod_sq
 except ImportError:
+    print "WARNING: cython version not available, using pure-python version"
     from normal_exps import tripexpect, quadexpect, exp_a2bc, exp_dotprod_sq
 
 ################################################################################
@@ -85,6 +86,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         # the actual PMF model
         super(ActivePMF, self).__init__(rating_tuples, latent_d)
 
+        # make sure that the ratings matrix is in floats
+        # because the cython code currently only handles floats
+        self.ratings = np.array(self.ratings, dtype=float, copy=False)
+
         # parameters of the normal approximation
         self.mean = None
         self.cov = None
@@ -134,13 +139,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         us = u.reshape(-1)
         vs = v.reshape(-1)
 
-        e_dot_sq = functools.partial(exp_dotprod_sq, u, v)
+        e_dot_sq = functools.partial(exp_dotprod_sq, u, v, mean, cov)
 
         # terms based on the squared error
         div = (
             sum(
                 # E[ (U_i^T V_j)^2 ]
-                e_dot_sq(i, j, mean, cov)
+                e_dot_sq(i, j)
 
                 # - 2 R_ij E[U_i^T V_j]
                 - 2 * rating *
@@ -322,7 +327,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         mean = self.mean
         cov = self.cov
 
-        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v)
+        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
 
         # TODO: vectorize
         for i in range(self.num_users):
@@ -330,7 +335,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             for j in range(self.num_items):
                 vs = self.v[:, j]
                 p_mean[i, j] = m = (mean[us] * mean[vs] + cov[us, vs]).sum()
-                p_var[i, j] = e_dot_sq(i, j, mean, cov) - m**2
+                p_var[i, j] = e_dot_sq(i, j) - m**2
 
         return p_mean, p_var
 
@@ -348,7 +353,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         qexp = functools.partial(quadexpect, mean, cov)
         a2bc = functools.partial(exp_a2bc, mean, cov)
-        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v)
+        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
 
         # TODO: vectorize
         for idx1, (i, j) in enumerate(ijs):
@@ -358,7 +363,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             for idx2, (a, b) in enumerate(ijs):
                 if idx1 == idx2: # variance of U_i.V_j
                     m = (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum()
-                    cv = e_dot_sq(i, j, mean, cov) - m**2
+                    cv = e_dot_sq(i, j) - m**2
 
                 elif i == a: # cov of U_i.V_j with U_i.V_b, j != b
                     v_b = self.v[:, b]
@@ -446,7 +451,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         return (
             # E[ (U_i^T V_j)^2 ]
-            exp_dotprod_sq(self.u, self.v, i, j, mean, cov)
+            exp_dotprod_sq(self.u, self.v, mean, cov, i, j)
 
             # - E[U_i^T V_j] ^ 2
             - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
@@ -579,7 +584,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             vs = self.v[:, j]
 
             mean = (self.mean[us] * self.mean[vs] + self.cov[us, vs]).sum()
-            var = exp_dotprod_sq(self.u, self.v, i, j, self.mean, self.cov) \
+            var = exp_dotprod_sq(self.u, self.v, self.mean, self.cov, i, j) \
                     - mean**2
 
         std = math.sqrt(var)
