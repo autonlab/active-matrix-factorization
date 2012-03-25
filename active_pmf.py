@@ -898,46 +898,54 @@ KEY_FUNCS = {
 }
 
 def compare(key_names, plot=True, saveplot=None, latent_d=5,
-            processes=None, **kwargs):
+            processes=None, do_threading=True, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
     real, ratings = make_fake_data(**kwargs)
     apmf = ActivePMF(ratings, latent_d=latent_d)
 
-    # initial fit is common to all methods
-    print("Doing initial fit")
-    apmf.fit()
-    apmf.initialize_approx()
-    if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
-        print("Initial approximation fit")
-        apmf.fit_normal()
-        print("Mean diff of means: {}; mean cov {}\n".format(
-                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
-
     results = {}
 
-    worker_pool = mp.Pool(processes)
-    worker_pool.access_lock = Lock()
+    if do_threading:
+        # initial fit is common to all methods
+        print("Doing initial fit")
+        apmf.fit()
+        apmf.initialize_approx()
+        if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
+            print("Initial approximation fit")
+            apmf.fit_normal()
+            print("Mean diff of means: {}; mean cov {}\n".format(
+                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
-    def eval_key(key_name):
-        key = KEY_FUNCS[key_name]
+        worker_pool = mp.Pool(processes)
+        worker_pool.access_lock = Lock()
 
-        results[key_name] = list(_full_test_threaded(
-            deepcopy(apmf),
-            real,
-            key,
-            key.do_normal_fit,
-            worker_pool=worker_pool))
+        def eval_key(key_name):
+            key = KEY_FUNCS[key_name]
+
+            results[key_name] = list(_full_test_threaded(
+                deepcopy(apmf),
+                real,
+                key,
+                key.do_normal_fit,
+                worker_pool=worker_pool))
 
 
-    threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
-               for key_name in key_names]
-    for thread in threads: thread.start()
-    for thread in threads: thread.join()
+        threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
+                   for key_name in key_names]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
 
-    worker_pool.close()
-    worker_pool.join()
+        worker_pool.close()
+        worker_pool.join()
+
+    else:
+        for key_name in key_names:
+            key = KEY_FUNCS[key_name]
+            results[key_name] = list(full_test(
+                    deepcopy(apmf), real, key, key.do_normal_fit, processes))
+
 
     if plot:
         from matplotlib import pyplot as plt
@@ -971,17 +979,24 @@ def main():
 
     import argparse
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--latent-d', '-D', type=int, default=5)
     parser.add_argument('--gen-rank', '-R', type=int, default=5)
     parser.add_argument('--noise', '-n', type=float, default=.25)
     parser.add_argument('--num-users', '-N', type=int, default=10)
     parser.add_argument('--num-items', '-M', type=int, default=10)
     parser.add_argument('--rating-prob', '-r', type=float, default=0)
+
     parser.add_argument('--plot', action='store_true', default=True)
     parser.add_argument('--no-plot', action='store_false', dest='plot')
-    parser.add_argument('--processes', '-P', type=int, default=None)
     parser.add_argument('--outfile', default=None)
+
+    parser.add_argument('--processes', '-P', type=int, default=None)
+    parser.add_argument('--thread', action='store_true', default=True)
+    parser.add_argument('--no-thread', action='store_false', dest='thread')
+
     parser.add_argument('keys', nargs='*', default=sorted(key_names))
+
     args = parser.parse_args()
 
     for k in args.keys:
@@ -1003,7 +1018,7 @@ def main():
                 noise=args.noise,
                 rating_prob=args.rating_prob,
                 plot=args.plot, saveplot=args.outfile,
-                processes=args.processes)
+                processes=args.processes, do_threading=args.thread)
     except Exception:
         import traceback
         print()
