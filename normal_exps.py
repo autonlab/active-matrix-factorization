@@ -55,3 +55,91 @@ def exp_dotprod_sq(u, v, mean, cov, i, j):
         for l in range(k+1, u.shape[0]):
             exp += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
     return exp
+
+def normal_gradient(apmf):
+    mean = apmf.mean
+    cov = apmf.cov
+    if mean is None or cov is None:
+        raise ValueError("run initialize_approx first")
+
+    u = apmf.u
+    v = apmf.v
+
+    us = u.reshape(-1)
+    vs = v.reshape(-1)
+
+    sig = apmf.sigma_sq
+
+    # note that we're actually only differentiating by one triangular half
+    # of the covariance matrix, but we make grad_cov the full square anyway
+    grad_mean = np.zeros_like(mean)
+    grad_cov = np.zeros_like(cov)
+
+    def inc_cov_quadexp_grad(a,b, c,d):
+        inc = np.sum(mean[c] * mean[d] + cov[c, d]) / sig
+        grad_cov[a, b] += inc
+        grad_cov[b, a] += inc
+
+    for i, j, rating in apmf.ratings:
+        # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
+        # (doubled because of symmetry, cancels with 2 in denom)
+        for k in range(apmf.latent_d-1):
+            uki = u[k, i]
+            vkj = v[k, j]
+            # vectorize out our sums over l
+            uli = u[k+1:, i]
+            vlj = v[k+1:, j]
+
+            grad_mean[uki] += tripexpect(mean,cov, vkj,uli,vlj).sum() / sig
+            grad_mean[vkj] += tripexpect(mean,cov, uki,uli,vlj).sum() / sig
+            grad_mean[uli] += tripexpect(mean,cov, uki,vkj,vlj).sum() / sig
+            grad_mean[vlj] += tripexpect(mean,cov, uki,vkj,uli).sum() / sig
+
+            inc_cov_quadexp_grad(uki,vkj, uli,vlj)
+            inc_cov_quadexp_grad(uki,uli, vkj,vlj)
+            inc_cov_quadexp_grad(uki,vlj, vkj,uli)
+            inc_cov_quadexp_grad(vkj,uli, uki,vlj)
+            inc_cov_quadexp_grad(vkj,vlj, uki,uli)
+            inc_cov_quadexp_grad(uli,vlj, uki,vkj)
+
+        # everything else can just be vectorized over k
+        uki = u[:,i]
+        vkj = v[:,j]
+
+        muki = mean[uki]
+        mvkj = mean[vkj]
+
+        # gradient of \sum_k E[ U_ki^2 V_kj^2 ] / (2 sigma^2)
+        grad_mean[uki] += (2 * mvkj * cov[uki,vkj]
+                           + muki * (mvkj**2 + cov[vkj,vkj])) / sig
+        grad_mean[vkj] += (2 * muki * cov[uki,vkj]
+                           + mvkj * (muki**2 + cov[uki,uki])) / sig
+
+        grad_cov[uki,uki] += (mvkj**2 + cov[vkj,vkj]) / (2*sig)
+        grad_cov[vkj,vkj] += (muki**2 + cov[uki,uki]) / (2*sig)
+
+        inc = 2 * (muki * mvkj + cov[uki,vkj]) / sig
+        grad_cov[uki,vkj] += inc
+        grad_cov[vkj,uki] += inc
+
+        # gradient of - \sum_k Rij E[U_ki V_kj] / sigma^2
+        grad_mean[uki] -= mvkj * (rating / sig)
+        grad_mean[vkj] -= muki * (rating / sig)
+
+        grad_cov[uki,vkj] -= rating / sig
+        grad_cov[vkj,uki] -= rating / sig
+
+
+    # gradient of \sum_i \sum_k E[U_ki^2] / (2 sigma_u^2), same for V
+    grad_mean[us] += mean[us] / apmf.sigma_u_sq
+    grad_mean[vs] += mean[vs] / apmf.sigma_v_sq
+
+    grad_cov[us,us] += 1 / (2 * apmf.sigma_u_sq)
+    grad_cov[vs,vs] += 1 / (2 * apmf.sigma_v_sq)
+
+    # gradient of ln(|cov|)/2
+    # need each cofactor of the matrix divided by its determinant;
+    # this is just the transpose of its inverse
+    grad_cov += np.linalg.inv(cov).T / 2
+
+    return grad_mean, grad_cov
