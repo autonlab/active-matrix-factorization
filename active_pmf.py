@@ -13,54 +13,10 @@ import random
 import numpy as np
 
 from pmf import ProbabilisticMatrixFactorization
+from normal_exps import tripexpect, quadexpect, exp_a2bc, exp_dotprod_sq
 
 ################################################################################
 ### Helpers
-
-def tripexpect(mean, cov, a, b, c):
-    '''E[X_a X_b X_c] for N(mean, cov)'''
-    return mean[a] * mean[b] * mean[c] + \
-            mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]
-
-def quadexpect(mean, cov, a, b, c, d):
-    '''E[X_a X_b X_c X_d] for N(mean, cov) and distinct a/b/c/d'''
-    # TODO: try method of Kan (2008), see if it's faster?
-    abcd = [a, b, c, d]
-    ma, mb, mc, md = mean[abcd]
-
-    return (
-        # product of the means
-        ma * mb * mc * md
-
-        # pairs of means times cov of the other two
-        + ma * mb * cov[c,d]
-        + ma * mc * cov[b,d]
-        + ma * md * cov[b,c]
-        + mb * mc * cov[a,d]
-        + mb * md * cov[a,c]
-        + mc * md * cov[a,b]
-
-        # pairs of covariances (Isserlis)
-        + cov[a,b] * cov[c,d]
-        + cov[a,c] * cov[b,d]
-        + cov[a,d] * cov[b,c]
-    )
-
-def exp_squared(mean, cov, a, b):
-    '''E[X_a^2 X_b^2] for N(mean, cov)'''
-    return 4 * mean[a] * mean[b] * cov[a,b] + 2*cov[a,b]**2 + \
-            (mean[a]**2 + cov[a,a]) * (mean[b]**2 + cov[b,b])
-
-def exp_a2bc(mean, cov, a, b, c):
-    '''E[X_a^2 X_b X_c for N(mean, cov)'''
-    ma, mb, mc = mean[[a,b,c]]
-    return (
-        (ma**2 + cov[a,a]) * (mb * mc + cov[b,c])
-        + 2 * ma * mc * cov[a,b]
-        + 2 * ma * mb * cov[a,c]
-        + 2 * cov[a,b] * cov[a,c]
-    )
-
 
 def project_psd(mat, min_eig=0):
     '''
@@ -78,8 +34,6 @@ def project_psd(mat, min_eig=0):
         mat = (mat + mat.T) / 2
     return mat
 
-################################################################################
-### Helpers
 
 # avoid pickling methods
 class ActivePMFEvaluator(object):
@@ -149,23 +103,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
-    def _exp_dotprod_sq(self, i, j, mean, cov):
-        '''E[ (U_i^T V_j)^2 ]'''
-        u = self.u
-        v = self.v
-
-        # TODO: vectorize as much as possible
-        exp = 0
-        for k in range(self.latent_d):
-            uki = u[k,i]
-            vkj = v[k,j]
-
-            exp += exp_squared(mean, cov, uki, vkj)
-
-            for l in range(k+1, self.latent_d):
-                exp += 2 * quadexpect(mean, cov, uki, vkj, u[l,i], v[l,j])
-        return exp
-
     ############################################################################
     ### Gradient descent to find the normal approximation
 
@@ -194,11 +131,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         us = u.reshape(-1)
         vs = v.reshape(-1)
 
+        e_dot_sq = functools.partial(exp_dotprod_sq, u, v)
+
         # terms based on the squared error
         div = (
             sum(
                 # E[ (U_i^T V_j)^2 ]
-                self._exp_dotprod_sq(i, j, mean, cov)
+                e_dot_sq(i, j, mean, cov)
 
                 # - 2 R_ij E[U_i^T V_j]
                 - 2 * rating *
@@ -380,13 +319,15 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         mean = self.mean
         cov = self.cov
 
+        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v)
+
         # TODO: vectorize
         for i in range(self.num_users):
             us = self.u[:, i]
             for j in range(self.num_items):
                 vs = self.v[:, j]
                 p_mean[i, j] = m = (mean[us] * mean[vs] + cov[us, vs]).sum()
-                p_var[i, j] = self._exp_dotprod_sq(i, j, mean, cov) - m**2
+                p_var[i, j] = e_dot_sq(i, j, mean, cov) - m**2
 
         return p_mean, p_var
 
@@ -404,6 +345,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         qexp = functools.partial(quadexpect, mean, cov)
         a2bc = functools.partial(exp_a2bc, mean, cov)
+        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v)
 
         # TODO: vectorize
         for idx1, (i, j) in enumerate(ijs):
@@ -413,7 +355,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             for idx2, (a, b) in enumerate(ijs):
                 if idx1 == idx2: # variance of U_i.V_j
                     m = (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum()
-                    cv = self._exp_dotprod_sq(i, j, mean, cov) - m**2
+                    cv = e_dot_sq(i, j, mean, cov) - m**2
 
                 elif i == a: # cov of U_i.V_j with U_i.V_b, j != b
                     v_b = self.v[:, b]
@@ -501,7 +443,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         return (
             # E[ (U_i^T V_j)^2 ]
-            self._exp_dotprod_sq(i, j, mean, cov)
+            exp_dotprod_sq(self.u, self.v, i, j, mean, cov)
 
             # - E[U_i^T V_j] ^ 2
             - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
@@ -634,7 +576,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             vs = self.v[:, j]
 
             mean = (self.mean[us] * self.mean[vs] + self.cov[us, vs]).sum()
-            var = self._exp_dotprod_sq(i, j, self.mean, self.cov) - mean**2
+            var = exp_dotprod_sq(self.u, self.v, i, j, self.mean, self.cov) \
+                    - mean**2
 
         std = math.sqrt(var)
         scaler = math.sqrt(2 * math.pi) * std
