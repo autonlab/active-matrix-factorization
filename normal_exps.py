@@ -1,3 +1,5 @@
+import numpy as np
+
 def tripexpect(mean, cov, a, b, c):
     '''E[X_a X_b X_c] for N(mean, cov)'''
     return mean[a] * mean[b] * mean[c] + \
@@ -57,6 +59,10 @@ def exp_dotprod_sq(u, v, mean, cov, i, j):
     return exp
 
 def normal_gradient(apmf):
+    '''
+    Find the gradient of the KL divergence w.r.t. to the passed ActivePMF
+    model's approximation params.
+    '''
     mean = apmf.mean
     cov = apmf.cov
     if mean is None or cov is None:
@@ -90,10 +96,10 @@ def normal_gradient(apmf):
             uli = u[k+1:, i]
             vlj = v[k+1:, j]
 
-            grad_mean[uki] += tripexpect(mean,cov, vkj,uli,vlj).sum() / sig
-            grad_mean[vkj] += tripexpect(mean,cov, uki,uli,vlj).sum() / sig
-            grad_mean[uli] += tripexpect(mean,cov, uki,vkj,vlj).sum() / sig
-            grad_mean[vlj] += tripexpect(mean,cov, uki,vkj,uli).sum() / sig
+            grad_mean[uki] += np.sum(tripexpect(mean,cov, vkj,uli,vlj)) / sig
+            grad_mean[vkj] += np.sum(tripexpect(mean,cov, uki,uli,vlj)) / sig
+            grad_mean[uli] += np.sum(tripexpect(mean,cov, uki,vkj,vlj)) / sig
+            grad_mean[vlj] += np.sum(tripexpect(mean,cov, uki,vkj,uli)) / sig
 
             inc_cov_quadexp_grad(uki,vkj, uli,vlj)
             inc_cov_quadexp_grad(uki,uli, vkj,vlj)

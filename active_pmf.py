@@ -14,12 +14,12 @@ import numpy as np
 
 from pmf import ProbabilisticMatrixFactorization
 try:
-    from normal_exps_cy import (tripexpect, quadexpect, exp_a2bc,
-                                exp_dotprod_sq, normal_gradient)
+    from normal_exps_cy import (quadexpect, exp_a2bc, exp_dotprod_sq,
+                                normal_gradient)
 except ImportError:
     print("WARNING: cython version not available, using pure-python version")
-    from normal_exps import (tripexpect, quadexpect, exp_a2bc,
-                             exp_dotprod_sq, normal_gradient)
+    from normal_exps import (quadexpect, exp_a2bc, exp_dotprod_sq,
+                             normal_gradient)
 
 ################################################################################
 ### Helpers

@@ -6,13 +6,29 @@ cimport cython
 DTYPE = np.float
 ctypedef np.float_t DTYPE_t
 
-# TODO types
 def tripexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
                np.ndarray[DTYPE_t, ndim=2] cov not None,
                a, b, c):
     '''E[X_a X_b X_c] for N(mean, cov)'''
     return mean[a] * mean[b] * mean[c] + \
             mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]
+
+cdef inline float sum_tripexpect_ccl(
+            np.ndarray[DTYPE_t, ndim=1] mean,
+            np.ndarray[DTYPE_t, ndim=2] cov,
+            int a, int b, np.ndarray[np.int_t, ndim=1] c):
+    return (mean[a] * mean[b] * mean[c] +
+            mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]).sum()
+
+cdef inline float sum_tripexpect_cll(
+            np.ndarray[DTYPE_t, ndim=1] mean,
+            np.ndarray[DTYPE_t, ndim=2] cov,
+            int a,
+            np.ndarray[np.int_t, ndim=1] b,
+            np.ndarray[np.int_t, ndim=1] c):
+    return (mean[a] * mean[b] * mean[c] +
+            mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]).sum()
+
 
 @cython.boundscheck(False)
 def quadexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
@@ -82,6 +98,7 @@ def exp_dotprod_sq(np.ndarray[np.int_t, ndim=2] u not None,
 
     cdef float exp = 0
     cdef int latent_dim = u.shape[0]
+    cdef int uki, vkj
 
     for k in range(latent_dim):
         uki = u[k,i]
@@ -94,64 +111,104 @@ def exp_dotprod_sq(np.ndarray[np.int_t, ndim=2] u not None,
     return exp
 
 
-# TODO types
-cdef inc_cov_quadexp_grad(np.ndarray[DTYPE_t, ndim=1] mean,
-                          np.ndarray[DTYPE_t, ndim=2] cov,
-                          float sig,
-                          np.ndarray[DTYPE_t, ndim=2] grad_cov,
-                          a, b,
-                          c, d):
-    cdef float inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
-    grad_cov[a, b] += inc
-    grad_cov[b, a] += inc
-
-
 def normal_gradient(apmf not None):
+    '''
+    Find the gradient of the KL divergence w.r.t. to the passed ActivePMF
+    model's approximation params.
+    '''
     if apmf.mean is None or apmf.cov is None:
         raise ValueError("run initialize_approx first")
 
     cdef np.ndarray mean = apmf.mean
     cdef np.ndarray cov = apmf.cov
 
-    cdef np.ndarray u = apmf.u
-    cdef np.ndarray v = apmf.v
-
-    cdef np.ndarray us = u.reshape(-1)
-    cdef np.ndarray vs = v.reshape(-1)
-
-    cdef float sig = apmf.sigma_sq
-    cdef float sig_u = apmf.sigma_u_sq
-    cdef float sig_v = apmf.sigma_v_sq
-
-    cdef int uki, vkj
-    cdef np.ndarray uli, vlj, u_i, v_j, mu_i, mv_j, inc
-
     # note that we're actually only differentiating by one triangular half
     # of the covariance matrix, but we make grad_cov the full square anyway
     cdef np.ndarray grad_mean = np.zeros_like(mean)
     cdef np.ndarray grad_cov = np.zeros_like(cov)
 
-    for i, j, rating in apmf.ratings:
+    cdef np.ndarray u = apmf.u
+    cdef np.ndarray v = apmf.v
+
+    _normal_grad(mean, cov, apmf.ratings, apmf.latent_d,
+            u, v, u.reshape(-1), v.reshape(-1),
+            apmf.sigma_sq, apmf.sigma_u_sq, apmf.sigma_v_sq,
+            grad_mean, grad_cov)
+
+    return grad_mean, grad_cov
+
+
+# some helpers used to reduce code repetition below, repeated for diff. types
+cdef inline void _cov_4exp_grad_ccll(
+        np.ndarray[DTYPE_t, ndim=1] mean,
+        np.ndarray[DTYPE_t, ndim=2] cov,
+        float sig,
+        np.ndarray[DTYPE_t, ndim=2] grad_cov,
+        int a, int b,
+        np.ndarray[np.int_t, ndim=1] c, np.ndarray[np.int_t, ndim=1] d):
+    cdef float inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
+    grad_cov[a, b] += inc
+    grad_cov[b, a] += inc
+
+cdef inline void _cov_4exp_grad_clcl(
+        np.ndarray[DTYPE_t, ndim=1] mean,
+        np.ndarray[DTYPE_t, ndim=2] cov,
+        float sig,
+        np.ndarray[DTYPE_t, ndim=2] grad_cov,
+        int a, np.ndarray[np.int_t, ndim=1] b,
+        int c, np.ndarray[np.int_t, ndim=1] d):
+    cdef float inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
+    grad_cov[a, b] += inc
+    grad_cov[b, a] += inc
+
+cdef inline void _cov_4exp_grad_llcc(
+        np.ndarray[DTYPE_t, ndim=1] mean,
+        np.ndarray[DTYPE_t, ndim=2] cov,
+        float sig,
+        np.ndarray[DTYPE_t, ndim=2] grad_cov,
+        np.ndarray[np.int_t, ndim=1] a, np.ndarray[np.int_t, ndim=1] b,
+        int c, int d):
+    cdef float inc = (mean[c] * mean[d] + cov[c, d]) / sig
+    grad_cov[a, b] += inc
+    grad_cov[b, a] += inc
+
+
+
+cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
+                  np.ndarray[DTYPE_t, ndim=2] cov,
+                  np.ndarray[DTYPE_t, ndim=2] ratings,
+                  int latent_d,
+                  np.ndarray[np.int_t, ndim=2] u,
+                  np.ndarray[np.int_t, ndim=2] v,
+                  np.ndarray[np.int_t, ndim=1] us,
+                  np.ndarray[np.int_t, ndim=1] vs,
+                  float sig, float sig_u, float sig_v,
+                  np.ndarray[DTYPE_t, ndim=1] grad_mean,
+                  np.ndarray[DTYPE_t, ndim=2] grad_cov):
+    cdef int uki, vkj
+    cdef np.ndarray uli, vlj, u_i, v_j, mu_i, mv_j, inc
+
+    for i, j, rating in ratings:
         # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
         # (doubled because of symmetry, cancels with 2 in denom)
-        for k in range(apmf.latent_d-1):
+        for k in range(latent_d-1):
             uki = u[k, i]
             vkj = v[k, j]
             # vectorize out our sums over l
             uli = u[k+1:, i]
             vlj = v[k+1:, j]
 
-            grad_mean[uki] += tripexpect(mean,cov, vkj,uli,vlj).sum() / sig
-            grad_mean[vkj] += tripexpect(mean,cov, uki,uli,vlj).sum() / sig
-            grad_mean[uli] += tripexpect(mean,cov, uki,vkj,vlj).sum() / sig
-            grad_mean[vlj] += tripexpect(mean,cov, uki,vkj,uli).sum() / sig
+            grad_mean[uki] += sum_tripexpect_cll(mean,cov, vkj,uli,vlj) / sig
+            grad_mean[vkj] += sum_tripexpect_cll(mean,cov, uki,uli,vlj) / sig
+            grad_mean[uli] += sum_tripexpect_ccl(mean,cov, uki,vkj,vlj) / sig
+            grad_mean[vlj] += sum_tripexpect_ccl(mean,cov, uki,vkj,uli) / sig
 
-            inc_cov_quadexp_grad(mean,cov,sig,grad_cov, uki,vkj, uli,vlj)
-            inc_cov_quadexp_grad(mean,cov,sig,grad_cov, uki,uli, vkj,vlj)
-            inc_cov_quadexp_grad(mean,cov,sig,grad_cov, uki,vlj, vkj,uli)
-            inc_cov_quadexp_grad(mean,cov,sig,grad_cov, vkj,uli, uki,vlj)
-            inc_cov_quadexp_grad(mean,cov,sig,grad_cov, vkj,vlj, uki,uli)
-            inc_cov_quadexp_grad(mean,cov,sig,grad_cov, uli,vlj, uki,vkj)
+            _cov_4exp_grad_ccll(mean,cov,sig,grad_cov, uki,vkj, uli,vlj)
+            _cov_4exp_grad_clcl(mean,cov,sig,grad_cov, uki,uli, vkj,vlj)
+            _cov_4exp_grad_clcl(mean,cov,sig,grad_cov, uki,vlj, vkj,uli)
+            _cov_4exp_grad_clcl(mean,cov,sig,grad_cov, vkj,uli, uki,vlj)
+            _cov_4exp_grad_clcl(mean,cov,sig,grad_cov, vkj,vlj, uki,uli)
+            _cov_4exp_grad_llcc(mean,cov,sig,grad_cov, uli,vlj, uki,vkj)
 
         # everything else can just be vectorized over k
         u_i = u[:,i]
@@ -192,5 +249,3 @@ def normal_gradient(apmf not None):
     # need each cofactor of the matrix divided by its determinant;
     # this is just the transpose of its inverse
     grad_cov += np.linalg.inv(cov).T / 2
-
-    return grad_mean, grad_cov
