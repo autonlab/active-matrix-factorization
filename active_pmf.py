@@ -48,7 +48,14 @@ class ActivePMFEvaluator(object):
         self.key_name = key.__name__
 
     def __call__(self, ij):
-        return getattr(self.apmf, self.key_name)(ij)
+        fn = getattr(self.apmf, self.key_name)
+        try:
+            return fn(ij)
+        except Exception:
+            # show what the error was if it's in a pool
+            import traceback
+            traceback.print_exc()
+            raise
 
 def strictmap(*args, **kwargs):
     return list(map(*args, **kwargs))
@@ -412,7 +419,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         '''
         p_cov = self.approx_pred_covs()
         sign, logdet = np.linalg.slogdet(p_cov)
-        assert sign == 1
+        if sign != 1:
+            raise ValueError("prediction covariance matrix has det of sign {}".format(sign))
         return logdet
 
     @do_normal_fit(True)
