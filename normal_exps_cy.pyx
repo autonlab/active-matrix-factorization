@@ -13,6 +13,7 @@ def tripexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
     return mean[a] * mean[b] * mean[c] + \
             mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]
 
+# TODO: Buffer unpacking not optimized away
 cdef inline float sum_tripexpect_ccl(
             np.ndarray[DTYPE_t, ndim=1] mean,
             np.ndarray[DTYPE_t, ndim=2] cov,
@@ -139,6 +140,7 @@ def normal_gradient(apmf not None):
 
 
 # some helpers used to reduce code repetition below, repeated for diff. types
+# TODO: Buffer unpacking not optimized away
 cdef inline void _cov_4exp_grad_ccll(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
