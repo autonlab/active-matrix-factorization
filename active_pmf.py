@@ -269,6 +269,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         '''
         n = self.num_users
         m = self.num_items
+        D = self.latent_d
 
         pred_covs = np.zeros((n*m, n*m))
         # covariance of U_i.V_j with U_a.V_b
@@ -280,8 +281,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         a2bc = functools.partial(exp_a2bc, mean, cov)
         e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
 
-        # loop over the lower triangle of the cov matrix
-        # TODO: vectorize
+        # TODO: vectorize, maybe cythonize
         ijs = list(product(range(n), range(m)))
 
         for idx1, (i, j) in enumerate(ijs):
@@ -289,62 +289,42 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             v_j = self.v[:,j]
 
             # variance of U_i . V_j
-            m = (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum()
-            pred_covs[idx1, idx1] = e_dot_sq(i, j) - m**2
+            pred_covs[idx1, idx1] = (
+                e_dot_sq(i, j)
+                - (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() ** 2
+            )
 
+            # loop over lower triangle of the cov matrix
             for idx2 in range(idx1 + 1, len(ijs)):
                 a, b = ijs[idx2]
+                u_a = self.u[:, a]
+                v_b = self.u[:, b]
+
                 cv = 0
 
-                if i == a: # cov of U_i.V_j with U_i.V_b, j != b
-                    v_b = self.v[:, b]
+                # sum_k sum_{l != k} E[Uki Vkj Ula Vlb]
+                for k in range(D):
+                    # sum over l != k
+                    for l in range(k):
+                        cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
+                    for l in range(k+1, D):
+                        cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
 
-                    # sum_{k,l} E[Uki Vkj Uli Vlb]
-                    for k in range(self.latent_d):
-                        for l in range(k):
-                            cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
-
+                # sum_k E[Uki Uka Vkj Vkb]
+                if i == j: # know j != b because idx1 != idx2
+                    for k in range(D):
                         cv += a2bc(u_i[k], v_j[k], v_b[k])
-
-                        for l in range(k+1, self.latent_d):
-                            cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
-
-                    # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
-                    e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
-                    e_ib = mean[u_i] * mean[v_b] + cov[u_i, v_b]
-                    cv -= e_ij.sum() * e_ib.sum()
-
-                elif j == b: # cov of U_i.V_j with U_a.V_j, i != a
-                    u_a = self.u[:, a]
-
-                    # sum_{k,l} E[Uki Vkj Ula Vlj]
-                    for k in range(self.latent_d):
-                        for l in range(k):
-                            cv += qexp(u_i[k], v_j[k], u_a[l], v_j[l])
-
+                elif j == b:
+                    for k in range(D):
                         cv += a2bc(v_j[k], u_i[k], u_a[k])
+                else:
+                    for k in range(D):
+                        cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
 
-                        for l in range(k+1, self.latent_d):
-                            cv += qexp(u_i[k], v_j[k], u_a[l], v_j[l])
-
-                    # - sum_{k,l} E[Uki Vkj] E[Ula Vlj]
-                    e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
-                    e_aj = mean[u_a] * mean[v_j] + cov[u_a, v_j]
-                    cv -= e_ij.sum() * e_aj.sum()
-
-                else: # cov of U_i.V_j with U_a.V_b, i != a, j != b
-                    u_a = self.u[:, a]
-                    v_b = self.v[:, b]
-
-                    # sum_{k,l} E[Uki Vkj Ula Vlb]
-                    for k in range(self.latent_d):
-                        for l in range(self.latent_d):
-                            cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
-
-                    # - sum_{k,l} E[Uki Vkj] E[Ula Vlb]
-                    e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
-                    e_ab = mean[u_a] * mean[v_b] + cov[u_a, v_b]
-                    cv -= e_ij.sum() * e_ab.sum()
+                # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
+                e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
+                e_ab = mean[u_a] * mean[v_b] + cov[u_a, v_b]
+                cv -= e_ij.sum() * e_ab.sum()
 
                 pred_covs[idx1, idx2] = cv
                 pred_covs[idx2, idx1] = cv
