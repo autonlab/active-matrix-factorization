@@ -757,9 +757,12 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         #print '=' * 80
 
         print("Picking a query point...")
-        vals = apmf.get_key_evals(key=picker_key, procs=processes)
-        i, j = picker_key.chooser(zip(apmf.unrated, vals),
-                                  key=operator.itemgetter(1))[0]
+        if len(apmf.unrated) == 1:
+            i, j = next(iter(apmf.unrated))
+        else:
+            vals = apmf.get_key_evals(key=picker_key, procs=processes)
+            i, j = picker_key.chooser(zip(apmf.unrated, vals),
+                                      key=operator.itemgetter(1))[0]
 
         apmf.add_rating(i, j, real[i, j])
         print("Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total))
@@ -806,8 +809,11 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
         n = len(apmf.rated) + 1
 
         print("{:<40} Picking query point {}...".format(name, n))
-        vals = apmf.get_key_evals(key=picker_key, worker_pool=worker_pool)
-        i, j = picker_key.chooser(apmf.unrated, key=vals.__getitem__)
+        if len(apmf.unrated) == 1:
+            i, j = next(iter(apmf.unrated))
+        else:
+            vals = apmf.get_key_evals(key=picker_key, worker_pool=worker_pool)
+            i, j = picker_key.chooser(apmf.unrated, key=vals.__getitem__)
 
         apmf = worker_pool.apply(_in_between_work,
                 (apmf, i, j, real[i,j], total, fit_normal, name))
