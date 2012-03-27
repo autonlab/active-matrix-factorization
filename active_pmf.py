@@ -5,7 +5,7 @@ Code to do active learning on a PMF model.
 
 from copy import deepcopy
 import functools
-from itertools import product
+from itertools import product, cycle
 import math
 import operator
 import random
@@ -689,15 +689,30 @@ def plot_rmses(results):
     plt.xlabel("# of rated elements")
     plt.ylabel("RMSE")
 
-    for key_name, result in results.items():
-        nums, rmses, ijs, vals = zip(*result)
-        plt.plot(nums, rmses, label=KEY_FUNCS[key_name].nice_name)
+    # cycle through colors and line styles
+    colors = 'bgrcmyk'
+    linestyles = ['-', '--', ':']
+    l_c = cycle(product(linestyles, colors))
 
-    # ridiculous line that sorts the legend by labels
-    plt.legend(*zip(*sorted(
-            zip(*plt.gca().get_legend_handles_labels()),
-            key=operator.itemgetter(1))),
-        loc='best', prop=FontProperties(size=9))
+    # offset lines a bit so you can see when some of them overlap
+    total = len(results)
+    offset = .15 / total
+
+    nice_results = ((KEY_FUNCS[k].nice_name, k, v) for k, v in results.items())
+
+    for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
+        nums, rmses, ijs, vals = zip(*result)
+
+        nums = np.array(nums) + (idx - total/2) * offset
+
+        l, c = next(l_c)
+        plt.plot(nums, rmses, linestyle=l, color=c, label=nice_name, marker='^')
+
+    # only show integer values for x ticks
+    xmin, xmax = plt.xlim()
+    plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
+
+    plt.legend(loc='best', prop=FontProperties(size=10))
 
 
 def subplot_config(n):
