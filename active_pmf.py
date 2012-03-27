@@ -607,7 +607,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                 return vals
 
 
-    def get_key_evals(self, pool=None, key=None, procs=None):
+    def get_key_evals(self, pool=None, key=None, procs=None, worker_pool=None):
         '''
         Returns a matrix in the shape of the prediction matrix, with elements
         set to the value of key for each element of pool (default:
@@ -620,7 +620,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         evals = np.zeros((self.num_users, self.num_items))
         evals[:] = np.nan
-        evals[list(zip(*pool))] = self._get_key_vals(pool, key, procs)
+        evals[list(zip(*pool))] = \
+                self._get_key_vals(pool, key, procs, worker_pool)
         return evals
 
 
@@ -748,7 +749,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
     total = apmf.num_users * apmf.num_items
     rmse = apmf.rmse(real)
     print("RMSE: %g" % rmse)
-    yield len(apmf.rated), rmse
+    yield len(apmf.rated), rmse, None, None
 
 
     while apmf.unrated:
@@ -756,7 +757,9 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         #print '=' * 80
 
         print("Picking a query point...")
-        i, j = apmf.pick_query_point(key=picker_key, procs=processes)
+        vals = apmf.get_key_evals(key=picker_key, procs=processes)
+        i, j = picker_key.chooser(zip(apmf.unrated, vals),
+                                  key=operator.itemgetter(1))[0]
 
         apmf.add_rating(i, j, real[i, j])
         print("Queried (%d, %d); %d/%d known" % (i, j, len(apmf.rated), total))
@@ -776,7 +779,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
 
         rmse = apmf.rmse(real)
         print("RMSE: %g" % rmse)
-        yield len(apmf.rated), rmse
+        yield len(apmf.rated), rmse, (i,j), vals
 
 
 def _in_between_work(apmf, i, j, realval, total, fit_normal, name):
@@ -797,20 +800,21 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
 
     rmse = apmf.rmse(real)
     print("{:<40} Initial RMSE: {}".format(name, rmse))
-    yield len(apmf.rated), rmse
+    yield len(apmf.rated), rmse, None, None
 
     while apmf.unrated:
         n = len(apmf.rated) + 1
 
         print("{:<40} Picking query point {}...".format(name, n))
-        i, j = apmf.pick_query_point(key=picker_key, worker_pool=worker_pool)
+        vals = apmf.get_key_evals(key=picker_key, worker_pool=worker_pool)
+        i, j = picker_key.chooser(apmf.unrated, key=vals.__getitem__)
 
         apmf = worker_pool.apply(_in_between_work,
                 (apmf, i, j, real[i,j], total, fit_normal, name))
 
         rmse = apmf.rmse(real)
         print("{:<40} RMSE {}: {}".format(picker_key.nice_name, n, rmse))
-        yield len(apmf.rated), rmse
+        yield len(apmf.rated), rmse, (i,j), vals
 
 
 
@@ -887,12 +891,13 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
         plt.ylabel("RMSE")
 
         for key_name, result in results.items():
-            plt.plot(*zip(*result), label=KEY_FUNCS[key_name].nice_name)
+            nums, rmses, ijs, vals = zip(*result)
+            plt.plot(nums, rmses, label=KEY_FUNCS[key_name].nice_name)
 
         # ridiculous line that sorts the legend by labels
-        plt.legend(*list(zip(*sorted(
+        plt.legend(*zip(*sorted(
                 zip(*plt.gca().get_legend_handles_labels()),
-                key=operator.itemgetter(1)))),
+                key=operator.itemgetter(1))),
             loc='best', prop=FontProperties(size=9))
 
         if saveplot is None:
@@ -902,7 +907,7 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
 
             import pickle
             with open(saveplot + '.pkl', 'wb') as f:
-                pickle.dump(list(zip(key_names, results)), f)
+                pickle.dump(results, f)
 
 
 def main():
