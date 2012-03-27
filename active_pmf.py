@@ -265,8 +265,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         Returns the covariance between elements of the predicted R matrix
         under the normal approximation.
         '''
-        ijs = list(product(range(self.num_users), range(self.num_items)))
-        pred_covs = np.zeros((len(ijs), len(ijs)))
+        n = self.num_users
+        m = self.num_items
+
+        pred_covs = np.zeros((n*m, n*m))
         # covariance of U_i.V_j with U_a.V_b
 
         mean = self.mean
@@ -276,19 +278,24 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         a2bc = functools.partial(exp_a2bc, mean, cov)
         e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
 
+        # loop over the lower triangle of the cov matrix
         # TODO: vectorize
+        ijs = list(product(range(n), range(m)))
+
         for idx1, (i, j) in enumerate(ijs):
             u_i = self.u[:,i]
             v_j = self.v[:,j]
 
-            for idx2, (a, b) in enumerate(ijs):
-                if idx1 == idx2: # variance of U_i.V_j
-                    m = (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum()
-                    cv = e_dot_sq(i, j) - m**2
+            # variance of U_i . V_j
+            m = (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum()
+            pred_covs[idx1, idx1] = e_dot_sq(i, j) - m**2
 
-                elif i == a: # cov of U_i.V_j with U_i.V_b, j != b
+            for idx2 in range(idx1 + 1, len(ijs)):
+                a, b = ijs[idx2]
+                cv = 0
+
+                if i == a: # cov of U_i.V_j with U_i.V_b, j != b
                     v_b = self.v[:, b]
-                    cv = 0
 
                     # sum_{k,l} E[Uki Vkj Uli Vlb]
                     for k in range(self.latent_d):
@@ -303,11 +310,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
                     e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
                     e_ib = mean[u_i] * mean[v_b] + cov[u_i, v_b]
-                    cv -= sum(ij_k * ib_l for ij_k, ib_l in product(e_ij, e_ib))
+                    cv -= e_ij.sum() * e_ib.sum()
 
                 elif j == b: # cov of U_i.V_j with U_a.V_j, i != a
                     u_a = self.u[:, a]
-                    cv = 0
 
                     # sum_{k,l} E[Uki Vkj Ula Vlj]
                     for k in range(self.latent_d):
@@ -322,12 +328,11 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     # - sum_{k,l} E[Uki Vkj] E[Ula Vlj]
                     e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
                     e_aj = mean[u_a] * mean[v_j] + cov[u_a, v_j]
-                    cv -= sum(ij_k * aj_l for ij_k, aj_l in product(e_ij, e_aj))
+                    cv -= e_ij.sum() * e_aj.sum()
 
                 else: # cov of U_i.V_j with U_a.V_b, i != a, j != b
                     u_a = self.u[:, a]
                     v_b = self.v[:, b]
-                    cv = 0
 
                     # sum_{k,l} E[Uki Vkj Ula Vlb]
                     for k in range(self.latent_d):
@@ -337,9 +342,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     # - sum_{k,l} E[Uki Vkj] E[Ula Vlb]
                     e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
                     e_ab = mean[u_a] * mean[v_b] + cov[u_a, v_b]
-                    cv -= sum(ij_k * ab_l for ij_k, ab_l in product(e_ij, e_ab))
+                    cv -= e_ij.sum() * e_ab.sum()
 
                 pred_covs[idx1, idx2] = cv
+                pred_covs[idx2, idx1] = cv
 
         return pred_covs
 
