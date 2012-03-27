@@ -14,6 +14,8 @@ def tripexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
             mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]
 
 # TODO: Buffer unpacking not optimized away
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef inline float sum_tripexpect_ccl(
             np.ndarray[DTYPE_t, ndim=1] mean,
             np.ndarray[DTYPE_t, ndim=2] cov,
@@ -21,6 +23,8 @@ cdef inline float sum_tripexpect_ccl(
     return (mean[a] * mean[b] * mean[c] +
             mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]).sum()
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef inline float sum_tripexpect_cll(
             np.ndarray[DTYPE_t, ndim=1] mean,
             np.ndarray[DTYPE_t, ndim=2] cov,
@@ -32,13 +36,14 @@ cdef inline float sum_tripexpect_cll(
 
 
 @cython.boundscheck(False)
+@cython.wraparound(False)
 def quadexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
                np.ndarray[DTYPE_t, ndim=2] cov not None,
-               unsigned int a, unsigned int b, unsigned int c, unsigned int d):
+               int a, int b, int c, int d):
     '''
-    E[X_a X_b X_c X_d] for N(mean, cov) and distinct a/b/c/d.
+    E[X_a X_b X_c X_d] for N(mean, cov) and distinct a,b,c,d.
 
-    Assumes that a/b/c/d are within bounds and not negative; will do
+    Assumes that a,b,c,d are within bounds and not negative; will do
     nasty things if this isn't true.
     '''
     # TODO: try method of Kan (2008), see if it's faster?
@@ -66,17 +71,29 @@ def quadexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
         + cov[a,d] * cov[b,c]
     )
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def exp_squared(np.ndarray[DTYPE_t, ndim=1] mean not None,
                 np.ndarray[DTYPE_t, ndim=2] cov not None,
                 int a, int b):
-    '''E[X_a^2 X_b^2] for N(mean, cov)'''
+    '''E[X_a^2 X_b^2] for N(mean, cov)
+
+    Assumes that a,b are within bounds and not negative; will do
+    nasty things if this isn't true.
+    '''
     return 4 * mean[a] * mean[b] * cov[a,b] + 2*cov[a,b]**2 + \
             (mean[a]**2 + cov[a,a]) * (mean[b]**2 + cov[b,b])
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def exp_a2bc(np.ndarray[DTYPE_t, ndim=1] mean not None,
              np.ndarray[DTYPE_t, ndim=2] cov not None,
              int a, int b, int c):
-    '''E[X_a^2 X_b X_c for N(mean, cov)'''
+    '''E[X_a^2 X_b X_c for N(mean, cov)
+
+    Assumes that a,b,c are within bounds and not negative; will do
+    nasty things if this isn't true.
+    '''
 
     cdef DTYPE_t ma = mean[a]
     cdef DTYPE_t mb = mean[b]
@@ -89,12 +106,18 @@ def exp_a2bc(np.ndarray[DTYPE_t, ndim=1] mean not None,
         + 2 * cov[a,b] * cov[a,c]
     )
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def exp_dotprod_sq(np.ndarray[np.int_t, ndim=2] u not None,
                    np.ndarray[np.int_t, ndim=2] v not None,
                    np.ndarray[DTYPE_t, ndim=1] mean not None,
                    np.ndarray[DTYPE_t, ndim=2] cov not None,
                    int i, int j):
-    '''E[ (U_i^T V_j)^2 ]'''
+    '''E[ (U_i^T V_j)^2 ]
+
+    Assumes i, j are within bounds and not negative, and that the shapes are
+    appopriate; will do nasty things if this isn't true.
+    '''
     # TODO: vectorize as much as possible
 
     cdef float exp = 0
@@ -112,13 +135,19 @@ def exp_dotprod_sq(np.ndarray[np.int_t, ndim=2] u not None,
     return exp
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def normal_gradient(apmf not None):
     '''
     Find the gradient of the KL divergence w.r.t. to the passed ActivePMF
     model's approximation params.
+
+    Raises TypeError if apmf, apmf.mean, or apmf.cov is None
+
+    Will do nasty things if the shapes of the various arrays are wrong.
     '''
     if apmf.mean is None or apmf.cov is None:
-        raise ValueError("run initialize_approx first")
+        raise TypeError("mean, cov are None; run initialize_approx first")
 
     cdef np.ndarray mean = apmf.mean
     cdef np.ndarray cov = apmf.cov
@@ -141,6 +170,8 @@ def normal_gradient(apmf not None):
 
 # some helpers used to reduce code repetition below, repeated for diff. types
 # TODO: Buffer unpacking not optimized away
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef inline void _cov_4exp_grad_ccll(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
@@ -152,6 +183,8 @@ cdef inline void _cov_4exp_grad_ccll(
     grad_cov[a, b] += inc
     grad_cov[b, a] += inc
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef inline void _cov_4exp_grad_clcl(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
@@ -163,6 +196,8 @@ cdef inline void _cov_4exp_grad_clcl(
     grad_cov[a, b] += inc
     grad_cov[b, a] += inc
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef inline void _cov_4exp_grad_llcc(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
@@ -175,7 +210,8 @@ cdef inline void _cov_4exp_grad_llcc(
     grad_cov[b, a] += inc
 
 
-
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
                   np.ndarray[DTYPE_t, ndim=2] cov,
                   np.ndarray[DTYPE_t, ndim=2] ratings,
