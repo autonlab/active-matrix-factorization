@@ -13,11 +13,13 @@ import random
 import numpy as np
 
 from pmf import ProbabilisticMatrixFactorization
+
 try:
     from normal_exps_cy import (quadexpect, exp_a2bc, exp_dotprod_sq,
                                 normal_gradient)
 except ImportError:
-    print("WARNING: cython version not available, using pure-python version")
+    print("WARNING: cython version not available, using pure-python version",
+          file=sys.stderr)
     from normal_exps import (quadexpect, exp_a2bc, exp_dotprod_sq,
                              normal_gradient)
 
@@ -429,7 +431,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             import sys
             m = "prediction cov has det with sign {}, log {}".format(s, logdet)
             print("WARNING:", m, file=sys.stderr)
-            return -1000 # XXX magic constant...
+            return -1000 # XXX could exponentiate instead and return 0 here...
         return logdet
 
     @do_normal_fit(True)
