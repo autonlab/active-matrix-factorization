@@ -620,8 +620,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         if key is None:
             key = ActivePMF.pred_variance
 
-        evals = np.zeros((self.num_users, self.num_items))
-        evals[:] = np.nan
+        evals = np.empty((self.num_users, self.num_items))
+        evals.fill(np.nan)
         evals[list(zip(*pool))] = \
                 self._get_key_vals(pool, key, procs, worker_pool)
         return evals
@@ -629,36 +629,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
 
 ################################################################################
-### Testing code
-
-def make_fake_data(noise=.25, num_users=10, num_items=10,
-                        rating_prob=0, rank=5):
-    u = np.random.normal(0, 2, (num_users, rank))
-    v = np.random.normal(0, 2, (num_items, rank))
-
-    ratings = np.dot(u, v.T)
-    if noise:
-        ratings += np.random.normal(0, noise, (num_users, num_items))
-
-    mask = np.random.binomial(1, rating_prob, ratings.shape)
-
-    # make sure every row/col has at least one rating
-    for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
-        mask[random.randrange(num_users), zero_col] = 1
-
-    for zero_row in np.logical_not(mask.sum(axis=1)).nonzero()[0]:
-        mask[zero_row, random.randrange(num_items)] = 1
-
-    assert (mask.sum(axis=0) > 0).all()
-    assert (mask.sum(axis=1) > 0).all()
-
-    # convert into the list-of-ratings form we want
-    rates = np.zeros((mask.sum(), 3))
-    for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
-        rates[idx] = [i, j, ratings[i, j]]
-
-    return ratings, rates
-
+### Plotting code
 
 def plot_variances(apmf, vmax=None):
     from matplotlib import pyplot as plt
@@ -679,6 +650,7 @@ def plot_variances(apmf, vmax=None):
     plt.colorbar()
 
     return var
+
 
 def plot_predictions(apmf, real):
     from matplotlib import pyplot as plt
@@ -710,17 +682,37 @@ def plot_predictions(apmf, real):
             plt.Normalize(a_std.min(), a_std.max()))
 
 
+def plot_rmses(results):
+    from matplotlib import pyplot as plt
+    from matplotlib.font_manager import FontProperties
+
+    plt.xlabel("# of rated elements")
+    plt.ylabel("RMSE")
+
+    for key_name, result in results.items():
+        nums, rmses, ijs, vals = zip(*result)
+        plt.plot(nums, rmses, label=KEY_FUNCS[key_name].nice_name)
+
+    # ridiculous line that sorts the legend by labels
+    plt.legend(*zip(*sorted(
+            zip(*plt.gca().get_legend_handles_labels()),
+            key=operator.itemgetter(1))),
+        loc='best', prop=FontProperties(size=9))
+
+
+def subplot_config(n):
+    if n <= 3:
+        return 1, n
+    nc = math.ceil(math.sqrt(n))
+    nr = math.ceil(n / nc)
+    return nr, nc
+
+
 def plot_criteria(apmf, keys, procs=None):
     from matplotlib import pyplot as plt
     from matplotlib import cm
 
-    n = len(keys)
-    if n <= 3:
-        nr = 1
-        nc = n
-    else:
-        nc = math.ceil(math.sqrt(n))
-        nr = math.ceil(n / nc)
+    nr, nc = subplot_config(len(keys))
 
     for idx, key in enumerate(keys):
         evals = apmf.get_key_evals(key=key, procs=procs)
@@ -730,6 +722,61 @@ def plot_criteria(apmf, keys, procs=None):
         plt.title(key.nice_name)
         plt.colorbar()
 
+
+def plot_criteria_over_time(name, result):
+    from matplotlib import pyplot as plt
+    from matplotlib import cm
+
+    nums, rmses, ijs, valses = zip(*result)
+
+    assert ijs[0] is None
+    assert valses[0] is None
+    ijs = ijs[1:]
+    valses = valses[1:]
+
+    if np.all(np.isnan(valses[-1])):
+        ijs = ijs[:-1]
+        valses = valses[:-1]
+
+    nr, nc = subplot_config(len(ijs))
+
+    plt.suptitle(name)
+
+    for idx, (n, rmse, (i,j), vals) in enumerate(zip(nums, rmses, ijs, valses)):
+        # we know n values and have RMSE of rmse, then pick ij based on vals
+        plt.subplot(nr, nc, idx+1)
+
+        plt.title("Picking {} - RMSE {:.3}".format(n + 1, rmse))
+        plt.imshow(vals, interpolation='nearest', cmap=cm.winter,
+                   origin='upper', aspect='equal')
+        if not np.all(np.isnan(vals)):
+            plt.colorbar()
+
+        n, m = vals.shape
+        plt.xticks(np.linspace(-.5, m + .5, m + 2), [])
+        plt.yticks(np.linspace(-.5, n + .5, n + 2), [])
+        plt.grid()
+
+        # mark the selected point (indices are transposed)
+        plt.scatter(j, i, marker='o', c='red', s=100)
+
+
+def plot_all_criteria(results, filename_format):
+    from matplotlib import pyplot as plt
+
+    for name, result in results.items():
+        nice_name = KEY_FUNCS[name].nice_name
+        filename = filename_format.format(name)
+        print("doing", filename)
+
+        fig = plt.figure()
+        plot_criteria_over_time(nice_name, result)
+        fig.savefig(filename)
+        fig.close()
+
+
+################################################################################
+### Testing code
 
 def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
               fit_normal=True, processes=None):
@@ -812,6 +859,8 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
 
         print("{:<40} Picking query point {}...".format(name, n))
         if len(apmf.unrated) == 1:
+            vals = np.empty((apmf.num_users, apmf.num_items))
+            vals.fill(np.nan)
             i, j = next(iter(apmf.unrated))
         else:
             vals = apmf.get_key_evals(key=picker_key, worker_pool=worker_pool)
@@ -840,8 +889,38 @@ KEY_FUNCS = {
     "pred-entropy-bound-approx": ActivePMF.exp_pred_entropy_bound_byapprox,
 }
 
-def compare(key_names, plot=True, saveplot=None, latent_d=5,
-            processes=None, do_threading=True, **kwargs):
+
+def make_fake_data(noise=.25, num_users=10, num_items=10,
+                        rating_prob=0, rank=5):
+    u = np.random.normal(0, 2, (num_users, rank))
+    v = np.random.normal(0, 2, (num_items, rank))
+
+    ratings = np.dot(u, v.T)
+    if noise:
+        ratings += np.random.normal(0, noise, (num_users, num_items))
+
+    mask = np.random.binomial(1, rating_prob, ratings.shape)
+
+    # make sure every row/col has at least one rating
+    for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
+        mask[random.randrange(num_users), zero_col] = 1
+
+    for zero_row in np.logical_not(mask.sum(axis=1)).nonzero()[0]:
+        mask[zero_row, random.randrange(num_items)] = 1
+
+    assert (mask.sum(axis=0) > 0).all()
+    assert (mask.sum(axis=1) > 0).all()
+
+    # convert into the list-of-ratings form we want
+    rates = np.zeros((mask.sum(), 3))
+    for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
+        rates[idx] = [i, j, ratings[i, j]]
+
+    return ratings, rates
+
+
+
+def compare(key_names, latent_d=5, processes=None, do_threading=True, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
@@ -889,34 +968,13 @@ def compare(key_names, plot=True, saveplot=None, latent_d=5,
             results[key_name] = list(full_test(
                     deepcopy(apmf), real, key, key.do_normal_fit, processes))
 
+    return results
 
-    if plot:
-        from matplotlib import pyplot as plt
-        from matplotlib.font_manager import FontProperties
 
-        plt.figure()
-        plt.xlabel("# of rated elements")
-        plt.ylabel("RMSE")
-
-        for key_name, result in results.items():
-            nums, rmses, ijs, vals = zip(*result)
-            plt.plot(nums, rmses, label=KEY_FUNCS[key_name].nice_name)
-
-        # ridiculous line that sorts the legend by labels
-        plt.legend(*zip(*sorted(
-                zip(*plt.gca().get_legend_handles_labels()),
-                key=operator.itemgetter(1))),
-            loc='best', prop=FontProperties(size=9))
-
-        if saveplot is None:
-            plt.show()
-        else:
-            plt.savefig(saveplot)
-
-            import pickle
-            with open(saveplot + '.pkl', 'wb') as f:
-                pickle.dump(results, f)
-
+def add_bool_opt(parser, name, default=False):
+    parser.add_argument('--' + name, action='store_true', default=default)
+    parser.add_argument('--no-' + name, action='store_false',
+            dest=name.replace('-', '_'))
 
 def main():
     key_names = set(KEY_FUNCS.keys())
@@ -924,25 +982,45 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--latent-d', '-D', type=int, default=5)
-    parser.add_argument('--gen-rank', '-R', type=int, default=5)
-    parser.add_argument('--noise', '-n', type=float, default=.25)
-    parser.add_argument('--num-users', '-N', type=int, default=10)
-    parser.add_argument('--num-items', '-M', type=int, default=10)
-    parser.add_argument('--rating-prob', '-r', type=float, default=0)
+    model = parser.add_argument_group("Model Options")
+    model.add_argument('--latent-d', '-D', type=int, default=5)
+    model.add_argument('keys', nargs='*', default=sorted(key_names))
 
-    parser.add_argument('--plot', action='store_true', default=True)
-    parser.add_argument('--no-plot', action='store_false', dest='plot')
-    parser.add_argument('--outfile', default=None)
+    problem_def = parser.add_argument_group("Problem Definiton")
+    problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
+    problem_def.add_argument('--noise', '-n', type=float, default=.25)
+    problem_def.add_argument('--num-users', '-N', type=int, default=10)
+    problem_def.add_argument('--num-items', '-M', type=int, default=10)
+    problem_def.add_argument('--rating-prob', '-r', type=float, default=0)
 
-    parser.add_argument('--processes', '-P', type=int, default=None)
-    parser.add_argument('--thread', action='store_true', default=True)
-    parser.add_argument('--no-thread', action='store_false', dest='thread')
+    running = parser.add_argument_group("Running")
+    running.add_argument('--processes', '-P', type=int, default=None)
+    add_bool_opt(running, 'threading', True)
 
-    parser.add_argument('keys', nargs='*', default=sorted(key_names))
+    results = parser.add_argument_group("Results")
+    results.add_argument('--load-results', default=None, metavar='FILE')
+    results.add_argument('--save-results', default=None, nargs='?',
+            metavar='FILE')
+    results.add_argument('--no-save-results',
+            action='store_false', dest='save_results')
+
+    plotting = parser.add_argument_group("Plotting")
+    add_bool_opt(plotting, 'plot', None)
+    plotting.add_argument('--outfile', default=None, metavar='FILE')
+    add_bool_opt(plotting, 'plot-criteria', False)
+    plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
+            help="A {}-style format string, where {} is the key name.")
 
     args = parser.parse_args()
 
+
+    # set defaults that are different for loading vs running
+    if args.save_results is None:
+        args.save_results = not args.load_results
+    if args.plot is None:
+        args.plot = not args.load_results
+
+    # check that args.keys are valid
     for k in args.keys:
         if k not in key_names:
             import sys
@@ -950,27 +1028,82 @@ def main():
                 k, ', '.join(key_names)))
             sys.exit(1)
 
-    # if we're not running interactively, use Agg
-    if args.outfile:
-        import matplotlib
-        matplotlib.use('Agg')
 
-    try:
-        compare(args.keys,
-                num_users=args.num_users, num_items=args.num_items,
-                rank=args.gen_rank, latent_d=args.latent_d,
-                noise=args.noise,
-                rating_prob=args.rating_prob,
-                plot=args.plot, saveplot=args.outfile,
-                processes=args.processes, do_threading=args.thread)
-    except Exception:
-        import traceback
-        print()
-        traceback.print_exc()
+    # load results, or make them
+    if args.load_results is not None:
+        import pickle
+        with open(args.load_results, 'rb') as resultsfile:
+            results = pickle.load(resultsfile)
+    else:
+        try:
+            results = compare(args.keys,
+                    num_users=args.num_users, num_items=args.num_items,
+                    rank=args.gen_rank, latent_d=args.latent_d,
+                    noise=args.noise,
+                    rating_prob=args.rating_prob,
+                    processes=args.processes, do_threading=args.threading)
+        except Exception:
+            import traceback
+            print()
+            traceback.print_exc()
 
-        import pdb
-        print()
-        pdb.post_mortem()
+            import pdb
+            print()
+            pdb.post_mortem()
+
+            import sys
+            sys.exit(1)
+
+
+    # save the results file
+    if args.save_results:
+        if args.save_results is not True:
+            filename = args.save_results
+        elif args.outfile:
+            filename = args.outfile + '.pkl'
+        elif args.criteria_file:
+            filename = args.criteria_file.format('results') + '.pkl'
+        else:
+            filename = 'results.pkl'
+
+        print("saving results in '{}'".format(filename))
+
+        import pickle
+        with open(filename, 'wb') as f:
+            pickle.dump(results, f)
+
+
+    # do any plotting
+    if args.plot or args.plot_criteria:
+        interactive = ((args.plot and not args.outfile) or
+                       (args.plot_criteria and not args.criteria_file))
+
+        if not interactive:
+            import matplotlib
+            matplotlib.use('Agg')
+
+        from matplotlib import pyplot as plt
+
+        if args.plot:
+            fig = plt.figure()
+            plot_rmses(results)
+
+            if args.outfile:
+                fig.savefig(args.outfile)
+
+        if args.plot_criteria:
+            for name, result in results.items():
+                nice_name = KEY_FUNCS[name].nice_name
+
+                fig = plt.figure()
+                plot_criteria_over_time(nice_name, result)
+
+                if args.criteria_file:
+                    fig.savefig(args.criteria_file.format(name))
+
+        if interactive:
+            plt.show()
+
 
 if __name__ == '__main__':
     main()
