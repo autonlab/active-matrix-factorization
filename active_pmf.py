@@ -426,7 +426,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         p_cov = self.approx_pred_covs()
         sign, logdet = np.linalg.slogdet(p_cov)
         if sign != 1:
-            raise ValueError("prediction covariance matrix has det of sign {}".format(sign))
+            raise ValueError("prediction covariance matrix has det "
+                             "with sign {}, log {}".format(sign, logdet))
         return logdet
 
     @do_normal_fit(True)
