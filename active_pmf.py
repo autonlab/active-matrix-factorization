@@ -720,9 +720,13 @@ def plot_criteria(apmf, keys, procs=None):
         plt.colorbar()
 
 
-def plot_criteria_over_time(name, result):
+def plot_criteria_over_time(name, result, cmap=None):
     from matplotlib import pyplot as plt
-    from matplotlib import cm
+    from mpl_toolkits.axes_grid1 import ImageGrid
+
+    if cmap is None:
+        from matplotlib import cm
+        cmap = cm.jet
 
     nums, rmses, ijs, valses = zip(*result)
 
@@ -737,25 +741,45 @@ def plot_criteria_over_time(name, result):
 
     nr, nc = subplot_config(len(ijs))
 
-    plt.suptitle(name)
+    fig = plt.figure()
+    fig.suptitle(name)
+    grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.3,
+            cbar_location='right', cbar_mode='single')
+
+    n_users, n_items = valses[0].shape
+    xticks = np.linspace(-.5, n_items - .5, n_items + 1)
+    yticks = np.linspace(-.5, n_users - .5, n_users + 1)
+
+    vmin = min(vals[np.isfinite(vals)].min() for vals in valses)
+    vmax = max(vals[np.isfinite(vals)].max() for vals in valses)
+    norm = plt.Normalize(vmin, vmax)
+    # TODO: dynamically adjust color range to be more distinguishable?
 
     for idx, (n, rmse, (i,j), vals) in enumerate(zip(nums, rmses, ijs, valses)):
         # we know n values and have RMSE of rmse, then pick ij based on vals
-        plt.subplot(nr, nc, idx+1)
 
-        plt.title("Picking {} - RMSE {:.3}".format(n + 1, rmse))
-        plt.imshow(vals, interpolation='nearest', cmap=cm.winter,
-                   origin='upper', aspect='equal')
-        if not np.all(np.isnan(vals)):
-            plt.colorbar()
+        grid[idx].set_title("{}: ({:.3})".format(n + 1, rmse))
 
-        n, m = vals.shape
-        plt.xticks(np.linspace(-.5, m + .5, m + 2), [])
-        plt.yticks(np.linspace(-.5, n + .5, n + 2), [])
-        plt.grid()
+        im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
+                   origin='upper', aspect='equal', norm=norm)
+
+        grid[idx].set_xticks(xticks)
+        grid[idx].set_yticks(yticks)
+        grid[idx].set_xticklabels([])
+        grid[idx].set_yticklabels([])
+        grid[idx].set_xlim(xticks[0], xticks[-1])
+        grid[idx].set_ylim(yticks[0], yticks[-1])
+        grid[idx].grid()
 
         # mark the selected point (indices are transposed)
-        plt.scatter(j, i, marker='o', c='red', s=100)
+        grid[idx].scatter(j, i, marker='s', c='white', s=20)
+
+    for idx in range(len(ijs), nr * nc):
+        grid[idx].set_visible(False)
+
+    grid.cbar_axes[0].colorbar(im)
+
+    return fig
 
 
 def plot_all_criteria(results, filename_format):
@@ -974,14 +998,19 @@ def add_bool_opt(parser, name, default=False):
             dest=name.replace('-', '_'))
 
 def main():
+    import argparse
+    import os
+    import pickle
+    import sys
+
     key_names = set(KEY_FUNCS.keys())
 
-    import argparse
     parser = argparse.ArgumentParser()
 
     model = parser.add_argument_group("Model Options")
     model.add_argument('--latent-d', '-D', type=int, default=5)
-    model.add_argument('keys', nargs='*', default=sorted(key_names))
+    model.add_argument('keys', nargs='*',
+            help="Choices: {}.".format(', '.join(sorted(key_names))))
 
     problem_def = parser.add_argument_group("Problem Definiton")
     problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
@@ -1005,8 +1034,10 @@ def main():
     add_bool_opt(plotting, 'plot', None)
     plotting.add_argument('--outfile', default=None, metavar='FILE')
     add_bool_opt(plotting, 'plot-criteria', False)
+    plotting.add_argument('--cmap', default='Accent')
     plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
             help="A {}-style format string, where {} is the key name.")
+    plotting.add_argument('--outdir', default=None, metavar='DIR')
 
     args = parser.parse_args()
 
@@ -1020,18 +1051,46 @@ def main():
     # check that args.keys are valid
     for k in args.keys:
         if k not in key_names:
-            import sys
             sys.stderr.write("Invalid key name %s; options are %s.\n" % (
-                k, ', '.join(key_names)))
+                k, ', '.join(sorted(key_names))))
             sys.exit(1)
 
+    # try to make the out directory if necessary, set other paths based on it
+    if args.outdir:
+        if not os.path.exists(args.outdir):
+            os.makedirs(args.outdir)
 
-    # load results, or make them
+        if args.save_results is True:
+            args.save_results = os.path.join(args.outdir, 'results.pkl')
+
+        if not args.outfile:
+            args.outfile = os.path.join(args.outdir, 'rmses.png')
+
+        if not args.criteria_file:
+            args.criteria_file = os.path.join(args.outdir, '{}.png')
+
+    # get or load results
     if args.load_results is not None:
-        import pickle
         with open(args.load_results, 'rb') as resultsfile:
             results = pickle.load(resultsfile)
+
+        # check args.keys are actually in the results
+        if not args.keys:
+            args.keys = list(results.keys())
+        else:
+            good_keys = []
+            for k in args.keys:
+                if k in results:
+                    good_keys.append(k)
+                else:
+                    print("WARNING: requested key {} not in the saved results."
+                            .format(k), file=sys.stderr)
+            args.keys = good_keys
+
     else:
+        if not args.keys:
+            args.keys = sorted(key_names)
+
         try:
             results = compare(args.keys,
                     num_users=args.num_users, num_items=args.num_items,
@@ -1048,7 +1107,6 @@ def main():
             print()
             pdb.post_mortem()
 
-            import sys
             sys.exit(1)
 
 
@@ -1065,7 +1123,6 @@ def main():
 
         print("saving results in '{}'".format(filename))
 
-        import pickle
         with open(filename, 'wb') as f:
             pickle.dump(results, f)
 
@@ -1082,6 +1139,7 @@ def main():
         from matplotlib import pyplot as plt
 
         if args.plot:
+            print("Plotting RMSEs")
             fig = plt.figure()
             plot_rmses(results)
 
@@ -1089,11 +1147,17 @@ def main():
                 fig.savefig(args.outfile)
 
         if args.plot_criteria:
-            for name, result in results.items():
-                nice_name = KEY_FUNCS[name].nice_name
+            from matplotlib import cm
+            cmap = cm.get_cmap(args.cmap)
 
-                fig = plt.figure()
-                plot_criteria_over_time(nice_name, result)
+            for name, result in results.items():
+                if name not in args.keys:
+                    continue
+
+                nice_name = KEY_FUNCS[name].nice_name
+                print("Plotting {}".format(nice_name))
+
+                fig = plot_criteria_over_time(nice_name, result, cmap)
 
                 if args.criteria_file:
                     fig.savefig(args.criteria_file.format(name))
