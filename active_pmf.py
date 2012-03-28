@@ -408,10 +408,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         p_cov = self.approx_pred_covs()
         s, logdet = np.linalg.slogdet(p_cov)
         if s != 1:
-            import sys
-            m = "prediction cov has det with sign {}, log {}".format(s, logdet)
-            print("WARNING:", m, file=sys.stderr)
-            return -1000 # XXX could exponentiate instead and return 0 here...
+            if s == -1 and logdet < -50:
+                # numerical error, pretend it's basically 0
+                # TODO: track these in a way that's not as slow as printing
+                return -1000 # XXX if we did det, could be 0 here
+            else:
+                m = "prediction cov has det with sign {}, log {}"
+                raise ValueError(m.format(s, logdet))
         return logdet
 
     @do_normal_fit(True)
