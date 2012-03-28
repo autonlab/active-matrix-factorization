@@ -7,6 +7,7 @@ from copy import deepcopy
 import functools
 from itertools import product, cycle
 import math
+import numbers
 import operator
 import random
 
@@ -912,7 +913,7 @@ KEY_FUNCS = {
 
 
 def make_fake_data(noise=.25, num_users=10, num_items=10,
-                        rating_prob=0, rank=5):
+                   mask_type=0, rank=5):
     u = np.random.normal(0, 2, (num_users, rank))
     v = np.random.normal(0, 2, (num_items, rank))
 
@@ -920,7 +921,31 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     if noise:
         ratings += np.random.normal(0, noise, (num_users, num_items))
 
-    mask = np.random.binomial(1, rating_prob, ratings.shape)
+    if isinstance(mask_type, numbers.Real):
+        mask = np.random.binomial(1, mask_type, ratings.shape)
+
+    elif mask_type in {'diag', 'diagonal'}:
+        mask = np.zeros_like(ratings)
+        np.fill_diagonal(mask, 1)
+
+    elif mask_type in {'diag-plus'}:
+        mask = np.zeros_like(ratings)
+        np.fill_diagonal(mask, 1)
+
+        if num_users != num_items:
+            import sys
+            print("WARNING: diag-plus doesn't work for non-square, doing diag",
+                    file=sys.stderr)
+        else:
+            # set the k=1 diagonal, except do (-1, 1) instead of (0, 1)
+            # then all rows and columns have two entries, except first has 1
+            n = num_users
+            mask[-1, 1] = 1
+            mask[range(1,n-1), range(2,n)] = 1
+
+    else:
+        raise ValueError("Don't know how to interpret mask_type '{}'"
+                .format(mask_type))
 
     # make sure every row/col has at least one rating
     for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
@@ -1017,7 +1042,7 @@ def main():
     problem_def.add_argument('--noise', '-n', type=float, default=.25)
     problem_def.add_argument('--num-users', '-N', type=int, default=10)
     problem_def.add_argument('--num-items', '-M', type=int, default=10)
-    problem_def.add_argument('--rating-prob', '-r', type=float, default=0)
+    problem_def.add_argument('--mask', '-m', default=0)
 
     running = parser.add_argument_group("Running")
     running.add_argument('--processes', '-P', type=int, default=None)
@@ -1047,6 +1072,11 @@ def main():
         args.save_results = not args.load_results
     if args.plot is None:
         args.plot = not args.load_results
+
+    try:
+        args.mask = float(args.mask)
+    except ValueError:
+        pass
 
     # check that args.keys are valid
     for k in args.keys:
@@ -1095,8 +1125,7 @@ def main():
             results = compare(args.keys,
                     num_users=args.num_users, num_items=args.num_items,
                     rank=args.gen_rank, latent_d=args.latent_d,
-                    noise=args.noise,
-                    rating_prob=args.rating_prob,
+                    noise=args.noise, mask_type=args.mask,
                     processes=args.processes, do_threading=args.threading)
         except Exception:
             import traceback
