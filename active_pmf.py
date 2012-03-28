@@ -306,20 +306,20 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                 for k in range(D):
                     # sum over l != k
                     for l in range(k):
-                        cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
+                        cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
                     for l in range(k+1, D):
-                        cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
+                        cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
 
                 # sum_k E[Uki Uka Vkj Vkb]
-                if i == j: # know j != b because idx1 != idx2
+                if i == a: # j != b
                     for k in range(D):
                         cv += a2bc(u_i[k], v_j[k], v_b[k])
-                elif j == b:
+                elif j == b: # i != a
                     for k in range(D):
                         cv += a2bc(v_j[k], u_i[k], u_a[k])
-                else:
+                else: # i != a, j != b
                     for k in range(D):
-                        cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
+                        cv += qexp(u_i[k], v_j[k], u_a[k], v_b[k])
 
                 # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
                 cv -= ((mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() *
