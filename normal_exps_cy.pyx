@@ -122,7 +122,7 @@ def exp_dotprod_sq(np.ndarray[np.int_t, ndim=2] u not None,
 
     cdef float exp = 0
     cdef int latent_dim = u.shape[0]
-    cdef int uki, vkj
+    cdef int uki, vkj, k, l
 
     for k in range(latent_dim):
         uki = u[k,i]
@@ -198,6 +198,7 @@ cdef inline void _cov_4exp_grad_clcl(
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
+@cython.cdivision
 cdef inline void _cov_4exp_grad_llcc(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
@@ -212,6 +213,7 @@ cdef inline void _cov_4exp_grad_llcc(
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
+@cython.cdivision
 cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
                   np.ndarray[DTYPE_t, ndim=2] cov,
                   np.ndarray[DTYPE_t, ndim=2] ratings,
@@ -223,13 +225,18 @@ cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
                   float sig, float sig_u, float sig_v,
                   np.ndarray[DTYPE_t, ndim=1] grad_mean,
                   np.ndarray[DTYPE_t, ndim=2] grad_cov):
-    cdef int uki, vkj
+    cdef int uki, vkj, i, j, k
     cdef np.ndarray uli, vlj, u_i, v_j, mu_i, mv_j, inc
+    cdef float rating
 
-    for i, j, rating in ratings:
+    for idx in range(ratings.shape[0]):
+        i = <int> ratings[idx, 0]
+        j = <int> ratings[idx, 1]
+        rating = ratings[idx, 2]
+
         # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
         # (doubled because of symmetry, cancels with 2 in denom)
-        for k in range(latent_d-1):
+        for k in range(latent_d - 1):
             uki = u[k, i]
             vkj = v[k, j]
             # vectorize out our sums over l
