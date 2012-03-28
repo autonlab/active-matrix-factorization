@@ -298,7 +298,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             for idx2 in range(idx1 + 1, len(ijs)):
                 a, b = ijs[idx2]
                 u_a = self.u[:, a]
-                v_b = self.u[:, b]
+                v_b = self.v[:, b]
 
                 cv = 0
 
@@ -322,9 +322,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                         cv += qexp(u_i[k], v_j[k], u_i[l], v_b[l])
 
                 # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
-                e_ij = mean[u_i] * mean[v_j] + cov[u_i, v_j]
-                e_ab = mean[u_a] * mean[v_b] + cov[u_a, v_b]
-                cv -= e_ij.sum() * e_ab.sum()
+                cv -= ((mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() *
+                       (mean[u_a] * mean[v_b] + cov[u_a, v_b]).sum())
 
                 pred_covs[idx1, idx2] = cv
                 pred_covs[idx2, idx1] = cv
