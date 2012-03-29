@@ -10,6 +10,7 @@ import math
 import numbers
 import operator
 import random
+import warnings
 
 import numpy as np
 
@@ -19,8 +20,7 @@ try:
     from normal_exps_cy import (quadexpect, exp_a2bc, exp_dotprod_sq,
                                 normal_gradient)
 except ImportError:
-    print("WARNING: cython version not available, using pure-python version",
-          file=sys.stderr)
+    warnings.warn("cython version not available; using pure-python version")
     from normal_exps import (quadexpect, exp_a2bc, exp_dotprod_sq,
                              normal_gradient)
 
@@ -933,9 +933,7 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
         np.fill_diagonal(mask, 1)
 
         if num_users != num_items:
-            import sys
-            print("WARNING: diag-plus doesn't work for non-square, doing diag",
-                    file=sys.stderr)
+            warnings.warn("diag-plus doesn't work for non-square; doing diag")
         else:
             # set the k=1 diagonal, except do (-1, 1) instead of (0, 1)
             # then all rows and columns have two entries, except first has 1
@@ -944,8 +942,8 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
             mask[range(1,n-1), range(2,n)] = 1
 
     else:
-        raise ValueError("Don't know how to interpret mask_type '{}'"
-                .format(mask_type))
+        raise ValueError("Don't know how to interpret mask_type '{}'".format(
+            mask_type))
 
     # make sure every row/col has at least one rating
     for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
@@ -1113,8 +1111,8 @@ def main():
                 if k in results:
                     good_keys.append(k)
                 else:
-                    print("WARNING: requested key {} not in the saved results."
-                            .format(k), file=sys.stderr)
+                    warnings.warn("WARNING: requested key {} not in the saved "
+                                  "results.".format(k))
             args.keys = good_keys
 
     else:
