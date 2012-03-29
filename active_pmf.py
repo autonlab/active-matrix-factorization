@@ -13,6 +13,7 @@ import random
 import warnings
 
 import numpy as np
+from scipy import stats
 
 from pmf import ProbabilisticMatrixFactorization
 
@@ -94,13 +95,23 @@ def maximize(f):
 ### Main code
 
 class ActivePMF(ProbabilisticMatrixFactorization):
-    def __init__(self, rating_tuples, latent_d=1):
+    def __init__(self, rating_tuples, latent_d=1,
+                 rating_values=None, discrete_expectations=False):
         # the actual PMF model
         super(ActivePMF, self).__init__(rating_tuples, latent_d)
 
         # make sure that the ratings matrix is in floats
         # because the cython code currently only handles floats
         self.ratings = np.array(self.ratings, dtype=float, copy=False)
+
+        # rating values
+        if rating_values:
+            rating_values = set(map(float, rating_values))
+            if not rating_values.issuperset(self.ratings[:,2]):
+                raise ValueError("got ratings not in rating_values")
+
+        self.rating_values = rating_values
+        self.discrete_expectations = discrete_expectations
 
         # parameters of the normal approximation
         self.mean = None
@@ -121,6 +132,26 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         # training options for the normal approximation
         self.normal_learning_rate = 1e-4
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
+
+
+    rating_values = property(lambda self: self._rating_values)
+    rating_bounds = property(lambda self: self._rating_bounds)
+
+    @rating_values.setter
+    def rating_values(self, vals):
+        if vals:
+            vals = tuple(sorted(vals))
+            self._rating_values = vals
+
+            varray = np.empty(len(vals) + 2)
+            varray[0] = -np.inf
+            varray[1:-1] = vals
+            varray[-1] = np.inf
+
+            self._rating_bounds = (varray[1:] + varray[:-1]) / 2
+        else:
+            self._rating_values = None
+            self._rating_bounds = None
 
 
     ############################################################################
@@ -382,7 +413,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         calculated according to our current MAP belief about the distribution
         of Rij, up to a constant common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij, ActivePMF._approx_entropy,
+        return self._exp_with_rij(ij, ActivePMF._approx_entropy,
                 use_map=True)
 
     @do_normal_fit(True)
@@ -396,7 +427,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         Rij pretending that it's normal with mean and variance defined by our
         distribution over U and V, up to a constant common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij, ActivePMF._approx_entropy,
+        return self._exp_with_rij(ij, ActivePMF._approx_entropy,
                 use_map=False)
 
 
@@ -428,7 +459,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         about the distribution of Rij, up to a constant common to all (i,j)
         pairs.
         '''
-        return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
+        return self._exp_with_rij(ij, ActivePMF._pred_entropy_bound,
                 use_map=True)
 
     @do_normal_fit(True)
@@ -443,7 +474,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         variance defined by our distribution over U and V, up to a constant
         common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij, ActivePMF._pred_entropy_bound,
+        return self._exp_with_rij(ij, ActivePMF._pred_entropy_bound,
                 use_map=False)
 
     def _total_variance(self):
@@ -459,7 +490,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         calculated according to our current MAP belief about the distribution
         of Rij, up to a constant common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij, ActivePMF._total_variance,
+        return self._exp_with_rij(ij, ActivePMF._total_variance,
                 use_map=True)
 
     @do_normal_fit(True)
@@ -473,20 +504,25 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         Rij pretending that it's normal with mean and variance defined by our
         distribution over U and V, up to a constant common to all (i,j) pairs.
         '''
-        return self._integrate_prediction(ij, ActivePMF._total_variance,
+        return self._exp_with_rij(ij, ActivePMF._total_variance,
                 use_map=False)
 
-
-    def _integrate_prediction(self, ij, fn, use_map=True):
+    def _exp_with_rij(self, ij, fn, use_map=True, discretize=None):
         '''
-        Calculates \int fn(new apmf) p(R_ij) dR_ij through numerical
-        integration.
+        Calculates E[fn(apmf with R_ij)] through numerical integration.
 
-        If use_map, uses the current MAP estimate of R_ij; otherwise, uses
-        the current approximation.
+        If use_map, uses the current MAP estimate of R_ij; otherwise, uses a
+        normal distribution for R_ij with mean and variance equal to its
+        variance under the current normal approximation.
+
+        If discretize (defaulting to self.discrete_expectations) is true and
+        self.rating_values is set, compute the expectation by evaluating each
+        of the rating values and summing.
         '''
-        from scipy.integrate import quad
         i, j = ij
+
+        if discretize is None:
+            discretize = self.discrete_expectations
 
         # which distribution for R_ij are we using?
         if use_map:
@@ -504,23 +540,35 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     - mean**2
 
         std = math.sqrt(var)
-        scaler = math.sqrt(2 * math.pi) * std
+
         def calculate_fn(v):
-            assert isinstance(v, float)
             apmf = deepcopy(self)
             apmf.add_rating(i, j, v)
             # apmf.fit() # not necessary, at least for now
             apmf.fit_normal()
 
-            return fn(apmf) * np.exp(0.5 * (v - mean)**2 / var) / scaler
+            return fn(apmf)
 
-        # only take the expectation out to 1.96 sigma (95% of normal mass)
-        left = mean - 1.96 * std
-        right = mean + 1.96 * std
+        points = self.rating_values
+        if discretize and points:
+            probs = np.diff(stats.norm.cdf(self.rating_bounds,
+                                           loc=mean, scale=std))
+            est = sum(calculate_fn(v) * p for v, p in zip(points, probs))
+            s = "summed"
+        else:
+            if discretize and points is None:
+                warnings.warn("ActivePMF has no rating_values; doing integral")
 
-        est, abserr = quad(calculate_fn, left, right, epsrel=.02)
-        print("\t%20s(%d,%d) from %4.1f to %4.1f: %10g +- %.2g" % (
-                getattr(fn, '__name__', ''), i, j, left, right, est, abserr))
+            # only take the expectation out to 2 sigma (>95% of normal mass)
+            left = mean - 2 * std
+            right = mean + 2 * std
+
+            est = stats.norm.expect(calculate_fn, loc=mean, scale=std,
+                    lb=left, ub=right, epsrel=.02)
+            s = "from {:5.1f} to {:5.1f}".format(left, right)
+
+        name = getattr(fn, '__name__', '')
+        print("\t{:>20}({},{}) {}: {: 10.2f}".format(name, i, j, s, est))
         return est
 
 
@@ -681,7 +729,8 @@ def plot_rmses(results):
     total = len(results)
     offset = .15 / total
 
-    nice_results = ((KEY_FUNCS[k].nice_name, k, v) for k, v in results.items())
+    nice_results = ((KEY_FUNCS[k].nice_name, k, v)
+                    for k, v in results.items() if not k.startswith('_'))
 
     for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
         nums, rmses, ijs, vals = zip(*result)
@@ -819,7 +868,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
 
     total = apmf.num_users * apmf.num_items
     rmse = apmf.rmse(real)
-    print("RMSE: %g" % rmse)
+    print("RMSE: {:.5}".format(rmse))
     yield len(apmf.rated), rmse, None, None
 
 
@@ -852,7 +901,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
                     apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
         rmse = apmf.rmse(real)
-        print("RMSE: %g" % rmse)
+        print("RMSE: {:.5}".format(rmse))
         yield len(apmf.rated), rmse, (i,j), vals
 
 
@@ -873,7 +922,7 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
     name = picker_key.nice_name
 
     rmse = apmf.rmse(real)
-    print("{:<40} Initial RMSE: {}".format(name, rmse))
+    print("{:<40} Initial RMSE: {:.5}".format(name, rmse))
     yield len(apmf.rated), rmse, None, None
 
     while apmf.unrated:
@@ -892,7 +941,7 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
                 (apmf, i, j, real[i,j], total, fit_normal, name))
 
         rmse = apmf.rmse(real)
-        print("{:<40} RMSE {}: {}".format(picker_key.nice_name, n, rmse))
+        print("{:<40} RMSE {}: {:.5}".format(picker_key.nice_name, n, rmse))
         yield len(apmf.rated), rmse, (i,j), vals
 
 
@@ -913,14 +962,34 @@ KEY_FUNCS = {
 
 
 def make_fake_data(noise=.25, num_users=10, num_items=10,
-                   mask_type=0, rank=5):
-    u = np.random.normal(0, 2, (num_users, rank))
-    v = np.random.normal(0, 2, (num_items, rank))
+                   mask_type=0, data_type='float', rank=5,
+                   u_mean=0, u_std=2, v_mean=0, v_std=2):
+    # generate the true fake data
+    u = np.random.normal(u_mean, u_std, (num_users, rank))
+    v = np.random.normal(v_mean, v_std, (num_items, rank))
 
     ratings = np.dot(u, v.T)
     if noise:
         ratings += np.random.normal(0, noise, (num_users, num_items))
 
+    # TODO: better options for data_type
+    if data_type == 'float':
+        vals = None
+    elif data_type == 'int':
+        ratings = np.round(ratings).astype(int)
+        vals = None # TODO: support integrating over all integers?
+    elif data_type == 'binary':
+        ratings = (ratings > .5).astype(int)
+        vals = {0, 1}
+    elif isinstance(data_type, numbers.Integral):
+        ratings = np.minimum(np.maximum(np.round(ratings), 0),
+                             data_type).astype(int)
+        vals = range(data_type + 1)
+    else:
+        raise ValueError("Don't know how to interpret data_type '{}'".format(
+            data_type))
+
+    # make the mask deciding on which things are rated
     if isinstance(mask_type, numbers.Real):
         mask = np.random.binomial(1, mask_type, ratings.shape)
 
@@ -960,18 +1029,20 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
         rates[idx] = [i, j, ratings[i, j]]
 
-    return ratings, rates
+    return ratings, rates, vals
 
 
 
-def compare(key_names, latent_d=5, processes=None, do_threading=True, **kwargs):
+def compare(key_names, latent_d=5, processes=None, do_threading=True,
+            discrete_exp=False, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
-    real, ratings = make_fake_data(**kwargs)
-    apmf = ActivePMF(ratings, latent_d=latent_d)
+    real, ratings, rating_vals = make_fake_data(**kwargs)
+    apmf = ActivePMF(ratings, latent_d=latent_d,
+            rating_values=rating_vals, discrete_expectations=discrete_exp)
 
-    results = {}
+    results = {'_real': real, '_ratings': ratings}
 
     if do_threading:
         # initial fit is common to all methods
@@ -1027,16 +1098,27 @@ def main():
     import sys
 
     key_names = set(KEY_FUNCS.keys())
+    types = {'float', 'int', 'binary'}
 
     parser = argparse.ArgumentParser()
 
     model = parser.add_argument_group("Model Options")
     model.add_argument('--latent-d', '-D', type=int, default=5)
+    add_bool_opt(model, 'discrete-integration', False)
     model.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
 
     problem_def = parser.add_argument_group("Problem Definiton")
     problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
+    problem_def.add_argument('--type', default='float',
+            help="An integer (meaning values are from 0 to that integer) or "
+                 "one of {}".format(', '.join(sorted(types))))
+
+    problem_def.add_argument('--u-mean', type=float, default=0)
+    problem_def.add_argument('--u-std', type=float, default=2)
+    problem_def.add_argument('--v-mean', type=float, default=0)
+    problem_def.add_argument('--v-std', type=float, default=2)
+
     problem_def.add_argument('--noise', '-n', type=float, default=.25)
     problem_def.add_argument('--num-users', '-N', type=int, default=10)
     problem_def.add_argument('--num-items', '-M', type=int, default=10)
@@ -1076,6 +1158,13 @@ def main():
     except ValueError:
         pass
 
+    try:
+        args.type = int(args.type)
+    except ValueError:
+        if args.type not in types:
+            raise ValueError("--type must be integer or one of {}".format(
+                ', '.join(sorted(types))))
+
     # check that args.keys are valid
     for k in args.keys:
         if k not in key_names:
@@ -1104,7 +1193,7 @@ def main():
 
         # check args.keys are actually in the results
         if not args.keys:
-            args.keys = list(results.keys())
+            args.keys = list(k for k in results.keys() if not k.startswith('_'))
         else:
             good_keys = []
             for k in args.keys:
@@ -1122,8 +1211,12 @@ def main():
         try:
             results = compare(args.keys,
                     num_users=args.num_users, num_items=args.num_items,
-                    rank=args.gen_rank, latent_d=args.latent_d,
+                    u_mean=args.u_mean, u_std=args.u_std,
+                    v_mean=args.v_mean, v_std=args.v_std,
                     noise=args.noise, mask_type=args.mask,
+                    rank=args.gen_rank, latent_d=args.latent_d,
+                    discrete_exp=args.discrete_integration,
+                    data_type=args.type,
                     processes=args.processes, do_threading=args.threading)
         except Exception:
             import traceback
@@ -1136,6 +1229,7 @@ def main():
 
             sys.exit(1)
 
+        results['_args'] = args
 
     # save the results file
     if args.save_results:
@@ -1171,7 +1265,7 @@ def main():
             plot_rmses(results)
 
             if args.outfile:
-                fig.savefig(args.outfile)
+                fig.savefig(args.outfile, bbox_inches='tight', pad_inches=.1)
 
         if args.plot_criteria:
             from matplotlib import cm
@@ -1187,7 +1281,8 @@ def main():
                 fig = plot_criteria_over_time(nice_name, result, cmap)
 
                 if args.criteria_file:
-                    fig.savefig(args.criteria_file.format(name))
+                    fig.savefig(args.criteria_file.format(name),
+                            bbox_inches='tight', pad_inches=.1)
 
         if interactive:
             plt.show()
