@@ -1137,7 +1137,7 @@ def main():
     add_bool_opt(plotting, 'plot', None)
     plotting.add_argument('--outfile', default=None, metavar='FILE')
     add_bool_opt(plotting, 'plot-criteria', False)
-    plotting.add_argument('--cmap', default='Accent')
+    plotting.add_argument('--cmap', default='jet')
     plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
             help="A {}-style format string, where {} is the key name.")
     plotting.add_argument('--outdir', default=None, metavar='DIR')
