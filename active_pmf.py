@@ -849,6 +849,9 @@ def plot_all_criteria(results, filename_format):
 ################################################################################
 ### Testing code
 
+# TODO: could share the gradient-descent work for the first step, or any case
+#       where they've made the same choices
+
 def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
               fit_normal=True, processes=None):
     print("Training PMF")
@@ -1034,15 +1037,19 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
 
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
-            steps=None, discrete_exp=False, **kwargs):
+            steps=None, discrete_exp=False, real_ratings_vals=None, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
-    real, ratings, rating_vals = make_fake_data(**kwargs)
+    if real_ratings_vals is None:
+        real, ratings, rating_vals = make_fake_data(**kwargs)
+    else:
+        real, ratings, rating_vals = real_ratings_vals
+
     apmf = ActivePMF(ratings, latent_d=latent_d,
             rating_values=rating_vals, discrete_expectations=discrete_exp)
 
-    results = {'_real': real, '_ratings': ratings}
+    results = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
 
     if do_threading:
         # initial fit is common to all methods
@@ -1106,6 +1113,7 @@ def main():
             help="Choices: {}.".format(', '.join(sorted(key_names))))
 
     problem_def = parser.add_argument_group("Problem Definiton")
+    problem_def.add_argument('--load-data', default=None, metavar='FILE')
     problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
     problem_def.add_argument('--type', default='float',
             help="An integer (meaning values are from 0 to that integer) or "
@@ -1206,9 +1214,20 @@ def main():
         if not args.keys:
             args.keys = sorted(key_names)
 
+        real_ratings_vals = None
+        if args.load_data:
+            with open(args.load_data, 'rb') as f:
+                oth_results = pickle.load(f)
+            real_ratings_vals = (
+                oth_results['_real'],
+                oth_results['_ratings'],
+                oth_results.get('_rating_vals', None)
+            )
+
         try:
             results = compare(args.keys,
                     num_users=args.num_users, num_items=args.num_items,
+                    real_ratings_vals=real_ratings_vals,
                     u_mean=args.u_mean, u_std=args.u_std,
                     v_mean=args.v_mean, v_std=args.v_std,
                     noise=args.noise, mask_type=args.mask,
