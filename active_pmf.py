@@ -5,7 +5,7 @@ Code to do active learning on a PMF model.
 
 from copy import deepcopy
 import functools
-from itertools import product, cycle
+from itertools import product, cycle, islice
 import math
 import numbers
 import operator
@@ -1034,7 +1034,7 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
 
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
-            discrete_exp=False, **kwargs):
+            steps=None, discrete_exp=False, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
@@ -1061,13 +1061,9 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         def eval_key(key_name):
             key = KEY_FUNCS[key_name]
 
-            results[key_name] = list(_full_test_threaded(
-                deepcopy(apmf),
-                real,
-                key,
-                key.do_normal_fit,
-                worker_pool=worker_pool))
-
+            res = _full_test_threaded(
+                    deepcopy(apmf), real, key, key.do_normal_fit, worker_pool)
+            results[key_name] = list(islice(res, steps))
 
         threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
                    for key_name in key_names]
@@ -1080,8 +1076,9 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
     else:
         for key_name in key_names:
             key = KEY_FUNCS[key_name]
-            results[key_name] = list(full_test(
-                    deepcopy(apmf), real, key, key.do_normal_fit, processes))
+            res = full_test(
+                    deepcopy(apmf), real, key, key.do_normal_fit, processes)
+            results[key_name] = list(islice(res, steps))
 
     return results
 
@@ -1127,6 +1124,7 @@ def main():
     running = parser.add_argument_group("Running")
     running.add_argument('--processes', '-P', type=int, default=None)
     add_bool_opt(running, 'threading', True)
+    running.add_argument('--steps', '-s', type=int, default=None)
 
     results = parser.add_argument_group("Results")
     results.add_argument('--load-results', default=None, metavar='FILE')
@@ -1217,6 +1215,7 @@ def main():
                     rank=args.gen_rank, latent_d=args.latent_d,
                     discrete_exp=args.discrete_integration,
                     data_type=args.type,
+                    steps=args.steps,
                     processes=args.processes, do_threading=args.threading)
         except Exception:
             import traceback
