@@ -993,22 +993,26 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     if isinstance(mask_type, numbers.Real):
         mask = np.random.binomial(1, mask_type, ratings.shape)
 
-    elif mask_type in {'diag', 'diagonal'}:
+    elif mask_type in {'diag', 'diagonal', 'diag-plus', 'diag-block'}:
         mask = np.zeros_like(ratings)
         np.fill_diagonal(mask, 1)
 
-    elif mask_type in {'diag-plus'}:
-        mask = np.zeros_like(ratings)
-        np.fill_diagonal(mask, 1)
+        if mask_type == 'diag-plus':
+            if num_users != num_items:
+                warnings.warn("can't do diag-plus for non-square; doing diag")
+            else:
+                # set the k=1 diagonal, except do (-1, 1) instead of (0, 1)
+                # then all rows and columns have two entries, except first has 1
+                n = num_users
+                mask[-1, 1] = 1
+                mask[range(1,n-1), range(2,n)] = 1
 
-        if num_users != num_items:
-            warnings.warn("diag-plus doesn't work for non-square; doing diag")
-        else:
-            # set the k=1 diagonal, except do (-1, 1) instead of (0, 1)
-            # then all rows and columns have two entries, except first has 1
-            n = num_users
-            mask[-1, 1] = 1
-            mask[range(1,n-1), range(2,n)] = 1
+        elif mask_type == 'diag-block':
+            if num_users != num_items:
+                warnings.warn("can't do diag-block for non-square; doing diag")
+            else:
+                # nxn matrix with the top-left quarter also full (rounding down)
+                mask[:num_users//2, :num_items//2] = 1
 
     else:
         raise ValueError("Don't know how to interpret mask_type '{}'".format(
