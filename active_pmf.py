@@ -662,27 +662,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 ################################################################################
 ### Plotting code
 
-def plot_variances(apmf, vmax=None):
-    from matplotlib import pyplot as plt
-    var = np.zeros((apmf.num_users, apmf.num_items))
-    total = 0
-    for i, j in product(range(apmf.num_users), range(apmf.num_items)):
-        if (i, j) in apmf.rated:
-            var[i, j] = float('nan')
-        else:
-            var[i, j] = apmf.pred_variance(i, j)
-            total += var[i,j]
-
-    plt.imshow(var.T, interpolation='nearest', origin='lower',
-            norm=plt.Normalize(0, vmax))
-    plt.xlabel("User")
-    plt.ylabel("Item")
-    plt.title("Prediction Variances; total = %g" % total)
-    plt.colorbar()
-
-    return var
-
-
 def plot_predictions(apmf, real):
     from matplotlib import pyplot as plt
     from matplotlib import cm
@@ -694,8 +673,9 @@ def plot_predictions(apmf, real):
     xs = (real, pred, a_mean)
     norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
 
+    # TODO: switch alpha to something with scatter()
     rated_alphas = list(zip(*((i, j, -1) for i, j in apmf.rated)))
-    def show_with_alpha(mat, title, subplot, alpha=.5, norm_=norm):
+    def show_with_alpha(mat, title, subplot, alpha=.7, norm_=norm):
         plt.subplot(subplot)
 
         sm = cm.ScalarMappable(norm=norm_, cmap=cm.winter)
@@ -710,7 +690,7 @@ def plot_predictions(apmf, real):
     show_with_alpha(pred, "MAP", 222)
     show_with_alpha(a_mean, "Normal: Mean", 223)
     show_with_alpha(a_std, "Normal: Std Dev", 224, 1,
-            plt.Normalize(a_std.min(), a_std.max()))
+            plt.Normalize(0, a_std.max()))
 
 
 def plot_rmses(results):
@@ -753,21 +733,6 @@ def subplot_config(n):
     nc = math.ceil(math.sqrt(n))
     nr = math.ceil(n / nc)
     return nr, nc
-
-
-def plot_criteria(apmf, keys, procs=None):
-    from matplotlib import pyplot as plt
-    from matplotlib import cm
-
-    nr, nc = subplot_config(len(keys))
-
-    for idx, key in enumerate(keys):
-        evals = apmf.get_key_evals(key=key, procs=procs)
-
-        plt.subplot(nr, nc, idx+1)
-        plt.imshow(evals, interpolation='nearest', cmap=cm.winter)
-        plt.title(key.nice_name)
-        plt.colorbar()
 
 
 def plot_criteria_over_time(name, result, cmap=None):
@@ -831,20 +796,58 @@ def plot_criteria_over_time(name, result, cmap=None):
 
     return fig
 
-
-def plot_all_criteria(results, filename_format):
+def plot_criteria_firsts(result_items, cmap=None):
     from matplotlib import pyplot as plt
+    from matplotlib.font_manager import FontProperties
+    from mpl_toolkits.axes_grid1 import ImageGrid
+    if cmap is None:
+        from matplotlib import cm
+        cmap = cm.jet
 
-    for name, result in results.items():
-        nice_name = KEY_FUNCS[name].nice_name
-        filename = filename_format.format(name)
-        print("doing", filename)
+    prop = FontProperties(size=9)
+    nr, nc = subplot_config(len(result_items))
 
-        fig = plt.figure()
-        plot_criteria_over_time(nice_name, result)
-        fig.savefig(filename)
-        fig.close()
+    fig = plt.figure()
+    fig.suptitle("Criteria First Steps")
+    grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.5,
+            cbar_pad=.1, cbar_location='right', cbar_mode='each')
 
+    n_users, n_items = result_items[0][1][1][3].shape
+    xticks = np.linspace(-.5, n_items - .5, n_items + 1)
+    yticks = np.linspace(-.5, n_users - .5, n_users + 1)
+
+    for idx, (name, data) in enumerate(result_items):
+        assert data[0][3] is None
+
+        n, rmse, (i,j), vals = data[1]
+
+        im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
+                origin='lower', aspect='equal')
+
+        grid[idx].set_title(KEY_FUNCS[name].nice_name, font_properties=prop)
+        grid[idx].set_xticks(xticks)
+        grid[idx].set_yticks(yticks)
+        grid[idx].set_xticklabels([])
+        grid[idx].set_yticklabels([])
+        grid[idx].set_xlim(xticks[0], xticks[-1])
+        grid[idx].set_ylim(yticks[0], yticks[-1])
+        grid[idx].grid()
+
+        grid[idx].scatter(j, i, marker='s', c='white', s=20)
+        grid.cbar_axes[idx].colorbar(im)
+
+    for idx in range(len(result_items), nr*nc):
+        grid[idx].set_visible(False)
+        grid.cbar_axes[idx].set_visible(False)
+
+    return fig
+
+
+def _save_plot(filename, fig=None):
+    if filename:
+        if fig is None:
+            from matplotlib import pyplot as fig
+        fig.savefig(filename, bbox_inches='tight', pad_inches=.1)
 
 ################################################################################
 ### Testing code
@@ -1055,17 +1058,18 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
 
     results = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
 
-    if do_threading:
-        # initial fit is common to all methods
-        print("Doing initial fit")
-        apmf.fit()
-        apmf.initialize_approx()
-        if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
-            print("Initial approximation fit")
-            apmf.fit_normal()
-            print("Mean diff of means: {}; mean cov {}\n".format(
-                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
+    # initial fit is common to all methods
+    print("Doing initial fit")
+    apmf.fit()
+    apmf.initialize_approx()
+    if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
+        print("Initial approximation fit")
+        apmf.fit_normal()
+        print("Mean diff of means: {}; mean cov {}\n".format(
+                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
+    results['_initial_apmf'] = deepcopy(apmf)
 
+    if do_threading:
         worker_pool = mp.Pool(processes)
         worker_pool.access_lock = Lock()
 
@@ -1091,7 +1095,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
                     deepcopy(apmf), real, key, key.do_normal_fit, processes)
             results[key_name] = list(islice(res, steps))
 
-    return results
+    return results, apmf
 
 
 def add_bool_opt(parser, name, default=False):
@@ -1148,10 +1152,18 @@ def main():
     plotting = parser.add_argument_group("Plotting")
     add_bool_opt(plotting, 'plot', None)
     plotting.add_argument('--outfile', default=None, metavar='FILE')
+
     add_bool_opt(plotting, 'plot-criteria', False)
-    plotting.add_argument('--cmap', default='jet')
     plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
             help="A {}-style format string, where {} is the key name.")
+
+    add_bool_opt(plotting, 'plot-criteria-firsts', False)
+    plotting.add_argument('--firsts-file', default=None, metavar='FILE')
+
+    add_bool_opt(plotting, 'plot-initial-preds', False)
+    plotting.add_argument('--initial-preds-file', default=None, metavar='FILE')
+
+    plotting.add_argument('--cmap', default='jet')
     plotting.add_argument('--outdir', default=None, metavar='DIR')
 
     args = parser.parse_args()
@@ -1187,14 +1199,23 @@ def main():
         if not os.path.exists(args.outdir):
             os.makedirs(args.outdir)
 
+        join = functools.partial(os.path.join, args.outdir)
+
         if args.save_results is True:
-            args.save_results = os.path.join(args.outdir, 'results.pkl')
+            args.save_results = join('results.pkl')
 
         if not args.outfile:
-            args.outfile = os.path.join(args.outdir, 'rmses.png')
+            args.outfile = join('rmses.png')
 
         if not args.criteria_file:
-            args.criteria_file = os.path.join(args.outdir, '{}.png')
+            args.criteria_file = join('{}.png')
+
+        if not args.firsts_file:
+            args.firsts_file = join('firsts.png')
+
+        if not args.initial_preds_file:
+            args.initial_preds_file = join('initial_preds.png')
+
 
     # get or load results
     if args.load_results is not None:
@@ -1271,28 +1292,26 @@ def main():
 
 
     # do any plotting
-    if args.plot or args.plot_criteria:
+    if args.plot or args.plot_criteria or args.plot_criteria_firsts:
         interactive = ((args.plot and not args.outfile) or
-                       (args.plot_criteria and not args.criteria_file))
+                       (args.plot_criteria and not args.criteria_file) or
+                       (args.plot_criteria_firsts and not args.firsts_file))
 
         if not interactive:
             import matplotlib
             matplotlib.use('Agg')
 
         from matplotlib import pyplot as plt
+        from matplotlib import cm
+        cmap = cm.get_cmap(args.cmap)
 
         if args.plot:
             print("Plotting RMSEs")
             fig = plt.figure()
             plot_rmses(results)
-
-            if args.outfile:
-                fig.savefig(args.outfile, bbox_inches='tight', pad_inches=.1)
+            _save_plot(args.outfile, fig)
 
         if args.plot_criteria:
-            from matplotlib import cm
-            cmap = cm.get_cmap(args.cmap)
-
             for name, result in results.items():
                 if name not in args.keys:
                     continue
@@ -1301,10 +1320,22 @@ def main():
                 print("Plotting {}".format(nice_name))
 
                 fig = plot_criteria_over_time(nice_name, result, cmap)
+                _save_plot(args.criteria_file.format(name), fig)
 
-                if args.criteria_file:
-                    fig.savefig(args.criteria_file.format(name),
-                            bbox_inches='tight', pad_inches=.1)
+        if args.plot_criteria_firsts:
+            print("Plotting criteria first steps")
+            items = sorted(
+                    ((k, v) for k, v in results.items() if k in args.keys),
+                    key=lambda item: KEY_FUNCS[item[0]].nice_name)
+
+            fig = plot_criteria_firsts(items)
+            _save_plot(args.firsts_file, fig)
+
+        if args.plot_initial_preds:
+            print("Plotting initial predictions")
+            fig = plt.figure()
+            plot_predictions(results['_initial_apmf'], results['_real'])
+            _save_plot(args.initial_preds_file, fig)
 
         if interactive:
             plt.show()
