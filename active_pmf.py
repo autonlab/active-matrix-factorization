@@ -1144,7 +1144,7 @@ def main():
 
     results = parser.add_argument_group("Results")
     results.add_argument('--load-results', default=None, metavar='FILE')
-    results.add_argument('--save-results', default=None, nargs='?',
+    results.add_argument('--save-results', nargs='?', default=None, const=True,
             metavar='FILE')
     results.add_argument('--no-save-results',
             action='store_false', dest='save_results')
