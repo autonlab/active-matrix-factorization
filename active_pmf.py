@@ -554,7 +554,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         if discretize and points:
             evals = np.array([calculate_fn(v) for v in points])
             if discretize == 'simps':
-                pdfs = stats.norm.pdf(evals, loc=mean, scale=std)
+                pdfs = stats.norm.pdf(points, loc=mean, scale=std)
                 est = scipy.integrate.simps(evals * pdfs, points)
                 s = "simps'ed"
 
