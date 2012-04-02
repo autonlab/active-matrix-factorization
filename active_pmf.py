@@ -105,7 +105,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         self.ratings = np.array(self.ratings, dtype=float, copy=False)
 
         # rating values
-        if rating_values:
+        if rating_values is not None:
             rating_values = set(map(float, rating_values))
             if not rating_values.issuperset(self.ratings[:,2]):
                 raise ValueError("got ratings not in rating_values")
@@ -1138,7 +1138,7 @@ def main():
 
     problem_def = parser.add_argument_group("Problem Definiton")
     problem_def.add_argument('--load-data', default=None, metavar='FILE')
-    add_bool_opt(problem_def, 'load-model', default=True)
+    add_bool_opt(problem_def, 'load-model', default=False)
     problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
     problem_def.add_argument('--type', default='float',
             help="An integer (meaning values are from 0 to that integer) or "
@@ -1262,18 +1262,18 @@ def main():
             with open(args.load_data, 'rb') as f:
                 data = np.load(f)
 
-            if isinstance(data, np.ndarray):
-                data = {'_real': data}
+                if isinstance(data, np.ndarray):
+                    data = {'_real': data}
 
-            real = data['_real']
-            real_ratings_vals = (
-                real,
-                data['_ratings'] if '_ratings' in data
-                    else get_ratings(real, args.mask),
-                data['_rating_vals'] if '_rating_vals' in data else None,
-            )
-            if args.load_model:
-                apmf = oth_results['_initial_apmf']
+                real = data['_real']
+                real_ratings_vals = (
+                    real,
+                    data['_ratings'] if '_ratings' in data
+                        else get_ratings(real, args.mask),
+                    data['_rating_vals'] if '_rating_vals' in data else None,
+                )
+                if args.load_model:
+                    apmf = data['_initial_apmf']
 
         try:
             results = compare(args.keys,
