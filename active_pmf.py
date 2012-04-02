@@ -1056,7 +1056,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         if apmf:
             assert (apmf.num_users, apmf.num_items) == real.shape
             assert np.all(apmf.ratings == ratings)
-            assert np.all(apmf.real_ratings_vals == rating_vals)
+            assert set(apmf.rating_values) == set(rating_vals)
             apmf.discrete_expectations = discrete_exp
 
     if apmf is None:
