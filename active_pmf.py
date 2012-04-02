@@ -14,6 +14,7 @@ import warnings
 
 import numpy as np
 from scipy import stats
+import scipy.integrate
 
 from pmf import ProbabilisticMatrixFactorization
 
@@ -551,10 +552,16 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         points = self.rating_values
         if discretize and points:
-            probs = np.diff(stats.norm.cdf(self.rating_bounds,
-                                           loc=mean, scale=std))
-            est = sum(calculate_fn(v) * p for v, p in zip(points, probs))
-            s = "summed"
+            evals = np.array([calculate_fn(v) for v in points])
+            if discretize == 'simps':
+                pdfs = stats.norm.pdf(evals, loc=mean, scale=std)
+                est = scipy.integrate.simps(evals * pdfs, points)
+                s = "simps'ed"
+
+            else:
+                cdfs = stats.norm.cdf(self.rating_bounds, loc=mean, scale=std)
+                est = (evals * np.diff(cdfs)).sum()
+                s = "summed"
         else:
             if discretize and points is None:
                 warnings.warn("ActivePMF has no rating_values; doing integral")
@@ -1132,7 +1139,11 @@ def main():
 
     model = parser.add_argument_group("Model Options")
     model.add_argument('--latent-d', '-D', type=int, default=5)
-    add_bool_opt(model, 'discrete-integration', False)
+    model.add_argument('--discrete-integration',
+            nargs='?', const=True, default=False)
+    model.add_argument('--continuous-integration',
+            action='store_false', dest='discrete_integration')
+
     model.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
 
