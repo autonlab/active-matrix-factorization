@@ -1059,22 +1059,26 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             assert set(apmf.rating_values) == set(rating_vals)
             apmf.discrete_expectations = discrete_exp
 
+
     if apmf is None:
         apmf = ActivePMF(ratings, latent_d=latent_d,
                 rating_values=rating_vals, discrete_expectations=discrete_exp)
+        # initial fit is common to all methods
+        print("Doing initial fit")
+        apmf.fit()
+        apmf.initialize_approx()
+        if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
+            print("Initial approximation fit")
+            apmf.fit_normal()
+            print("Mean diff of means: {}; mean cov {}\n".format(
+                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
-    results = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
-
-    # initial fit is common to all methods
-    print("Doing initial fit")
-    apmf.fit()
-    apmf.initialize_approx()
-    if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
-        print("Initial approximation fit")
-        apmf.fit_normal()
-        print("Mean diff of means: {}; mean cov {}\n".format(
-                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
-    results['_initial_apmf'] = deepcopy(apmf)
+    results = {
+        '_real': real,
+        '_ratings': ratings,
+        '_rating_vals': rating_vals,
+        '_initial_apmf': deepcopy(apmf),
+    }
 
     if do_threading:
         worker_pool = mp.Pool(processes)
