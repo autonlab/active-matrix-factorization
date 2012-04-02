@@ -1095,7 +1095,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
                     deepcopy(apmf), real, key, key.do_normal_fit, processes)
             results[key_name] = list(islice(res, steps))
 
-    return results, apmf
+    return results
 
 
 def add_bool_opt(parser, name, default=False):
