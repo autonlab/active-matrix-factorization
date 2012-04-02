@@ -1044,7 +1044,8 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
 
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
-            steps=None, discrete_exp=False, real_ratings_vals=None, **kwargs):
+            steps=None, discrete_exp=False, real_ratings_vals=None, apmf=None,
+            **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
@@ -1052,9 +1053,15 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         real, ratings, rating_vals = make_fake_data(**kwargs)
     else:
         real, ratings, rating_vals = real_ratings_vals
+        if apmf:
+            assert (apmf.num_users, apmf.num_items) == real.shape
+            assert np.all(apmf.ratings == ratings)
+            assert np.all(apmf.real_ratings_vals == rating_vals)
+            apmf.discrete_expectations = discrete_exp
 
-    apmf = ActivePMF(ratings, latent_d=latent_d,
-            rating_values=rating_vals, discrete_expectations=discrete_exp)
+    if apmf is None:
+        apmf = ActivePMF(ratings, latent_d=latent_d,
+                rating_values=rating_vals, discrete_expectations=discrete_exp)
 
     results = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
 
@@ -1122,6 +1129,7 @@ def main():
 
     problem_def = parser.add_argument_group("Problem Definiton")
     problem_def.add_argument('--load-data', default=None, metavar='FILE')
+    add_bool_opt(problem_def, 'load-model', default=True)
     problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
     problem_def.add_argument('--type', default='float',
             help="An integer (meaning values are from 0 to that integer) or "
@@ -1240,6 +1248,7 @@ def main():
             args.keys = sorted(key_names)
 
         real_ratings_vals = None
+        apmf = None
         if args.load_data:
             with open(args.load_data, 'rb') as f:
                 oth_results = pickle.load(f)
@@ -1248,11 +1257,13 @@ def main():
                 oth_results['_ratings'],
                 oth_results.get('_rating_vals', None)
             )
+            if args.load_model:
+                apmf = oth_results['_initial_apmf']
 
         try:
             results = compare(args.keys,
                     num_users=args.num_users, num_items=args.num_items,
-                    real_ratings_vals=real_ratings_vals,
+                    real_ratings_vals=real_ratings_vals, apmf=apmf,
                     u_mean=args.u_mean, u_std=args.u_std,
                     v_mean=args.v_mean, v_std=args.v_std,
                     noise=args.noise, mask_type=args.mask,
