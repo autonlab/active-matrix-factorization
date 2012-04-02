@@ -974,33 +974,39 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     u = np.random.normal(u_mean, u_std, (num_users, rank))
     v = np.random.normal(v_mean, v_std, (num_items, rank))
 
-    ratings = np.dot(u, v.T)
+    real = np.dot(u, v.T)
     if noise:
-        ratings += np.random.normal(0, noise, (num_users, num_items))
+        real += np.random.normal(0, noise, (num_users, num_items))
 
     # TODO: better options for data_type
     if data_type == 'float':
         vals = None
     elif data_type == 'int':
-        ratings = np.round(ratings).astype(int)
+        real = np.round(real).astype(int)
         vals = None # TODO: support integrating over all integers?
     elif data_type == 'binary':
-        ratings = (ratings > .5).astype(int)
+        real = (real > .5).astype(int)
         vals = {0, 1}
     elif isinstance(data_type, numbers.Integral):
-        ratings = np.minimum(np.maximum(np.round(ratings), 0),
-                             data_type).astype(int)
+        real = np.minimum(np.maximum(np.round(real), 0), data_type).astype(int)
         vals = range(data_type + 1)
     else:
         raise ValueError("Don't know how to interpret data_type '{}'".format(
             data_type))
 
+    ratings = get_ratings(real, mask_type)
+    return real, ratings, vals
+
+
+def get_ratings(real, mask_type=0):
     # make the mask deciding on which things are rated
+    num_users, num_items = real.shape
+
     if isinstance(mask_type, numbers.Real):
-        mask = np.random.binomial(1, mask_type, ratings.shape)
+        mask = np.random.binomial(1, mask_type, real.shape)
 
     elif mask_type in {'diag', 'diagonal', 'diag-plus', 'diag-block'}:
-        mask = np.zeros_like(ratings)
+        mask = np.zeros_like(real)
         np.fill_diagonal(mask, 1)
 
         if mask_type == 'diag-plus':
@@ -1031,16 +1037,15 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     for zero_row in np.logical_not(mask.sum(axis=1)).nonzero()[0]:
         mask[zero_row, random.randrange(num_items)] = 1
 
-    assert (mask.sum(axis=0) > 0).all()
-    assert (mask.sum(axis=1) > 0).all()
+    assert np.all(mask.sum(axis=0) > 0)
+    assert np.all(mask.sum(axis=1) > 0)
 
     # convert into the list-of-ratings form we want
-    rates = np.zeros((mask.sum(), 3))
+    ratings = np.zeros((mask.sum(), 3))
     for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
-        rates[idx] = [i, j, ratings[i, j]]
+        ratings[idx] = [i, j, real[i, j]]
 
-    return ratings, rates, vals
-
+    return ratings
 
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
@@ -1255,11 +1260,17 @@ def main():
         apmf = None
         if args.load_data:
             with open(args.load_data, 'rb') as f:
-                oth_results = pickle.load(f)
+                data = np.load(f)
+
+            if isinstance(data, np.ndarray):
+                data = {'_real': data}
+
+            real = data['_real']
             real_ratings_vals = (
-                oth_results['_real'],
-                oth_results['_ratings'],
-                oth_results.get('_rating_vals', None)
+                real,
+                data['_ratings'] if '_ratings' in data
+                    else get_ratings(real, args.mask),
+                data['_rating_vals'] if '_rating_vals' in data else None,
             )
             if args.load_model:
                 apmf = oth_results['_initial_apmf']
