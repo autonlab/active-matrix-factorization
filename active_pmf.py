@@ -727,12 +727,12 @@ def plot_predictions(apmf, real):
             plt.Normalize(0, a_std.max()))
 
 
-def plot_rmses(results):
+def _plot_lines(results, fn, ylabel):
     from matplotlib import pyplot as plt
     from matplotlib.font_manager import FontProperties
 
     plt.xlabel("# of rated elements")
-    plt.ylabel("RMSE")
+    plt.ylabel(ylabel)
 
     # cycle through colors and line styles
     colors = 'bgrcmyk'
@@ -748,17 +748,36 @@ def plot_rmses(results):
 
     for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
         nums, rmses, ijs, vals = zip(*result)
-
-        nums = np.array(nums) + (idx - total/2) * offset
+        vals = fn(nums, rmses, ijs, vals, results)
+        nums = np.array(nums, copy=False) + (idx - total/2) * offset
 
         l, c = next(l_c)
-        plt.plot(nums, rmses, linestyle=l, color=c, label=nice_name, marker='^')
+        plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker='^')
 
     # only show integer values for x ticks
     xmin, xmax = plt.xlim()
     plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
     plt.legend(loc='best', prop=FontProperties(size=10))
+
+def plot_rmses(results):
+    def get_rmses(nums, rmses, ijs, vals, results):
+        return rmses
+    _plot_lines(results, get_rmses, "RMSE")
+
+def plot_num_ge_cutoff(results, cutoff):
+    def get_cutoffs(nums, rmses, ijs, vals, results):
+        real = results['_real']
+
+        assert ijs[0] is None
+        ns = [(results['_ratings'][:,2] >= cutoff).sum()]
+
+        for i, j in ijs[1:]:
+            ns.append(ns[-1] + (1 if real[i,j] >= cutoff else 0))
+
+        return ns
+
+    _plot_lines(results, get_cutoffs, "# found > {}".format(cutoff))
 
 
 def subplot_config(n):
@@ -1213,6 +1232,9 @@ def main():
     add_bool_opt(plotting, 'plot', None)
     plotting.add_argument('--outfile', default=None, metavar='FILE')
 
+    plotting.add_argument('--plot-ge-cutoff', type=float, metavar='CUTOFF')
+    plotting.add_argument('--cutoff-file', default=None, metavar='FILE')
+
     add_bool_opt(plotting, 'plot-criteria', False)
     plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
             help="A {}-style format string, where {} is the key name.")
@@ -1266,6 +1288,9 @@ def main():
 
         if not args.outfile:
             args.outfile = join('rmses.png')
+
+        if args.plot_ge_cutoff is not None and not args.cutoff_file:
+            args.cutoff_file = join('ge-{}.png'.format(args.plot_ge_cutoff))
 
         if not args.criteria_file:
             args.criteria_file = join('{}.png')
@@ -1379,6 +1404,12 @@ def main():
             fig = plt.figure()
             plot_rmses(results)
             _save_plot(args.outfile, fig)
+
+        if args.plot_ge_cutoff is not None:
+            print("Plotting cutoff")
+            fig = plt.figure()
+            plot_num_ge_cutoff(results, args.plot_ge_cutoff)
+            _save_plot(args.cutoff_file, fig)
 
         if args.plot_criteria:
             for name, result in results.items():
