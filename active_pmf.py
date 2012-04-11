@@ -371,6 +371,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         mn = (mean[us] * mean[vs] + cov[us, vs]).sum()
         var = exp_dotprod_sq(self.u, self.v, mean, cov, i, j) - mn**2
+        return mn, var
 
 
     ############################################################################
@@ -392,19 +393,90 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         The MAP estimate of R_ij.
         '''
         i, j = ij
-        return np.dot(self.users[:,i], self.items[:,j])
+        return np.dot(self.users[i,:], self.items[j,:])
 
-    @do_normal_fit(True)
-    @spawn_processes(False)
-    @maximize
-    def prob_ge_cutoff(self, ij, cutoff):
+    def _prob_ge_cutoff_settings(name):
+        def wrapper(f):
+            do_normal_fit(True)(f)
+            spawn_processes(False)(f)
+            maximize(f)
+            nice_name(name)(f)
+            return f
+        return wrapper
+
+    def _prob_ge_cutoff(self, ij, cutoff):
+        '''
+        The probability of R_ij being >= cutoff, using the current
+        approximation's mean and variance.
+        '''
+        # XXX: get real probability here?
         mean, var = self.approx_pred_mean_var(*ij)
-        return scipy.stats.norm.sf(cutoff, loc=mean, scale=var)
+        return stats.norm.sf(cutoff, loc=mean, scale=var)
 
-    prob_ge_3_5 = nice_name("Prob >= 3.5")(
-            functools.partial(prob_ge_cutoff, cutoff=3.5))
-    prob_ge_half = nice_name("Prob >= .5")(
-            functools.partial(prob_ge_cutoff, cutoff=.5))
+    # bleh, can't do partials here...
+
+    @_prob_ge_cutoff_settings("Prob >= 3.5")
+    def prob_ge_3_5(self, ij):
+        return self._prob_ge_cutoff(ij, 3.5)
+
+    @_prob_ge_cutoff_settings("Prob >= .5")
+    def prob_ge_half(self, ij):
+        return self._prob_ge_cutoff(ij, .5)
+
+
+    def _onestep_ge_cutoff_settings(name):
+        def wrapper(f):
+            do_normal_fit(True)(f)
+            spawn_processes(True)(f)
+            maximize(f)
+            nice_name(name)(f)
+            return f
+        return wrapper
+
+    def _onestep_ge_cutoff(self, ij, cutoff, use_map):
+        '''
+        The one-step lookahead utility of picking R_ij, in the sense of
+            Garnett, Krishnamurthy, Wang, Schneider, and Mann.
+            Bayesian Optimal Active Search on Graphs.
+            KDD 2011, ML on Graphs workshop.
+        where we define values >= cutoff as the target class and others
+        as the negative class.
+        '''
+        return self._exp_with_rij(
+                ij,
+                functools.partial(ActivePMF._last_step_lookahead_helper,
+                                  cutoff=cutoff),
+                use_map=use_map,
+                discretize=True, # XXX
+                pass_v=True)
+
+    @_onestep_ge_cutoff_settings("1 step >= 3.5 (MAP)")
+    def onestep_ge_3_5(self, ij):
+        return self._onestep_ge_cutoff(ij, 3.5, True)
+
+    @_onestep_ge_cutoff_settings("1 step >= 3.5 (Approx)")
+    def onestep_ge_3_5_approx(self, ij):
+        return self._onestep_ge_cutoff(ij, 3.5, False)
+
+    @_onestep_ge_cutoff_settings("1 step >= .5 (MAP)")
+    def onestep_ge_half(self, ij):
+        return self._onestep_ge_cutoff(ij, .5, True)
+
+    @_onestep_ge_cutoff_settings("1 step >= .5 (Approx)")
+    def onestep_ge_half_approx(self, ij):
+        return self._onestep_ge_cutoff(ij, .5, False)
+
+
+    def _last_step_lookahead_helper(self, cutoff, v):
+        # TODO: support passing in pool of items to pick from?
+        # TODO: only calculate necessary means/vars, not all
+        # NOTE: pretending prediction dist is normal here
+
+        utility = int(v >= cutoff)
+        mean, var = self.approx_pred_means_vars()
+        return utility + max(stats.norm.sf(cutoff, loc=mean[ij], scale=var[ij])
+                             for ij in self.unrated)
+
 
     @do_normal_fit(True)
     @spawn_processes(False)
@@ -540,7 +612,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         return self._exp_with_rij(ij, ActivePMF._total_variance,
                 use_map=False)
 
-    def _exp_with_rij(self, ij, fn, use_map=True, discretize=None):
+    def _exp_with_rij(self, ij, fn, use_map=True, discretize=None,
+                      pass_v=False):
         '''
         Calculates E[fn(apmf with R_ij)] through numerical integration.
 
@@ -551,6 +624,9 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         If discretize (defaulting to self.discrete_expectations) is true and
         self.rating_values is set, compute the expectation by evaluating each
         of the rating values and summing.
+
+        If pass_v, passes the kwarg v to fn specifying the value that we
+        just set R_ij to.
         '''
         i, j = ij
 
@@ -575,7 +651,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             # apmf.fit() # not necessary, at least for now
             apmf.fit_normal()
 
-            return fn(apmf)
+            return fn(apmf, v=v) if pass_v else fn(apmf)
 
         points = self.rating_values
         if discretize and points:
@@ -939,7 +1015,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         if len(apmf.unrated) == 1:
             i, j = next(iter(apmf.unrated))
         else:
-            vals = apmf.get_key_evals(key=picker_key, procs=processes)
+            vals = apmf._get_key_vals(apmf.unrated, picker_key, processes, None)
             i, j = picker_key.chooser(zip(apmf.unrated, vals),
                                       key=operator.itemgetter(1))[0]
 
@@ -1021,6 +1097,12 @@ KEY_FUNCS = {
     "pred": ActivePMF.pred,
     "prob-ge-3.5": ActivePMF.prob_ge_3_5,
     "prob-ge-.5": ActivePMF.prob_ge_half,
+
+    "1step-ge-3.5": ActivePMF.onestep_ge_3_5,
+    "1step-ge-3.5-approx": ActivePMF.onestep_ge_3_5_approx,
+
+    "1step-ge-.5": ActivePMF.onestep_ge_half,
+    "1step-ge-.5-approx": ActivePMF.onestep_ge_half_approx,
 }
 
 
