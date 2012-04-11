@@ -363,6 +363,15 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         return pred_covs
 
+    def approx_pred_mean_var(self, i, j):
+        mean = self.mean
+        cov = self.cov
+        us = self.u[:,i]
+        vs = self.v[:,j]
+
+        mn = (mean[us] * mean[vs] + cov[us, vs]).sum()
+        var = exp_dotprod_sq(self.u, self.v, mean, cov, i, j) - mn**2
+
 
     ############################################################################
     ### Various criteria to use to pick query points
@@ -373,6 +382,29 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     @maximize
     def random_weighting(self, ij):
         return random.random()
+
+    @do_normal_fit(False)
+    @spawn_processes(False)
+    @nice_name("Pred Mag")
+    @maximize
+    def pred(self, ij):
+        '''
+        The MAP estimate of R_ij.
+        '''
+        i, j = ij
+        return np.dot(self.users[:,i], self.items[:,j])
+
+    @do_normal_fit(True)
+    @spawn_processes(False)
+    @maximize
+    def prob_ge_cutoff(self, ij, cutoff):
+        mean, var = self.approx_pred_mean_var(*ij)
+        return scipy.stats.norm.sf(cutoff, loc=mean, scale=var)
+
+    prob_ge_3_5 = nice_name("Prob >= 3.5")(
+            functools.partial(prob_ge_cutoff, cutoff=3.5))
+    prob_ge_half = nice_name("Prob >= .5")(
+            functools.partial(prob_ge_cutoff, cutoff=.5))
 
     @do_normal_fit(True)
     @spawn_processes(False)
@@ -533,12 +565,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             # TODO: this isn't actually right (using the normal distribution
             # with matching mean/variance instead of the actual, unknown
             # distribution)
-            us = self.u[:, i]
-            vs = self.v[:, j]
-
-            mean = (self.mean[us] * self.mean[vs] + self.cov[us, vs]).sum()
-            var = exp_dotprod_sq(self.u, self.v, self.mean, self.cov, i, j) \
-                    - mean**2
+            mean, var = self.approx_pred_mean_var(i, j)
 
         std = math.sqrt(var)
 
@@ -971,7 +998,12 @@ KEY_FUNCS = {
 
     "pred-entropy-bound": ActivePMF.exp_pred_entropy_bound,
     "pred-entropy-bound-approx": ActivePMF.exp_pred_entropy_bound_byapprox,
+
+    "pred": ActivePMF.pred,
+    "prob-ge-3.5": ActivePMF.prob_ge_3_5,
+    "prob-ge-.5": ActivePMF.prob_ge_half,
 }
+
 
 
 def make_fake_data(noise=.25, num_users=10, num_items=10,
