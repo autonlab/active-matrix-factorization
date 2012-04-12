@@ -442,13 +442,12 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         where we define values >= cutoff as the target class and others
         as the negative class.
         '''
-        return self._exp_with_rij(
-                ij,
-                functools.partial(ActivePMF._last_step_lookahead_helper,
-                                  cutoff=cutoff),
-                use_map=use_map,
-                discretize=True, # XXX
-                pass_v=True)
+        fn = functools.partial(ActivePMF._last_step_lookahead_helper,
+                               cutoff=cutoff)
+        fn.__name__ = '_1step_{}'.format(cutoff)
+        return self._exp_with_rij(ij, fn,
+                use_map=use_map, discretize=True, pass_v=True)
+        # XXX always discretize?
 
     @_onestep_ge_cutoff_settings("1 step >= 3.5 (MAP)")
     def onestep_ge_3_5(self, ij):
