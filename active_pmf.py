@@ -1123,6 +1123,10 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
     elif data_type == 'int':
         real = np.round(real).astype(int)
         vals = None # TODO: support integrating over all integers?
+    elif data_type == 'int-bounds':
+        real = np.round(real).astype(int)
+        vals = range(int(np.floor(real.min() * 1.2)),
+                     int(np.ceil(real.max() * 1.2)))
     elif data_type == 'binary':
         real = (real > .5).astype(int)
         vals = {0, 1}
@@ -1265,7 +1269,7 @@ def main():
     import sys
 
     key_names = set(KEY_FUNCS.keys())
-    types = {'float', 'int', 'binary'}
+    types = {'float', 'int', 'int-bounds', 'binary'}
 
     parser = argparse.ArgumentParser()
 
