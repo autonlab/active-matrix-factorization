@@ -833,7 +833,7 @@ def _plot_lines(results, fn, ylabel):
     xmin, xmax = plt.xlim()
     plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
-    plt.legend(loc='best', prop=FontProperties(size=10))
+    plt.legend(loc='best', prop=FontProperties(size=9))
 
 def plot_rmses(results):
     def get_rmses(nums, rmses, ijs, vals, results):
@@ -1313,8 +1313,9 @@ def main():
     add_bool_opt(plotting, 'plot', None)
     plotting.add_argument('--outfile', default=None, metavar='FILE')
 
-    plotting.add_argument('--plot-ge-cutoff', type=float, metavar='CUTOFF')
-    plotting.add_argument('--cutoff-file', default=None, metavar='FILE')
+    plotting.add_argument('--plot-ge', type=float, nargs='+', metavar='CUTOFF')
+    plotting.add_argument('--cutoff-file', default=None, metavar='FILE',
+            help="A {}-style format string, where {} is the cutoff amount.")
 
     add_bool_opt(plotting, 'plot-criteria', False)
     plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
@@ -1370,8 +1371,8 @@ def main():
         if not args.outfile:
             args.outfile = join('rmses.png')
 
-        if args.plot_ge_cutoff is not None and not args.cutoff_file:
-            args.cutoff_file = join('ge-{}.png'.format(args.plot_ge_cutoff))
+        if args.plot_ge is not None and not args.cutoff_file:
+            args.cutoff_file = join('ge-{}.png')
 
         if not args.criteria_file:
             args.criteria_file = join('{}.png')
@@ -1467,7 +1468,8 @@ def main():
 
 
     # do any plotting
-    if args.plot or args.plot_criteria or args.plot_criteria_firsts:
+    if args.plot or args.plot_ge or args.plot_criteria or \
+            args.plot_criteria_firsts:
         interactive = ((args.plot and not args.outfile) or
                        (args.plot_criteria and not args.criteria_file) or
                        (args.plot_criteria_firsts and not args.firsts_file))
@@ -1486,11 +1488,12 @@ def main():
             plot_rmses(results)
             _save_plot(args.outfile, fig)
 
-        if args.plot_ge_cutoff is not None:
-            print("Plotting cutoff")
-            fig = plt.figure()
-            plot_num_ge_cutoff(results, args.plot_ge_cutoff)
-            _save_plot(args.cutoff_file, fig)
+        if args.plot_ge is not None:
+            for cutoff in args.plot_ge:
+                print("Plotting cutoff {}".format(cutoff))
+                fig = plt.figure()
+                plot_num_ge_cutoff(results, cutoff)
+                _save_plot(args.cutoff_file.format(cutoff), fig)
 
         if args.plot_criteria:
             for name, result in results.items():
