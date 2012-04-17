@@ -188,7 +188,7 @@ cdef class ProbabilisticMatrixFactorization:
     cpdef np.ndarray predicted_matrix(self):
         return np.dot(self.users, self.items.T)
 
-    cpdef float rmse(self, np.ndarray[DTYPE_t,ndim=2] real) except -1:
+    cpdef float rmse(self, np.ndarray real) except -1:
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
 
     def print_latent_vectors(self):
