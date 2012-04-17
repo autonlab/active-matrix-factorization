@@ -2,7 +2,8 @@
 __pycache__
 
 /build
-normal_exps_cy.c
+/*_cy.c
+/*_cy.html
 *.so
 
 *.pkl

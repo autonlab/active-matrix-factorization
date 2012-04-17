@@ -8,6 +8,7 @@ setup(
     cmdclass = {'build_ext': build_ext},
     include_dirs = [np.get_include()],
     ext_modules = [
-        Extension("normal_exps_cy", ["normal_exps_cy.pyx"])
+        Extension("normal_exps_cy", ["normal_exps_cy.pyx"]),
+        Extension("pmf_cy", ["pmf_cy.pyx"]),
     ]
 )

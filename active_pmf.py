@@ -16,13 +16,17 @@ import numpy as np
 from scipy import stats
 import scipy.integrate
 
-from pmf import ProbabilisticMatrixFactorization
+try:
+    from pmf_cy import ProbabilisticMatrixFactorization
+except ImportError:
+    warnings.warn("cython PMF not available; using pure-python version")
+    from pmf import ProbabilisticMatrixFactorization
 
 try:
     from normal_exps_cy import (quadexpect, exp_a2bc, exp_dotprod_sq,
                                 normal_gradient)
 except ImportError:
-    warnings.warn("cython version not available; using pure-python version")
+    warnings.warn("cython normal_exps not available; using pure-python version")
     from normal_exps import (quadexpect, exp_a2bc, exp_dotprod_sq,
                              normal_gradient)
 
@@ -1013,6 +1017,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         print("Picking a query point...")
         if len(apmf.unrated) == 1:
             i, j = next(iter(apmf.unrated))
+            vals = None
         else:
             vals = apmf._get_key_vals(apmf.unrated, picker_key, processes, None)
             i, j = picker_key.chooser(zip(apmf.unrated, vals),
