@@ -1130,8 +1130,10 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
         vals = None # TODO: support integrating over all integers?
     elif data_type == 'int-bounds':
         real = np.round(real).astype(int)
-        vals = range(int(np.floor(real.min() * 1.2)),
-                     int(np.ceil(real.max() * 1.2)))
+        minval = real.min()
+        maxval = real.max()
+        vals = range(int(np.floor(minval * 1.2 if minval < 0 else minval * .8)),
+                     int(np.ceil(maxval * 1.2 if maxval > 0 else maxval * .8)))
     elif data_type == 'binary':
         real = (real > .5).astype(int)
         vals = {0, 1}
