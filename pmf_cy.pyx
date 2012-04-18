@@ -12,6 +12,7 @@ from __future__ import print_function # silly cython
 
 import itertools
 import random
+from copy import deepcopy
 
 import numpy as np
 cimport numpy as np
@@ -59,17 +60,40 @@ cdef class ProbabilisticMatrixFactorization:
     cpdef ProbabilisticMatrixFactorization __copy__(self):
         cdef ProbabilisticMatrixFactorization res
         res = type(self)(self.ratings, self.latent_d)
-        res.users = self.users
-        res.items = self.items
+        res.__setstate__(res.__getstate__())
         return res
 
     cpdef ProbabilisticMatrixFactorization __deepcopy__(self, memodict):
         cdef ProbabilisticMatrixFactorization res
         res = type(self)(self.ratings.copy(), self.latent_d)
-        res.users = self.users.copy()
-        res.items = self.items.copy()
+        res.__setstate__(deepcopy(res.__getstate__(), memodict))
         return res
 
+    def __setstate__(self, state):
+        for k, v in state.items():
+            setattr(self, k, v)
+
+    def __getstate__(self):
+        return dict(
+            latent_d=self.latent_d,
+            num_users=self.num_users,
+            num_items=self.num_items,
+
+            learning_rate=self.learning_rate,
+            min_learning_rate=self.min_learning_rate,
+            stop_thresh=self.stop_thresh,
+
+            sigma_sq=self.sigma_sq,
+            sigma_u_sq=self.sigma_u_sq,
+            sigma_v_sq=self.sigma_v_sq,
+
+            ratings=self.ratings,
+            users=self.users,
+            items=self.items,
+
+            rated=self.rated,
+            unrated=self.unrated,
+        )
 
     def add_rating(self, int i, int j, DTYPE_t rating):
         self.add_ratings([i, j, rating])

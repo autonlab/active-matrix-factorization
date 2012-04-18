@@ -39,6 +39,11 @@ class ProbabilisticMatrixFactorization(object):
         self.users = np.random.random((n, self.latent_d))
         self.items = np.random.random((m, self.latent_d))
 
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+    def __getstate__(self):
+        return self.__dict__
 
     def add_rating(self, i, j, rating):
         self.add_ratings([i, j, rating])
