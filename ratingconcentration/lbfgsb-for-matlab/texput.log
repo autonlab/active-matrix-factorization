@@ -1,0 +1,13 @@
+This is pdfTeXk, Version 3.1415926-1.40.9 (Web2C 7.5.7) (format=mex 2008.8.22)  20 MAR 2009 17:43
+entering extended mode
+ %&-line parsing enabled.
+**CXX=gcc CC=gcc FC= LD=gcc -lg2c -lm -O -output lbfgsb.mexmaci solver.o matlab
+exception.o matlabscalar.o matlabstring.o matlabmatrix.o arrayofmatrices.o prog
+ram.o matlabprogram.o lbfgsb.o
+
+! Emergency stop.
+<*> CXX=gcc 
+            CC=gcc FC= LD=gcc -lg2c -lm -O -output lbfgsb.mexmaci solver.o m...
+End of file on the terminal!
+
+No pages of output.
