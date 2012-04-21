@@ -41,7 +41,7 @@ cdef class ProbabilisticMatrixFactorization:
     def __init__(self, np.ndarray rating_tuples not None, int latent_d=1):
         self.latent_d = latent_d
 
-        self.ratings = np.array(rating_tuples, dtype=float)
+        self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
             raise TypeError("invalid rating tuple length")
 

@@ -25,7 +25,7 @@ class ProbabilisticMatrixFactorization(object):
         self.sigma_u_sq = 10
         self.sigma_v_sq = 10
 
-        self.ratings = np.array(rating_tuples, dtype=float)
+        self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
             raise TypeError("invalid rating tuple length")
 
