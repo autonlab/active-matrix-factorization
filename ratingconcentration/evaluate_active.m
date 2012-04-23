@@ -1,7 +1,10 @@
-function [ results ] = evaluate_active(X, known, selector, steps, delta, initial)
+function [all_results] = evaluate_active(X, known, selectors, steps, delta)
 
 if nargin < 5; delta = 1.5; end % TODO: delta through CV
 if nargin < 4; steps = -1; end
+if ~iscell(selectors)
+    selectors = {selectors};
+end
 
 featureFunc = @sets_square5;
 
@@ -12,40 +15,44 @@ num_known = nnz(known);
 
 Xtr = sparse(known_i, known_j, X(known));
 
-if nargin < 6 || isempty(initial)
-    % initial fit
-    [E, P, vals, lagrange] = ...
-        ratingconcentration(Xtr, mask, featureFunc, delta);
-    P = bsxfun(@rdivide, P, sum(P, 2)); % normalize prediction dists
-else
-    [E, P, vals, lagrange] = initial{:};
-end
+% initial fit
+[E, P, vals, lagrange] = ...
+    ratingconcentration(Xtr, mask, featureFunc, delta);
+P = bsxfun(@rdivide, P, sum(P, 2)); % normalize prediction dists
 
-results = cell(1, 4);
-results(1,:) = {num_known, get_rmse(X, E), [], []};
+all_results = cell(1, length(selectors));
 
-stepnum = 2;
-while (steps == -1 || stepnum <= steps) && nnz(mask) > 0
-    % pick a query item
-    if nnz(mask) == 1
-        [i, j] = find(mask);
-        evals = [];
-    else
-        [i, j, evals] = selector(...
-            Xtr, mask, P, E, vals, featureFunc, lagrange, delta);
+for selector_i = 1 : length(selectors)
+    selector = selectors{selector_i};
+
+    results = cell(1, 4);
+    results(1,:) = {num_known, get_rmse(X, E), [], []};
+
+    stepnum = 2;
+    while (steps == -1 || stepnum <= steps) && nnz(mask) > 0
+        % pick a query item
+        if nnz(mask) == 1
+            [i, j] = find(mask);
+            evals = [];
+        else
+            [i, j, evals] = selector(...
+                Xtr, mask, P, E, vals, featureFunc, lagrange, delta);
+        end
+
+        % learn the value of that query item
+        Xtr(i, j) = X(i, j); %#ok<SPRIX>
+        mask(i, j) = 0; %#ok<SPRIX>
+        [E, P, vals, lagrange] = ...
+            ratingconcentration(Xtr, mask, @sets_square5, delta);
+        P = bsxfun(@rdivide, P, sum(P, 2));
+        num_known = num_known + 1;
+
+        % save results
+        results(stepnum,:) = {num_known, get_rmse(X, E), [i,j], evals};
+        stepnum = stepnum + 1;
     end
-    
-    % learn the value of that query item
-    Xtr(i, j) = X(i, j); %#ok<SPRIX>
-    mask(i, j) = 0; %#ok<SPRIX>
-    [E, P, vals, lagrange] = ...
-        ratingconcentration(Xtr, mask, @sets_square5, delta);
-    P = bsxfun(@rdivide, P, sum(P, 2));
-    num_known = num_known + 1;
-    
-    % save results
-    results(stepnum,:) = {num_known, get_rmse(X, E), [i,j], evals};
-    stepnum = stepnum + 1;
+
+    all_results{selector_i} = results;
 end
 end
 
