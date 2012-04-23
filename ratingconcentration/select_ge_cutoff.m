@@ -3,10 +3,12 @@ function [h] = select_ge_cutoff(cutoff)
         [M, N] = size(mask);
         [I, J] = find(mask);
         
-        evals = sparse(I, J, sum(P(mask(:), vals >= cutoff), 2), M, N);
+        probs = sum(P(mask(:), vals >= cutoff), 2);
+        evals = sparse(I, J, probs, M, N);
         
-        [~, idx] = max(evals(:));
-        [i, j] = ind2sub([M,N], idx);
+        [~, idx] = max(probs);
+        i = I(idx);
+        j = J(idx);
     end
 
     h = @inner;
