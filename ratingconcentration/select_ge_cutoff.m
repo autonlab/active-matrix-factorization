@@ -1,5 +1,5 @@
 function [h] = select_ge_cutoff(cutoff)
-    function [i, j, evals] = inner(mask, P, ~, vals, ~)
+    function [i, j, evals] = inner(~, mask, P, ~, vals, ~, ~, ~)
         [M, N] = size(mask);
         [I, J] = find(mask);
         

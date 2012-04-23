@@ -29,7 +29,8 @@ while (steps == -1 || stepnum <= steps) && any(mask(:))
         [i, j] = find(mask);
         evals = [];
     else
-        [i, j, evals] = selector(mask, P, E, vals, lagrange);
+        [i, j, evals] = selector(...
+            Xtr, mask, P, E, vals, featureFunc, lagrange, delta);
     end
     
     % learn the value of that query item
