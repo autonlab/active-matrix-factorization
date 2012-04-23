@@ -5,7 +5,7 @@ Code to do active learning on a PMF model.
 
 from copy import copy, deepcopy
 import functools
-from itertools import product, cycle, islice
+import itertools
 import math
 import numbers
 import operator
@@ -339,7 +339,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
 
         # TODO: vectorize, maybe cythonize
-        ijs = list(product(range(n), range(m)))
+        ijs = list(itertools.product(range(n), range(m)))
 
         for idx1, (i, j) in enumerate(ijs):
             u_i = self.u[:,i]
@@ -791,216 +791,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         return evals
 
 
-
-################################################################################
-### Plotting code
-
-def plot_predictions(apmf, real):
-    from matplotlib import pyplot as plt
-    from matplotlib import cm
-
-    pred = apmf.predicted_matrix()
-    a_mean, a_var = apmf.approx_pred_means_vars()
-    a_std = np.sqrt(a_var)
-
-    xs = (real, pred, a_mean)
-    norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
-
-    # TODO: switch alpha to something with scatter()
-    rated_alphas = list(zip(*((i, j, -1) for i, j in apmf.rated)))
-    def show_with_alpha(mat, title, subplot, alpha=.7, norm_=norm):
-        plt.subplot(subplot)
-
-        sm = cm.ScalarMappable(norm=norm_, cmap=cm.winter)
-        rgba = sm.to_rgba(mat)
-        rgba[rated_alphas] = alpha
-        plt.imshow(rgba, norm=norm_, cmap=cm.winter, interpolation='nearest')
-
-        plt.title(title)
-        plt.colorbar()
-
-    show_with_alpha(real, "Real", 221)
-    show_with_alpha(pred, "MAP", 222)
-    show_with_alpha(a_mean, "Normal: Mean", 223)
-    show_with_alpha(a_std, "Normal: Std Dev", 224, 1,
-            plt.Normalize(0, a_std.max()))
-
-
-def _plot_lines(results, fn, ylabel):
-    from matplotlib import pyplot as plt
-    from matplotlib.font_manager import FontProperties
-
-    plt.xlabel("# of rated elements")
-    plt.ylabel(ylabel)
-
-    # cycle through colors and line styles
-    colors = 'bgrcmyk'
-    linestyles = ['-', '--', ':']
-    l_c = cycle(product(linestyles, colors))
-
-    # offset lines a bit so you can see when some of them overlap
-    total = len(results)
-    offset = .15 / total
-
-    nice_results = ((KEY_FUNCS[k].nice_name, k, v)
-                    for k, v in results.items() if not k.startswith('_'))
-
-    for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
-        nums, rmses, ijs, vals = zip(*result)
-        vals = fn(nums, rmses, ijs, vals, results)
-        nums = np.array(nums, copy=False) + (idx - total/2) * offset
-
-        l, c = next(l_c)
-        plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker='^')
-
-    # only show integer values for x ticks
-    xmin, xmax = plt.xlim()
-    plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
-
-    plt.legend(loc='best', prop=FontProperties(size=9))
-
-def plot_rmses(results):
-    def get_rmses(nums, rmses, ijs, vals, results):
-        return rmses
-    _plot_lines(results, get_rmses, "RMSE")
-
-def plot_num_ge_cutoff(results, cutoff):
-    def get_cutoffs(nums, rmses, ijs, vals, results):
-        real = results['_real']
-
-        assert ijs[0] is None
-        ns = [(results['_ratings'][:,2] >= cutoff).sum()]
-
-        for i, j in ijs[1:]:
-            ns.append(ns[-1] + (1 if real[i,j] >= cutoff else 0))
-
-        return ns
-
-    _plot_lines(results, get_cutoffs, "# found > {}".format(cutoff))
-
-
-def subplot_config(n):
-    if n <= 3:
-        return 1, n
-    nc = math.ceil(math.sqrt(n))
-    nr = math.ceil(n / nc)
-    return nr, nc
-
-
-def plot_criteria_over_time(name, result, cmap=None):
-    from matplotlib import pyplot as plt
-    from mpl_toolkits.axes_grid1 import ImageGrid
-
-    if cmap is None:
-        from matplotlib import cm
-        cmap = cm.jet
-
-    nums, rmses, ijs, valses = zip(*result)
-
-    assert ijs[0] is None
-    assert valses[0] is None
-    ijs = ijs[1:]
-    valses = valses[1:]
-
-    if np.all(np.isnan(valses[-1])):
-        ijs = ijs[:-1]
-        valses = valses[:-1]
-
-    nr, nc = subplot_config(len(ijs))
-
-    fig = plt.figure()
-    fig.suptitle(name)
-    grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.3,
-            cbar_location='right', cbar_mode='single')
-
-    n_users, n_items = valses[0].shape
-    xticks = np.linspace(-.5, n_items - .5, n_items + 1)
-    yticks = np.linspace(-.5, n_users - .5, n_users + 1)
-
-    vmin = min(vals[np.isfinite(vals)].min() for vals in valses)
-    vmax = max(vals[np.isfinite(vals)].max() for vals in valses)
-    norm = plt.Normalize(vmin, vmax)
-    # TODO: dynamically adjust color range to be more distinguishable?
-
-    for idx, (n, rmse, (i,j), vals) in enumerate(zip(nums, rmses, ijs, valses)):
-        # we know n values and have RMSE of rmse, then pick ij based on vals
-
-        grid[idx].set_title("{}: ({:.3})".format(n + 1, rmse))
-
-        im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
-                   origin='upper', aspect='equal', norm=norm)
-
-        grid[idx].set_xticks(xticks)
-        grid[idx].set_yticks(yticks)
-        grid[idx].set_xticklabels([])
-        grid[idx].set_yticklabels([])
-        grid[idx].set_xlim(xticks[0], xticks[-1])
-        grid[idx].set_ylim(yticks[0], yticks[-1])
-        grid[idx].grid()
-
-        # mark the selected point (indices are transposed)
-        grid[idx].scatter(j, i, marker='s', c='white', s=20)
-
-    for idx in range(len(ijs), nr * nc):
-        grid[idx].set_visible(False)
-
-    grid.cbar_axes[0].colorbar(im)
-
-    return fig
-
-def plot_criteria_firsts(result_items, cmap=None):
-    from matplotlib import pyplot as plt
-    from matplotlib.font_manager import FontProperties
-    from mpl_toolkits.axes_grid1 import ImageGrid
-    if cmap is None:
-        from matplotlib import cm
-        cmap = cm.jet
-
-    prop = FontProperties(size=9)
-    nr, nc = subplot_config(len(result_items))
-
-    fig = plt.figure()
-    fig.suptitle("Criteria First Steps")
-    grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.5,
-            cbar_pad=.1, cbar_location='right', cbar_mode='each')
-
-    n_users, n_items = result_items[0][1][1][3].shape
-    xticks = np.linspace(-.5, n_items - .5, n_items + 1)
-    yticks = np.linspace(-.5, n_users - .5, n_users + 1)
-
-    for idx, (name, data) in enumerate(result_items):
-        assert data[0][3] is None
-
-        n, rmse, (i,j), vals = data[1]
-
-        im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
-                origin='lower', aspect='equal')
-
-        grid[idx].set_title(KEY_FUNCS[name].nice_name, font_properties=prop)
-        grid[idx].set_xticks(xticks)
-        grid[idx].set_yticks(yticks)
-        grid[idx].set_xticklabels([])
-        grid[idx].set_yticklabels([])
-        grid[idx].set_xlim(xticks[0], xticks[-1])
-        grid[idx].set_ylim(yticks[0], yticks[-1])
-        grid[idx].grid()
-
-        grid[idx].scatter(j, i, marker='s', c='white', s=20)
-        grid.cbar_axes[idx].colorbar(im)
-
-    for idx in range(len(result_items), nr*nc):
-        grid[idx].set_visible(False)
-        grid.cbar_axes[idx].set_visible(False)
-
-    return fig
-
-
-def _save_plot(filename, fig=None):
-    if filename:
-        if fig is None:
-            from matplotlib import pyplot as fig
-        fig.savefig(filename, bbox_inches='tight', pad_inches=.1)
-
 ################################################################################
 ### Testing code
 
@@ -1264,7 +1054,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
 
             res = _full_test_threaded(
                     deepcopy(apmf), real, key, key.do_normal_fit, worker_pool)
-            results[key_name] = list(islice(res, steps))
+            results[key_name] = list(itertools.islice(res, steps))
 
         threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
                    for key_name in key_names]
@@ -1279,7 +1069,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             key = KEY_FUNCS[key_name]
             res = full_test(
                     deepcopy(apmf), real, key, key.do_normal_fit, processes)
-            results[key_name] = list(islice(res, steps))
+            results[key_name] = list(itertools.islice(res, steps))
 
     return results
 
@@ -1334,53 +1124,27 @@ def main():
     running.add_argument('--steps', '-s', type=int, default=None)
 
     results = parser.add_argument_group("Results")
-    results.add_argument('--load-results', default=None, metavar='FILE')
     results.add_argument('--save-results', nargs='?', default=None, const=True,
             metavar='FILE')
     results.add_argument('--no-save-results',
             action='store_false', dest='save_results')
 
-    plotting = parser.add_argument_group("Plotting")
-    add_bool_opt(plotting, 'plot', None)
-    plotting.add_argument('--outfile', default=None, metavar='FILE')
-
-    plotting.add_argument('--plot-ge', type=float, nargs='+', metavar='CUTOFF')
-    plotting.add_argument('--cutoff-file', default=None, metavar='FILE',
-            help="A {}-style format string, where {} is the cutoff amount.")
-
-    add_bool_opt(plotting, 'plot-criteria', False)
-    plotting.add_argument('--criteria-file', default=None, metavar='FORMAT',
-            help="A {}-style format string, where {} is the key name.")
-
-    add_bool_opt(plotting, 'plot-criteria-firsts', False)
-    plotting.add_argument('--firsts-file', default=None, metavar='FILE')
-
-    add_bool_opt(plotting, 'plot-initial-preds', False)
-    plotting.add_argument('--initial-preds-file', default=None, metavar='FILE')
-
-    plotting.add_argument('--cmap', default='jet')
-    plotting.add_argument('--outdir', default=None, metavar='DIR')
-
     args = parser.parse_args()
 
-
-    # set defaults that are different for loading vs running
-    if args.save_results is None:
-        args.save_results = not args.load_results
-    if args.plot is None:
-        args.plot = not args.load_results
-
+    # is args.mask supposed to be a float?
     try:
         args.mask = float(args.mask)
     except ValueError:
         pass
 
+    # check args.type
     try:
         args.type = int(args.type)
     except ValueError:
         if args.type not in types:
             raise ValueError("--type must be integer or one of {}".format(
                 ', '.join(sorted(types))))
+
 
     # check that args.keys are valid
     for k in args.keys:
@@ -1389,171 +1153,70 @@ def main():
                 k, ', '.join(sorted(key_names))))
             sys.exit(1)
 
-    # try to make the out directory if necessary, set other paths based on it
-    if args.outdir:
-        if not os.path.exists(args.outdir):
-            os.makedirs(args.outdir)
+    if not args.keys:
+        args.keys = sorted(key_names)
 
-        join = functools.partial(os.path.join, args.outdir)
 
+    # make directories to save results if necessary
+    if args.save_results:
         if args.save_results is True:
-            args.save_results = join('results.pkl')
-
-        if not args.outfile:
-            args.outfile = join('rmses.png')
-
-        if args.plot_ge is not None and not args.cutoff_file:
-            args.cutoff_file = join('ge-{}.png')
-
-        if not args.criteria_file:
-            args.criteria_file = join('{}.png')
-
-        if not args.firsts_file:
-            args.firsts_file = join('firsts.png')
-
-        if not args.initial_preds_file:
-            args.initial_preds_file = join('initial_preds.png')
-
-
-    # get or load results
-    if args.load_results is not None:
-        with open(args.load_results, 'rb') as resultsfile:
-            results = pickle.load(resultsfile)
-
-        # check args.keys are actually in the results
-        if not args.keys:
-            args.keys = list(k for k in results.keys() if not k.startswith('_'))
+            args.save_results = 'results.pkl'
         else:
-            good_keys = []
-            for k in args.keys:
-                if k in results:
-                    good_keys.append(k)
-                else:
-                    warnings.warn("WARNING: requested key {} not in the saved "
-                                  "results.".format(k))
-            args.keys = good_keys
+            os.makedirs(os.path.dirname(args.save_results))
 
-    else:
-        if not args.keys:
-            args.keys = sorted(key_names)
+    # load previous data, if we're doing that
+    real_ratings_vals = None
+    apmf = None
+    if args.load_data:
+        with open(args.load_data, 'rb') as f:
+            data = np.load(f)
 
-        real_ratings_vals = None
-        apmf = None
-        if args.load_data:
-            with open(args.load_data, 'rb') as f:
-                data = np.load(f)
+            if isinstance(data, np.ndarray):
+                data = {'_real': data}
 
-                if isinstance(data, np.ndarray):
-                    data = {'_real': data}
+            real = data['_real']
+            real_ratings_vals = (
+                real,
+                data['_ratings'] if '_ratings' in data
+                    else get_ratings(real, args.mask),
+                data['_rating_vals'] if '_rating_vals' in data else None,
+            )
+            if args.load_model:
+                apmf = data['_initial_apmf']
 
-                real = data['_real']
-                real_ratings_vals = (
-                    real,
-                    data['_ratings'] if '_ratings' in data
-                        else get_ratings(real, args.mask),
-                    data['_rating_vals'] if '_rating_vals' in data else None,
-                )
-                if args.load_model:
-                    apmf = data['_initial_apmf']
+    # get results
+    try:
+        results = compare(args.keys,
+                num_users=args.num_users, num_items=args.num_items,
+                real_ratings_vals=real_ratings_vals, apmf=apmf,
+                u_mean=args.u_mean, u_std=args.u_std,
+                v_mean=args.v_mean, v_std=args.v_std,
+                noise=args.noise, mask_type=args.mask,
+                rank=args.gen_rank, latent_d=args.latent_d,
+                discrete_exp=args.discrete_integration,
+                data_type=args.type,
+                steps=args.steps,
+                processes=args.processes, do_threading=args.threading)
+    except Exception:
+        import traceback
+        print()
+        traceback.print_exc()
 
-        try:
-            results = compare(args.keys,
-                    num_users=args.num_users, num_items=args.num_items,
-                    real_ratings_vals=real_ratings_vals, apmf=apmf,
-                    u_mean=args.u_mean, u_std=args.u_std,
-                    v_mean=args.v_mean, v_std=args.v_std,
-                    noise=args.noise, mask_type=args.mask,
-                    rank=args.gen_rank, latent_d=args.latent_d,
-                    discrete_exp=args.discrete_integration,
-                    data_type=args.type,
-                    steps=args.steps,
-                    processes=args.processes, do_threading=args.threading)
-        except Exception:
-            import traceback
-            print()
-            traceback.print_exc()
+        import pdb
+        print()
+        pdb.post_mortem()
 
-            import pdb
-            print()
-            pdb.post_mortem()
+        sys.exit(1)
 
-            sys.exit(1)
-
-        results['_args'] = args
 
     # save the results file
     if args.save_results:
-        if args.save_results is not True:
-            filename = args.save_results
-        elif args.outfile:
-            filename = args.outfile + '.pkl'
-        elif args.criteria_file:
-            filename = args.criteria_file.format('results') + '.pkl'
-        else:
-            filename = 'results.pkl'
+        print("saving results in '{}'".format(args.save_results))
 
-        print("saving results in '{}'".format(filename))
+        results['_args'] = args
 
         with open(filename, 'wb') as f:
             pickle.dump(results, f)
-
-
-    # do any plotting
-    if args.plot or args.plot_ge or args.plot_criteria or \
-            args.plot_criteria_firsts:
-        interactive = ((args.plot and not args.outfile) or
-                       (args.plot_criteria and not args.criteria_file) or
-                       (args.plot_criteria_firsts and not args.firsts_file))
-
-        if not interactive:
-            import matplotlib
-            matplotlib.use('Agg')
-
-        from matplotlib import pyplot as plt
-        from matplotlib import cm
-        cmap = cm.get_cmap(args.cmap)
-
-        if args.plot:
-            print("Plotting RMSEs")
-            fig = plt.figure()
-            plot_rmses(results)
-            _save_plot(args.outfile, fig)
-
-        if args.plot_ge is not None:
-            for cutoff in args.plot_ge:
-                print("Plotting cutoff {}".format(cutoff))
-                fig = plt.figure()
-                plot_num_ge_cutoff(results, cutoff)
-                _save_plot(args.cutoff_file.format(cutoff), fig)
-
-        if args.plot_criteria:
-            for name, result in results.items():
-                if name not in args.keys:
-                    continue
-
-                nice_name = KEY_FUNCS[name].nice_name
-                print("Plotting {}".format(nice_name))
-
-                fig = plot_criteria_over_time(nice_name, result, cmap)
-                _save_plot(args.criteria_file.format(name), fig)
-
-        if args.plot_criteria_firsts:
-            print("Plotting criteria first steps")
-            items = sorted(
-                    ((k, v) for k, v in results.items() if k in args.keys),
-                    key=lambda item: KEY_FUNCS[item[0]].nice_name)
-
-            fig = plot_criteria_firsts(items)
-            _save_plot(args.firsts_file, fig)
-
-        if args.plot_initial_preds:
-            print("Plotting initial predictions")
-            fig = plt.figure()
-            plot_predictions(results['_initial_apmf'], results['_real'])
-            _save_plot(args.initial_preds_file, fig)
-
-        if interactive:
-            plt.show()
 
 
 if __name__ == '__main__':
