@@ -1,14 +1,14 @@
 function violations = checkconstraints3(X,mu,nu,c,d,alpha,beta,mask,F,prior)
 
-% set up figures
-persistent lambdafig;
-persistent devfig;
-if (isempty(lambdafig) || ~ishandle(lambdafig))
-    figure(38); subplot(211); lambdafig = gca;
-end
-if (isempty(devfig) || ~ishandle(devfig))
-    figure(38); subplot(212); devfig = gca;
-end
+%% set up figures
+%persistent lambdafig;
+%persistent devfig;
+%if (isempty(lambdafig) || ~ishandle(lambdafig))
+%    figure(38); subplot(211); lambdafig = gca;
+%end
+%if (isempty(devfig) || ~ishandle(devfig))
+%    figure(38); subplot(212); devfig = gca;
+%end
 
 c(c==0) = eps; d(d==0) = eps;
 
@@ -61,15 +61,15 @@ violations = [mu(:)-rowavg(:) - alphabig(:);...
 
 %figure('Name','Constraint Violations','NumberTitle','off')
 
-plot(lambdafig,X);
-title(lambdafig,'lambda values');
+%plot(lambdafig,X);
+%title(lambdafig,'lambda values');
 
-plot(devfig,max(violations,0));
-ylabel(devfig,'deviation');
-xlabel(devfig,'row/column feature');
-ax = axis(devfig);
-axis(devfig,[0 length(violations) 0 ax(4)]);
-drawnow;
+%plot(devfig,max(violations,0));
+%ylabel(devfig,'deviation');
+%xlabel(devfig,'row/column feature');
+%ax = axis(devfig);
+%axis(devfig,[0 length(violations) 0 ax(4)]);
+%drawnow;
 %end
 
 
