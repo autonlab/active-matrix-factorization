@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# TODO: figure out origin / transpose / etc bullshit
+
 import itertools
 import math
 import sys
@@ -10,7 +12,13 @@ sys.path.append('python-pmf')
 import active_pmf
 from active_pmf import ActivePMF # to make pickle happy
 
+sys.path.append('ratingconcentration')
+import active_rc
+
 KEY_NAMES = { k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items() }
+KEY_NAMES.update({'rc_'+k: 'RC: '+f.nice_name
+                  for k, f in active_rc.KEY_FUNCS.items()})
+
 
 ################################################################################
 ### Plotting code
@@ -27,17 +35,18 @@ def plot_predictions(apmf, real):
     norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
 
     # TODO: switch alpha to something with scatter()
-    rated_alphas = list(zip(*((i, j, -1) for i, j in apmf.rated)))
+    rated = np.array(list(apmf.rated))
     def show_with_alpha(mat, title, subplot, alpha=.7, norm_=norm):
         plt.subplot(subplot)
 
-        sm = cm.ScalarMappable(norm=norm_, cmap=cm.winter)
-        rgba = sm.to_rgba(mat)
-        rgba[rated_alphas] = alpha
-        plt.imshow(rgba, norm=norm_, cmap=cm.winter, interpolation='nearest')
-
-        plt.title(title)
+        plt.imshow(mat, norm=norm_, cmap=cm.jet, interpolation='nearest',
+                origin='lower')
         plt.colorbar()
+        plt.title(title)
+
+        if apmf.rated:
+            plt.scatter(rated[:,1], rated[:,0], marker='s', s=15, c='white')
+
 
     show_with_alpha(real, "Real", 221)
     show_with_alpha(pred, "MAP", 222)
@@ -122,7 +131,7 @@ def plot_criteria_over_time(name, result, cmap=None):
     ijs = ijs[1:]
     valses = valses[1:]
 
-    if np.all(np.isnan(valses[-1])):
+    if valses[-1] is None or np.all(np.isnan(valses[-1])):
         ijs = ijs[:-1]
         valses = valses[:-1]
 
@@ -159,7 +168,7 @@ def plot_criteria_over_time(name, result, cmap=None):
         grid[idx].grid()
 
         # mark the selected point (indices are transposed)
-        grid[idx].scatter(j, i, marker='s', c='white', s=20)
+        grid[idx].scatter(j, i, marker='s', c='white', s=15)
 
     for idx in range(len(ijs), nr * nc):
         grid[idx].set_visible(False)
@@ -194,7 +203,7 @@ def plot_criteria_firsts(result_items, cmap=None):
         n, rmse, (i,j), vals = data[1]
 
         im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
-                origin='lower', aspect='equal')
+                origin='upper', aspect='equal')
 
         grid[idx].set_title(KEY_NAMES[name], font_properties=prop)
         grid[idx].set_xticks(xticks)

@@ -13,7 +13,7 @@ mask = sparse(known == 0); % TODO: query on less than the full matrix
 [known_i, known_j] = find(known);
 num_known = nnz(known);
 
-Xtr = sparse(known_i, known_j, X(known));
+Xtr = sparse(known_i, known_j, X(known ~= 0));
 
 % initial fit
 [E, P, vals, lagrange] = ...
