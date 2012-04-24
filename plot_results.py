@@ -34,9 +34,8 @@ def plot_predictions(apmf, real):
     xs = (real, pred, a_mean)
     norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
 
-    # TODO: switch alpha to something with scatter()
     rated = np.array(list(apmf.rated))
-    def show_with_alpha(mat, title, subplot, alpha=.7, norm_=norm):
+    def show(mat, title, subplot, norm_=norm):
         plt.subplot(subplot)
 
         plt.imshow(mat, norm=norm_, cmap=cm.jet, interpolation='nearest',
@@ -47,12 +46,10 @@ def plot_predictions(apmf, real):
         if apmf.rated:
             plt.scatter(rated[:,1], rated[:,0], marker='s', s=15, c='white')
 
-
-    show_with_alpha(real, "Real", 221)
-    show_with_alpha(pred, "MAP", 222)
-    show_with_alpha(a_mean, "Normal: Mean", 223)
-    show_with_alpha(a_std, "Normal: Std Dev", 224, 1,
-            plt.Normalize(0, a_std.max()))
+    show(real, "Real", 221)
+    show(pred, "MAP", 222)
+    show(a_mean, "Normal: Mean", 223)
+    show(a_std, "Normal: Std Dev", 224, plt.Normalize(0, a_std.max()))
 
 
 def _plot_lines(results, fn, ylabel):
