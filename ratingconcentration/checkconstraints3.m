@@ -42,7 +42,7 @@ Z = sum(p,2);
 p(Z<realmin,:) = repmat(prior',nnz(Z<realmin),1);
 Z(Z<realmin,:) = sum(p(Z<realmin,:),2);
 
-E = (sparse(F)'*p'*spdiags(1./Z,0,nnz(mask),nnz(mask)))';
+E = full(sparse(F)'*p'*spdiags(1./Z,0,nnz(mask),nnz(mask)))';
 
 [rowsum, colsum] = sprowcolsum(mask,E);
 
