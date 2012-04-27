@@ -69,7 +69,7 @@ cdef class ProbabilisticMatrixFactorization:
         res.__setstate__(deepcopy(res.__getstate__(), memodict))
         return res
 
-    def __setstate__(self, state):
+    def __setstate__(self, dict state not None):
         for k, v in state.items():
             setattr(self, k, v)
 
@@ -138,6 +138,7 @@ cdef class ProbabilisticMatrixFactorization:
         cdef int i, j
         cdef float rating, r_hat, sq_error
 
+        # TODO: is it faster to just make the whole matrix? probably...
         sq_error = 0
         for i, j, rating in self.ratings:
             r_hat = np.dot(users[i,:], items[j,:])
@@ -150,6 +151,14 @@ cdef class ProbabilisticMatrixFactorization:
                 - user_norm / (2 * self.sigma_u_sq)
                 - item_norm / (2 * self.sigma_v_sq))
 
+    cpdef float ll_prior_adjustment(self) except? 1492:
+        return -.5 * (
+                np.log(self.sigma_sq) * self.ratings.shape[0]
+                + self.num_users * self.latent_d * np.log(self.sigma_u_sq)
+                + self.num_items * self.latent_d * np.log(self.sigma_v_sq))
+
+    cpdef float full_ll(self, users=None, items=None) except? 1492:
+        return self.log_likelihood(users, items) + self.ll_prior_adjustment()
 
     @cython.cdivision(True)
     cpdef object gradient(self):
@@ -167,6 +176,21 @@ cdef class ProbabilisticMatrixFactorization:
 
         return grad_u, grad_v
 
+    @cython.cdivision(True)
+    cpdef update_sigma(self):
+        cdef int i, j
+        cdef float sq_error = 0, rating
+
+        for i, j, rating in self.ratings:
+            r_hat = np.dot(self.users[i,:], self.items[j,:])
+            sq_error += (rating - r_hat)**2
+
+        self.sigma_sq = sq_error / self.ratings.shape[0]
+
+    cpdef update_sigma_uv(self):
+        cdef float d = self.latent_d
+        self.sigma_u_sq = <float>np.linalg.norm(self.users) / self.num_users / d
+        self.sigma_v_sq = <float>np.linalg.norm(self.items) / self.num_items / d
 
     def fit_lls(self):
         cdef np.ndarray grad_u, grad_v, new_users, new_items
@@ -206,7 +230,35 @@ cdef class ProbabilisticMatrixFactorization:
 
 
     def fit(self):
+        cdef float ll
         for ll in self.fit_lls():
+            pass
+
+    @cython.cdivision(True)
+    def fit_with_sigmas_lls(self, int noise_every=5, int users_every=2):
+        cdef int i
+        #cdef float ll # causes segfault...
+        cdef bint cont = True
+
+        while cont:
+            cont = False
+            for i, ll in enumerate(self.fit_lls()):
+                if i % noise_every == 0:
+                    self.update_sigma()
+                if i % users_every == 0:
+                    self.update_sigma_uv()
+
+                yield ll
+
+                if i > 0:
+                    cont = True
+
+            self.update_sigma()
+            self.update_sigma_uv()
+
+    def fit_with_sigmas(self, int noise_every=10, int users_every=5):
+        cdef float ll
+        for ll in self.fit_with_sigmas_lls(noise_every, users_every):
             pass
 
     cpdef np.ndarray predicted_matrix(self):

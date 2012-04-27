@@ -93,6 +93,15 @@ class ProbabilisticMatrixFactorization(object):
                 - np.linalg.norm(users) / (2 * self.sigma_u_sq)
                 - np.linalg.norm(items) / (2 * self.sigma_v_sq))
 
+    def ll_prior_adjustment(self):
+        return - .5 * (
+                np.log(self.sigma_sq) * self.ratings.shape[0]
+                + self.num_users * self.latent_d * np.log(self.sigma_u_sq)
+                + self.num_items * self.latent_d * np.log(self.sigma_v_sq))
+
+    def full_ll(self, users=None, items=None):
+        return self.log_likelihood(users, items) + self.ll_prior_adjustment()
+
     def gradient(self):
         grad_u = -self.users / self.sigma_u_sq
         grad_v = -self.items / self.sigma_v_sq
@@ -105,6 +114,18 @@ class ProbabilisticMatrixFactorization(object):
 
         return grad_u, grad_v
 
+    def update_sigma(self):
+        sq_error = 0
+        for i, j, rating in self.ratings:
+            r_hat = np.dot(self.users[i,:], self.items[j,:])
+            sq_error += (rating - r_hat)**2
+
+        self.sigma_sq = sq_error / self.ratings.shape[0]
+
+    def update_sigma_uv(self):
+        d = self.latent_d
+        self.sigma_u_sq = np.linalg.norm(self.users) / self.num_users / d
+        self.sigma_v_sq = np.linalg.norm(self.items) / self.num_items / d
 
     def fit_lls(self):
         lr = self.learning_rate
@@ -143,6 +164,29 @@ class ProbabilisticMatrixFactorization(object):
 
     def fit(self):
         for ll in self.fit_lls():
+            pass
+
+    def fit_with_sigmas_lls(self, noise_every=10, users_every=5):
+        cont = True
+
+        while cont:
+            cont = False
+            for i, ll in enumerate(self.fit_lls()):
+                if i % noise_every == 0:
+                    self.update_sigma()
+                if i % users_every == 0:
+                    self.update_sigma_uv()
+
+                yield ll
+
+                if i > 0:
+                    cont = True
+
+            self.update_sigma()
+            self.update_sigma_uv()
+
+    def fit_with_sigmas(self, noise_every=10, users_every=5):
+        for ll in self.fit_with_sigmas_lls(noise_every, users_every):
             pass
 
     def predicted_matrix(self):
