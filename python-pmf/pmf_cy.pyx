@@ -144,7 +144,7 @@ cdef class ProbabilisticMatrixFactorization:
             sq_error += (rating - r_hat)**2
 
         cdef float user_norm = np.linalg.norm(users)
-        cdef float item_norm = np.linalg.norm(users)
+        cdef float item_norm = np.linalg.norm(items)
 
         return (- sq_error / (2 * self.sigma_sq)
                 - user_norm / (2 * self.sigma_u_sq)
