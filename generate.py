@@ -104,6 +104,7 @@ def gen_known_diag_counts(m, n, rank, known_pos, unknown_pos,
 
 def main():
     import argparse
+    import os
     import pickle
 
     parser = argparse.ArgumentParser()
@@ -117,6 +118,9 @@ def main():
     parser.add_argument('outfile')
 
     args = parser.parse_args()
+
+    if not os.path.exists(os.path.dirname(args.outfile)):
+        os.makedirs(os.path.dirname(args.outfile))
 
     vals = DEF_VALS
 
