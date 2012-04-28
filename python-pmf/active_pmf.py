@@ -1158,11 +1158,12 @@ def main():
 
 
     # make directories to save results if necessary
-    if args.save_results:
-        if args.save_results is True:
-            args.save_results = 'results.pkl'
-        else:
-            os.makedirs(os.path.dirname(args.save_results))
+    if args.save_results is True:
+        args.save_results = 'results.pkl'
+    elif args.save_results:
+        dirname = os.path.dirname(args.save_results)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
 
     # load previous data, if we're doing that
     real_ratings_vals = None
@@ -1215,7 +1216,7 @@ def main():
 
         results['_args'] = args
 
-        with open(filename, 'wb') as f:
+        with open(args.save_results, 'wb') as f:
             pickle.dump(results, f)
 
 
