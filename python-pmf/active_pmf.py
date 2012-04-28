@@ -798,18 +798,19 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 #       where they've made the same choices
 
 def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
-              fit_normal=True, processes=None):
+              fit_normal=True, fit_sigmas=False, processes=None):
     print("Training PMF")
-    for ll in apmf.fit_lls():
-        pass #print "\tLL: %g" % ll
+
+    if fit_sigmas:
+        apmf.fit_with_sigmas()
+    else:
+        apmf.fit()
 
     apmf.initialize_approx()
 
     if fit_normal:
         print("Fitting normal")
-        for kl in apmf.fit_normal_kls():
-            pass #print "\tKL: %g" % kl
-            assert kl > -1e5
+        apmf.fit_normal()
 
         print("Mean diff of means: %g; mean cov %g" % (
                 apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
@@ -854,19 +855,24 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
         yield len(apmf.rated), rmse, (i,j), vals
 
 
-def _in_between_work(apmf, i, j, realval, total, fit_normal, name):
+def _in_between_work(apmf, i, j, realval, total, fit_normal,
+                     fit_sigmas, name):
     apmf.add_rating(i, j, realval)
     print("{:<40} Queried ({}, {}); {}/{} known".format(
             name, i, j, len(apmf.rated), total))
 
-    apmf.fit()
+    if fit_sigmas:
+        apmf.fit_with_sigmas()
+    else:
+        apmf.fit()
     if fit_normal:
         apmf.fit_normal()
 
     return apmf
 
 
-def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
+def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
+                        worker_pool):
     total = real.size
     name = picker_key.nice_name
 
@@ -887,7 +893,8 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, worker_pool):
             i, j = picker_key.chooser(apmf.unrated, key=vals.__getitem__)
 
         apmf = worker_pool.apply(_in_between_work,
-                (apmf, i, j, real[i,j], total, fit_normal, name))
+                (apmf, i, j, real[i,j], total,
+                 fit_normal, fit_sigmas, name))
 
         rmse = apmf.rmse(real)
         print("{:<40} RMSE {}: {:.5}".format(picker_key.nice_name, n, rmse))
@@ -1009,8 +1016,8 @@ def get_ratings(real, mask_type=0):
 
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
-            steps=None, discrete_exp=False, real_ratings_vals=None, apmf=None,
-            **kwargs):
+            steps=None, discrete_exp=False, fit_sigmas=False,
+            real_ratings_vals=None, apmf=None, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
@@ -1030,8 +1037,12 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
                 rating_values=rating_vals, discrete_expectations=discrete_exp)
         # initial fit is common to all methods
         print("Doing initial fit")
-        apmf.fit()
+        if fit_sigmas:
+            apmf.fit_with_sigmas()
+        else:
+            apmf.fit()
         apmf.initialize_approx()
+
         if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
             print("Initial approximation fit")
             apmf.fit_normal()
@@ -1053,7 +1064,8 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             key = KEY_FUNCS[key_name]
 
             res = _full_test_threaded(
-                    deepcopy(apmf), real, key, key.do_normal_fit, worker_pool)
+                    deepcopy(apmf), real, key, key.do_normal_fit,
+                    fit_sigmas, worker_pool)
             results[key_name] = list(itertools.islice(res, steps))
 
         threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
@@ -1068,7 +1080,8 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         for key_name in key_names:
             key = KEY_FUNCS[key_name]
             res = full_test(
-                    deepcopy(apmf), real, key, key.do_normal_fit, processes)
+                    deepcopy(apmf), real, key, key.do_normal_fit,
+                    fit_sigmas, processes)
             results[key_name] = list(itertools.islice(res, steps))
 
     return results
@@ -1096,6 +1109,7 @@ def main():
             nargs='?', const=True, default=False)
     model.add_argument('--continuous-integration',
             action='store_false', dest='discrete_integration')
+    add_bool_opt(model, 'fit-sigmas', default=False)
 
     model.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
@@ -1195,6 +1209,7 @@ def main():
                 noise=args.noise, mask_type=args.mask,
                 rank=args.gen_rank, latent_d=args.latent_d,
                 discrete_exp=args.discrete_integration,
+                fit_sigmas=args.fit_sigmas,
                 data_type=args.type,
                 steps=args.steps,
                 processes=args.processes, do_threading=args.threading)
