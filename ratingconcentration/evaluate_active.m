@@ -6,6 +6,16 @@ if ~iscell(selectors)
     selectors = {selectors};
 end
 
+vals = unique(X);
+if all(vals(:) == (1:5)')
+    featureFunc = @sets_square5;
+elseif all(vals(:) == (1:2)')
+    featureFunc = @sets_onetwo;
+else
+    error('ratingconcentration:evaluate_active:vals', ...
+          'Not sure how to do features for these values.')
+end
+
 featureFunc = @sets_square5;
 
 mask = sparse(known == 0); % TODO: query on less than the full matrix

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from collections import namedtuple
-import io
 import functools
 import os
 import subprocess
@@ -9,13 +8,11 @@ import tempfile
 
 import numpy as np
 import scipy.io
-from scipy import sparse
 
 # for pickle
 import sys
 sys.path.append('../python-pmf')
 from active_pmf import ActivePMF
-
 
 KeyFunc = namedtuple('KeyFunc', "nice_name code")
 
@@ -30,7 +27,7 @@ _M_TEMPLATE = '''
 load {infile}
 whos
 
-X = double(X + 1); % add one so binary ones work
+X = double(X); % NOTE: true values can't have 0s!
 known = known == 1;
 
 selectors = {{ {selectors} }};
@@ -40,13 +37,18 @@ results = evaluate_active(X, known, selectors, steps, delta);
 save {outfile} results
 '''
 
-def compare(keys, data_matrix, known, steps, delta):
+def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab'):
     # TODO: choose delta through CV
     # TODO: control parallelism
     # TODO: get sparse matrices to work
 
     mattemp = functools.partial(tempfile.NamedTemporaryFile,
             suffix='.mat', delete=False)
+
+    # can't contain any zeros
+    if 0 in data_matrix:
+        data_matrix += 1
+        assert 0 not in data_matrix
 
     matdata = {
         'X': data_matrix,
@@ -55,6 +57,7 @@ def compare(keys, data_matrix, known, steps, delta):
         'delta': delta,
     }
 
+    # make temporary files
     with mattemp(mode='wb') as matfile:
         matfilename = matfile.name
         scipy.io.savemat(matfile, matdata, oned_as='row')
@@ -68,15 +71,18 @@ def compare(keys, data_matrix, known, steps, delta):
         selectors=', '.join(KEY_FUNCS[k].code for k in keys),
     )
 
-    proc = subprocess.Popen(["matlab", "-nojvm"], stdin=subprocess.PIPE)
-    proc.communicate(mfile_content.encode())
+    try:
+        # run matlab
+        proc = subprocess.Popen([mat_cmd, "-nojvm"], stdin=subprocess.PIPE)
+        proc.communicate(mfile_content.encode())
 
-    with open(outfilename, 'rb') as outfile:
-        mat_results = scipy.io.loadmat(outfile)['results']
-
-    # TODO: delete temp files
-    os.remove(outfilename)
-    os.remove(matfilename)
+        # read results
+        with open(outfilename, 'rb') as outfile:
+            mat_results = scipy.io.loadmat(outfile)['results']
+    finally:
+        # delete temp files
+        os.remove(outfilename)
+        os.remove(matfilename)
 
     results = {}
     for k, v in zip(keys, mat_results):
@@ -116,6 +122,7 @@ def main():
     parser.add_argument('--delta', '-d', type=float, default=1.5)
     parser.add_argument('--steps', '-s', type=int, default=-1)
     parser.add_argument('--data-file', '-D', required=True)
+    parser.add_argument('--matlab', '-m', default='matlab')
 
     parser.add_argument('--results-file', default=None, metavar='FILE',
             help="Save results in FILE; by default, add to --data-file.")
@@ -146,7 +153,8 @@ def main():
     known[ratings[:,0].astype(int), ratings[:,1].astype(int)] = 1
 
     # get new results
-    results = compare(args.keys, orig['_real'], known, args.steps, args.delta)
+    results = compare(args.keys, orig['_real'], known, args.steps, args.delta,
+                      args.matlab)
 
     # back up original file if we're overwriting it
     if os.path.exists(args.results_file):
