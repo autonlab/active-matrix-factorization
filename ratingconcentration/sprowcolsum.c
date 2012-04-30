@@ -16,7 +16,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     if (mxIsSparse(prhs[1]))
         mexErrMsgTxt("Error: sparse E is not implemented yet");
     
-    //load input
+    /* load input */
     ir = mxGetIr(prhs[0]);
     jc = mxGetJc(prhs[0]);
     M = mxGetM(prhs[0]);
@@ -28,10 +28,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
         mexErrMsgTxt("Num rows of E must be equal to nnz(mask)");
     
     E = mxGetPr(prhs[1]);
-    //open rowsum 
+    /* open rowsum */
     plhs[0] = mxCreateDoubleMatrix(M, D, mxREAL);
     rowsum = mxGetPr(plhs[0]);
-    //open colsum 
+    /* open colsum  */
     plhs[1] = mxCreateDoubleMatrix(N, D, mxREAL);
     colsum = mxGetPr(plhs[1]);
     
@@ -43,7 +43,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             column++;
         }
         
-        //printf("Nonzero at %d, %d\n", row,column);
+        /* printf("Nonzero at %d, %d\n", row,column); */
         
         for (j=0; j<D; j++) {
             rowsum[j*M+row] += E[i+nnz*j];

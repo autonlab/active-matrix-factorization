@@ -60,7 +60,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     if (mxIsSparse(prhs[1]) || mxIsSparse(prhs[2]))
         mexErrMsgTxt("Error: sparse U or V is not implemented yet");
     
-    //load input
+    /* load input */
     ir = mxGetIr(prhs[0]);
     jc = mxGetJc(prhs[0]);
     M = mxGetM(prhs[0]);
@@ -68,7 +68,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     nnz = jc[N];
     
     if (mxGetM(prhs[1]) == M && mxGetM(prhs[2]) == N) {
-        //transpose U and V for faster memory access
+        /* transpose U and V for faster memory access */
         RHS[0] = prhs[1];
         mexCallMATLAB(1, LHS, 1, RHS, "transpose");
         Ut = LHS[0];
@@ -86,7 +86,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     } else 
         mexErrMsgTxt("Error: Matrix sizes are incorrect");
     
-    //open output   
+    /* open output */
     
     plhs[0] = mxCreateSparse(M, N, nnz, 0);
     out = mxGetPr(plhs[0]);
@@ -104,7 +104,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             column++;
         }
         
-        //printf("Nonzero at %d, %d\n", row,column);
+        /* printf("Nonzero at %d, %d\n", row,column); */
         
         out[i] = 0;
         for (j=0; j<D; j++) {
