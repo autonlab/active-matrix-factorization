@@ -153,6 +153,9 @@ class ProbabilisticMatrixFactorization(object):
 
                     if new_ll - old_ll < self.stop_thresh:
                         converged = True
+
+                    yield new_ll
+                    old_ll = new_ll
                     break
                 else:
                     lr *= .5
@@ -160,10 +163,6 @@ class ProbabilisticMatrixFactorization(object):
                     if lr < self.min_learning_rate:
                         converged = True
                         break
-
-            yield new_ll
-            old_ll = new_ll
-
 
     def fit(self):
         for ll in self.fit_lls():

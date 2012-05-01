@@ -273,6 +273,9 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
                     if old_kl - new_kl < .005:
                         converged = True
+
+                    yield new_kl
+                    old_kl = new_kl
                     break
                 else:
                     lr *= .5
@@ -281,8 +284,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                         converged = True
                         break
 
-            yield new_kl
-            old_kl = new_kl
 
 
     ############################################################################
