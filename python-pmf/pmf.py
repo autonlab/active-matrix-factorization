@@ -89,9 +89,12 @@ class ProbabilisticMatrixFactorization(object):
             r_hat = np.dot(users[i], items[j])
             sq_error += (rating - r_hat)**2
 
+        user_norm2 = np.sum(users * users)
+        item_norm2 = np.sum(items * items)
+
         return (- sq_error / (2 * self.sigma_sq)
-                - np.linalg.norm(users) / (2 * self.sigma_u_sq)
-                - np.linalg.norm(items) / (2 * self.sigma_v_sq))
+                - user_norm2 / (2 * self.sigma_u_sq)
+                - item_norm2 / (2 * self.sigma_v_sq))
 
     def ll_prior_adjustment(self):
         return - .5 * (

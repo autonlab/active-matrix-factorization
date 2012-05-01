@@ -129,7 +129,8 @@ cdef class ProbabilisticMatrixFactorization:
 
 
     @cython.cdivision(True)
-    cpdef float log_likelihood(self, users=None, items=None) except? 1492:
+    cpdef float log_likelihood(self, np.ndarray users=None,
+                                     np.ndarray items=None) except? 1492:
         if users is None:
             users = self.users
         if items is None:
@@ -139,17 +140,17 @@ cdef class ProbabilisticMatrixFactorization:
         cdef float rating, r_hat, sq_error
 
         # TODO: is it faster to just make the whole matrix? probably...
-        sq_error = 0
+        sq_error = 0.
         for i, j, rating in self.ratings:
             r_hat = np.dot(users[i,:], items[j,:])
             sq_error += (rating - r_hat)**2
 
-        cdef float user_norm = np.linalg.norm(users)
-        cdef float item_norm = np.linalg.norm(items)
+        cdef float user_norm2 = np.sum(users * users)
+        cdef float item_norm2 = np.sum(items * items)
 
-        return (- sq_error / (2 * self.sigma_sq)
-                - user_norm / (2 * self.sigma_u_sq)
-                - item_norm / (2 * self.sigma_v_sq))
+        return (- sq_error   / (2. * self.sigma_sq)
+                - user_norm2 / (2. * self.sigma_u_sq)
+                - item_norm2 / (2. * self.sigma_v_sq))
 
     cpdef float ll_prior_adjustment(self) except? 1492:
         return -.5 * (
