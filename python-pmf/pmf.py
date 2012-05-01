@@ -25,6 +25,11 @@ class ProbabilisticMatrixFactorization(object):
         self.sigma_u_sq = 10
         self.sigma_v_sq = 10
 
+        # negative variance means not to use a prior here
+        # would set them to None, but that doesn't work in cython
+        self.sig_u_mean = self.sig_v_mean = 0
+        self.sig_u_var = self.sig_v_var = -1
+
         self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
             raise TypeError("invalid rating tuple length")
@@ -127,8 +132,23 @@ class ProbabilisticMatrixFactorization(object):
 
     def update_sigma_uv(self):
         d = self.latent_d
-        self.sigma_u_sq = np.linalg.norm(self.users) / self.num_users / d
-        self.sigma_v_sq = np.linalg.norm(self.items) / self.num_items / d
+        n = self.num_users
+        m = self.num_items
+
+        user_norm2 = np.sum(self.users * self.users)
+        item_norm2 = np.sum(self.users * self.users)
+
+        if self.sig_u_var > 0:
+            self.sigma_u_sq = user_norm2 / (n * d + 2 +
+                    2*(log(self.sigma_u_sq) - self.sig_u_mean) / self.sig_u_var)
+        else:
+            self.sigma_u_sq = user_norm2 / n / d
+
+        if self.sig_v_var > 0:
+            self.sigma_v_sq = item_norm2 / (m * d + 2 +
+                    2*(log(self.sigma_v_sq) - self.sig_v_mean) / self.sig_v_var)
+        else:
+            self.sigma_v_sq = item_norm2 / m / d
 
     def fit_lls(self):
         lr = self.learning_rate
@@ -181,8 +201,7 @@ class ProbabilisticMatrixFactorization(object):
 
                 yield ll
 
-                if i > 0:
-                    cont = True
+                cont = True # continue if we made any steps
 
             self.update_sigma()
             self.update_sigma_uv()

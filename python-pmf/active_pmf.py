@@ -1018,7 +1018,8 @@ def get_ratings(real, mask_type=0):
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
             steps=None, discrete_exp=False, fit_sigmas=False,
-            real_ratings_vals=None, apmf=None, **kwargs):
+            real_ratings_vals=None, apmf=None,
+            sig_u_mean=0, sig_u_var=-1, sig_v_mean=0, sig_v_var=-1, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
@@ -1032,10 +1033,14 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             assert set(apmf.rating_values) == set(rating_vals)
             apmf.discrete_expectations = discrete_exp
 
-
     if apmf is None:
         apmf = ActivePMF(ratings, latent_d=latent_d,
                 rating_values=rating_vals, discrete_expectations=discrete_exp)
+        apmf.sig_u_mean = sig_u_mean
+        apmf.sig_u_var = sig_u_var
+        apmf.sig_v_mean = sig_v_mean
+        apmf.sig_v_var = sig_v_var
+
         # initial fit is common to all methods
         print("Doing initial fit")
         if fit_sigmas:
@@ -1111,6 +1116,11 @@ def main():
     model.add_argument('--continuous-integration',
             action='store_false', dest='discrete_integration')
     add_bool_opt(model, 'fit-sigmas', default=False)
+
+    model.add_argument('--sig-u-mean', type=float, default=0)
+    model.add_argument('--sig-u-var', type=float, default=-1)
+    model.add_argument('--sig-v-mean', type=float, default=0)
+    model.add_argument('--sig-v-var', type=float, default=-1)
 
     model.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
@@ -1211,6 +1221,8 @@ def main():
                 rank=args.gen_rank, latent_d=args.latent_d,
                 discrete_exp=args.discrete_integration,
                 fit_sigmas=args.fit_sigmas,
+                sig_u_mean=args.sig_u_mean, sig_u_var=args.sig_u_var,
+                sig_v_mean=args.sig_v_mean, sig_v_var=args.sig_v_var,
                 data_type=args.type,
                 steps=args.steps,
                 processes=args.processes, do_threading=args.threading)

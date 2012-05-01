@@ -17,6 +17,8 @@ from copy import deepcopy
 import numpy as np
 cimport numpy as np
 
+from libc.math cimport log
+
 cimport cython
 
 DTYPE = np.float
@@ -26,6 +28,7 @@ cdef class ProbabilisticMatrixFactorization:
     cdef public int latent_d, num_users, num_items
     cdef public float learning_rate, min_learning_rate, stop_thresh
     cdef public float sigma_sq, sigma_u_sq, sigma_v_sq
+    cdef public float sig_u_mean, sig_u_var, sig_v_mean, sig_v_var
     cdef public np.ndarray ratings, users, items
     cdef public object rated, unrated
 
@@ -37,6 +40,11 @@ cdef class ProbabilisticMatrixFactorization:
         self.sigma_sq = 1
         self.sigma_u_sq = 10
         self.sigma_v_sq = 10
+
+        # negative variance means not to use a prior here
+        # would set them to None, but that doesn't work in cython
+        self.sig_u_mean = self.sig_v_mean = 0
+        self.sig_u_var = self.sig_v_var = -1
 
     def __init__(self, np.ndarray rating_tuples not None, int latent_d=1):
         self.latent_d = latent_d
@@ -86,6 +94,11 @@ cdef class ProbabilisticMatrixFactorization:
             sigma_sq=self.sigma_sq,
             sigma_u_sq=self.sigma_u_sq,
             sigma_v_sq=self.sigma_v_sq,
+
+            sig_u_mean=self.sig_u_mean,
+            sig_u_var=self.sig_u_var,
+            sig_v_mean=self.sig_v_mean,
+            sig_v_var=self.sig_v_var,
 
             ratings=self.ratings,
             users=self.users,
@@ -162,7 +175,7 @@ cdef class ProbabilisticMatrixFactorization:
         return self.log_likelihood(users, items) + self.ll_prior_adjustment()
 
     @cython.cdivision(True)
-    cpdef object gradient(self):
+    cpdef tuple gradient(self):
         cdef np.ndarray[DTYPE_t,ndim=2] grad_u = -self.users / self.sigma_u_sq
         cdef np.ndarray[DTYPE_t,ndim=2] grad_v = -self.items / self.sigma_v_sq
 
@@ -188,10 +201,26 @@ cdef class ProbabilisticMatrixFactorization:
 
         self.sigma_sq = sq_error / self.ratings.shape[0]
 
+    @cython.cdivision(True)
     cpdef update_sigma_uv(self):
-        cdef float d = self.latent_d
-        self.sigma_u_sq = <float>np.linalg.norm(self.users) / self.num_users / d
-        self.sigma_v_sq = <float>np.linalg.norm(self.items) / self.num_items / d
+        cdef int d = self.latent_d
+        cdef int n = self.num_users
+        cdef int m = self.num_items
+
+        cdef float user_norm2 = np.sum(self.users * self.users)
+        cdef float item_norm2 = np.sum(self.items * self.items)
+
+        if self.sig_u_var > 0:
+            self.sigma_u_sq = user_norm2 / (n * d + 2 +
+                    2*(log(self.sigma_u_sq) - self.sig_u_mean) / self.sig_u_var)
+        else:
+            self.sigma_u_sq = user_norm2 / n / d
+
+        if self.sig_v_var > 0:
+            self.sigma_v_sq = item_norm2 / (m * d + 2 +
+                    2*(log(self.sigma_v_sq) - self.sig_v_mean) / self.sig_v_var)
+        else:
+            self.sigma_v_sq = item_norm2 / m / d
 
     def fit_lls(self):
         cdef np.ndarray grad_u, grad_v, new_users, new_items
@@ -251,8 +280,7 @@ cdef class ProbabilisticMatrixFactorization:
 
                 yield ll
 
-                if i > 0:
-                    cont = True
+                cont = True # continue if we made any steps
 
             self.update_sigma()
             self.update_sigma_uv()
