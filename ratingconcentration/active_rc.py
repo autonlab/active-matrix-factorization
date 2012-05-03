@@ -166,7 +166,7 @@ def main():
     for k, v in results.items():
         orig['rc_' + k] = v
 
-    with open(args.data_file, 'wb') as f:
+    with open(args.results_file, 'wb') as f:
         pickle.dump(orig, f)
 
 
