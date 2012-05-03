@@ -13,10 +13,10 @@ def tripexpect(np.ndarray[DTYPE_t, ndim=1] mean not None,
     return mean[a] * mean[b] * mean[c] + \
             mean[a]*cov[b,c] + mean[b]*cov[a,c] + mean[c]*cov[a,b]
 
-# TODO: Buffer unpacking not optimized away
+# TODO: inline?
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline float sum_tripexpect_ccl(
+cdef double sum_tripexpect_ccl(
             np.ndarray[DTYPE_t, ndim=1] mean,
             np.ndarray[DTYPE_t, ndim=2] cov,
             int a, int b, np.ndarray[np.int_t, ndim=1] c):
@@ -25,7 +25,7 @@ cdef inline float sum_tripexpect_ccl(
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline float sum_tripexpect_cll(
+cdef double sum_tripexpect_cll(
             np.ndarray[DTYPE_t, ndim=1] mean,
             np.ndarray[DTYPE_t, ndim=2] cov,
             int a,
@@ -120,7 +120,7 @@ def exp_dotprod_sq(np.ndarray[np.int_t, ndim=2] u not None,
     '''
     # TODO: vectorize as much as possible
 
-    cdef float exp = 0
+    cdef double exp = 0
     cdef int latent_dim = u.shape[0]
     cdef int uki, vkj, k, l
 
@@ -169,44 +169,44 @@ def normal_gradient(apmf not None):
 
 
 # some helpers used to reduce code repetition below, repeated for diff. types
-# TODO: Buffer unpacking not optimized away
+# TODO: inline these?
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline void _cov_4exp_grad_ccll(
+cdef void _cov_4exp_grad_ccll(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
-        float sig,
+        double sig,
         np.ndarray[DTYPE_t, ndim=2] grad_cov,
         int a, int b,
         np.ndarray[np.int_t, ndim=1] c, np.ndarray[np.int_t, ndim=1] d):
-    cdef float inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
+    cdef double inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
     grad_cov[a, b] += inc
     grad_cov[b, a] += inc
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline void _cov_4exp_grad_clcl(
+cdef void _cov_4exp_grad_clcl(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
-        float sig,
+        double sig,
         np.ndarray[DTYPE_t, ndim=2] grad_cov,
         int a, np.ndarray[np.int_t, ndim=1] b,
         int c, np.ndarray[np.int_t, ndim=1] d):
-    cdef float inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
+    cdef double inc = (mean[c] * mean[d] + cov[c, d]).sum() / sig
     grad_cov[a, b] += inc
     grad_cov[b, a] += inc
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision
-cdef inline void _cov_4exp_grad_llcc(
+cdef void _cov_4exp_grad_llcc(
         np.ndarray[DTYPE_t, ndim=1] mean,
         np.ndarray[DTYPE_t, ndim=2] cov,
-        float sig,
+        double sig,
         np.ndarray[DTYPE_t, ndim=2] grad_cov,
         np.ndarray[np.int_t, ndim=1] a, np.ndarray[np.int_t, ndim=1] b,
         int c, int d):
-    cdef float inc = (mean[c] * mean[d] + cov[c, d]) / sig
+    cdef double inc = (mean[c] * mean[d] + cov[c, d]) / sig
     grad_cov[a, b] += inc
     grad_cov[b, a] += inc
 
@@ -222,12 +222,12 @@ cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
                   np.ndarray[np.int_t, ndim=2] v,
                   np.ndarray[np.int_t, ndim=1] us,
                   np.ndarray[np.int_t, ndim=1] vs,
-                  float sig, float sig_u, float sig_v,
+                  double sig, double sig_u, double sig_v,
                   np.ndarray[DTYPE_t, ndim=1] grad_mean,
                   np.ndarray[DTYPE_t, ndim=2] grad_cov):
     cdef int uki, vkj, i, j, k
     cdef np.ndarray uli, vlj, u_i, v_j, mu_i, mv_j, inc
-    cdef float rating
+    cdef double rating
 
     for idx in range(ratings.shape[0]):
         i = <int> ratings[idx, 0]

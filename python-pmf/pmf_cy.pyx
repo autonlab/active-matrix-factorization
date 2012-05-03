@@ -26,9 +26,9 @@ ctypedef np.float_t DTYPE_t
 
 cdef class ProbabilisticMatrixFactorization:
     cdef public int latent_d, num_users, num_items
-    cdef public float learning_rate, min_learning_rate, stop_thresh
-    cdef public float sigma_sq, sigma_u_sq, sigma_v_sq
-    cdef public float sig_u_mean, sig_u_var, sig_v_mean, sig_v_var
+    cdef public double learning_rate, min_learning_rate, stop_thresh
+    cdef public double sigma_sq, sigma_u_sq, sigma_v_sq
+    cdef public double sig_u_mean, sig_u_var, sig_v_mean, sig_v_var
     cdef public np.ndarray ratings, users, items
     cdef public object rated, unrated
 
@@ -142,15 +142,15 @@ cdef class ProbabilisticMatrixFactorization:
 
 
     @cython.cdivision(True)
-    cpdef float log_likelihood(self, np.ndarray users=None,
-                                     np.ndarray items=None) except? 1492:
+    cpdef double log_likelihood(self, np.ndarray users=None,
+                                      np.ndarray items=None) except? 1492:
         if users is None:
             users = self.users
         if items is None:
             items = self.items
 
         cdef int i, j
-        cdef float rating, r_hat, sq_error
+        cdef double rating, r_hat, sq_error
 
         # TODO: is it faster to just make the whole matrix? probably...
         sq_error = 0.
@@ -158,20 +158,20 @@ cdef class ProbabilisticMatrixFactorization:
             r_hat = np.dot(users[i,:], items[j,:])
             sq_error += (rating - r_hat)**2
 
-        cdef float user_norm2 = np.sum(users * users)
-        cdef float item_norm2 = np.sum(items * items)
+        cdef double user_norm2 = np.sum(users * users)
+        cdef double item_norm2 = np.sum(items * items)
 
         return (- sq_error   / (2. * self.sigma_sq)
                 - user_norm2 / (2. * self.sigma_u_sq)
                 - item_norm2 / (2. * self.sigma_v_sq))
 
-    cpdef float ll_prior_adjustment(self) except? 1492:
+    cpdef double ll_prior_adjustment(self) except? 1492:
         return -.5 * (
                 np.log(self.sigma_sq) * self.ratings.shape[0]
                 + self.num_users * self.latent_d * np.log(self.sigma_u_sq)
                 + self.num_items * self.latent_d * np.log(self.sigma_v_sq))
 
-    cpdef float full_ll(self, users=None, items=None) except? 1492:
+    cpdef double full_ll(self, users=None, items=None) except? 1492:
         return self.log_likelihood(users, items) + self.ll_prior_adjustment()
 
     @cython.cdivision(True)
@@ -179,9 +179,9 @@ cdef class ProbabilisticMatrixFactorization:
         cdef np.ndarray[DTYPE_t,ndim=2] grad_u = -self.users / self.sigma_u_sq
         cdef np.ndarray[DTYPE_t,ndim=2] grad_v = -self.items / self.sigma_v_sq
 
-        cdef float sig = self.sigma_sq
+        cdef double sig = self.sigma_sq
         cdef int i, j
-        cdef float rating, r_hat
+        cdef double rating, r_hat
 
         for i, j, rating in self.ratings:
             r_hat = np.dot(self.users[i], self.items[j])
@@ -193,7 +193,7 @@ cdef class ProbabilisticMatrixFactorization:
     @cython.cdivision(True)
     cpdef update_sigma(self):
         cdef int i, j
-        cdef float sq_error = 0, rating
+        cdef double sq_error = 0, rating
 
         for i, j, rating in self.ratings:
             r_hat = np.dot(self.users[i,:], self.items[j,:])
@@ -207,8 +207,8 @@ cdef class ProbabilisticMatrixFactorization:
         cdef int n = self.num_users
         cdef int m = self.num_items
 
-        cdef float user_norm2 = np.sum(self.users * self.users)
-        cdef float item_norm2 = np.sum(self.items * self.items)
+        cdef double user_norm2 = np.sum(self.users * self.users)
+        cdef double item_norm2 = np.sum(self.items * self.items)
 
         if self.sig_u_var > 0:
             self.sigma_u_sq = user_norm2 / (n * d + 2 +
@@ -224,10 +224,10 @@ cdef class ProbabilisticMatrixFactorization:
 
     def fit_lls(self):
         cdef np.ndarray grad_u, grad_v, new_users, new_items
-        cdef float lr = self.learning_rate
+        cdef double lr = self.learning_rate
 
-        cdef float old_ll = self.log_likelihood()
-        cdef float new_ll
+        cdef double old_ll = self.log_likelihood()
+        cdef double new_ll
 
         cdef bint converged = False
         while not converged:
@@ -260,14 +260,14 @@ cdef class ProbabilisticMatrixFactorization:
 
 
     def fit(self):
-        cdef float ll
+        cdef double ll
         for ll in self.fit_lls():
             pass
 
     @cython.cdivision(True)
     def fit_with_sigmas_lls(self, int noise_every=5, int users_every=2):
         cdef int i
-        #cdef float ll # causes segfault...
+        #cdef double ll # causes segfault...
         cdef bint cont = True
 
         while cont:
@@ -286,14 +286,14 @@ cdef class ProbabilisticMatrixFactorization:
             self.update_sigma_uv()
 
     def fit_with_sigmas(self, int noise_every=10, int users_every=5):
-        cdef float ll
+        cdef double ll
         for ll in self.fit_with_sigmas_lls(noise_every, users_every):
             pass
 
     cpdef np.ndarray predicted_matrix(self):
         return np.dot(self.users, self.items.T)
 
-    cpdef float rmse(self, np.ndarray real) except -1:
+    cpdef double rmse(self, np.ndarray real) except -1:
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
 
     def print_latent_vectors(self):
