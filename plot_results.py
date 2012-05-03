@@ -4,15 +4,19 @@
 
 import itertools
 import math
+import os
 import sys
+import warnings
 
 import numpy as np
 
-sys.path.append('python-pmf')
+_dirname = os.path.dirname(__file__)
+
+sys.path.append(os.path.join(_dirname, 'python-pmf'))
 import active_pmf
 from active_pmf import ActivePMF # to make pickle happy
 
-sys.path.append('ratingconcentration')
+sys.path.append(os.path.join(_dirname, 'ratingconcentration'))
 import active_rc
 
 KEY_NAMES = { k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items() }
