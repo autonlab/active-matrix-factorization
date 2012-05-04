@@ -1187,7 +1187,7 @@ def main():
         args.save_results = 'results.pkl'
     elif args.save_results:
         dirname = os.path.dirname(args.save_results)
-        if not os.path.exists(dirname):
+        if dirname and not os.path.exists(dirname):
             os.makedirs(dirname)
 
     # load previous data, if we're doing that
