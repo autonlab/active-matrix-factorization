@@ -1,17 +1,21 @@
-function [E, P, vals, lagrange] = ratingconcentration(X, mask, featureFunc, delta, warmstart)
+function [E, P, vals, lagrange] = ratingconcentration(X, mask, featureFunc, delta, warmstart, vals)
 % function [E, P] = ratingconcentration(I,J,F)
+%
 % E = sparse matrix of expected scores, assuming function values F are
-% ordinal (e.g., 1 through 5)
+%     ordinal (e.g., 1 through 5)
 % P = multinomial distribution for each entry in mask
 % vals = list of rating values
 % lagrange = lagrange multipliers (can be used to warm start different runs)
+%
 % X = input sparse rating matrix
 % mask = sparse 0-1 (or logical) matrix marking query entries
 % featureFunc = function handle that maps a rating value to a vector of
-% feature values
+%               feature values
 % delta = regularization parameter between 0 and 2 (2 means match
-% expectations perfectly, 0 means don't match expectations at all)
+%         expectations perfectly, 0 means don't match expectations at all)
 % warmstart = lagrange multipliers from previous run for warm starting
+% vals = unique available values (useful if X doesn't contain them all);
+%        should be a column vector
 
 % this path should be changed to wherever lbfgs-for-matlab is stored
 addpath('lbfgsb-for-matlab');
@@ -20,7 +24,11 @@ addpath('lbfgsb-for-matlab');
 %% initialize
 [M, N] = size(X);
 
-vals = unique(nonzeros(X));
+if nargin < 6
+    vals = unique(nonzeros(X));
+else
+    vals = unique([nonzeros(X); vals]);
+end
 settings = length(vals);
 
 F = zeros(length(vals), length(featureFunc(vals(1))));

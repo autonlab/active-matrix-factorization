@@ -18,22 +18,24 @@ end
 
 featureFunc = @sets_square5;
 
-mask = sparse(known == 0); % TODO: query on less than the full matrix
+mask_init = sparse(known == 0); % TODO: query on less than the full matrix
 
 [known_i, known_j] = find(known);
-num_known = nnz(known);
+num_known_init = nnz(known);
 
 Xtr = sparse(known_i, known_j, X(known ~= 0));
 
 % initial fit
 [E, P, vals, lagrange] = ...
-    ratingconcentration(Xtr, mask, featureFunc, delta);
+    ratingconcentration(Xtr, mask_init, featureFunc, delta, [], vals);
 P = bsxfun(@rdivide, P, sum(P, 2)); % normalize prediction dists
 
 all_results = cell(1, length(selectors));
 
 for selector_i = 1 : length(selectors)
     selector = selectors{selector_i};
+    num_known = num_known_init;
+    mask = mask_init;
 
     results = cell(1, 4);
     results(1,:) = {num_known, get_rmse(X, E), [], []};
@@ -53,7 +55,7 @@ for selector_i = 1 : length(selectors)
         Xtr(i, j) = X(i, j); %#ok<SPRIX>
         mask(i, j) = 0; %#ok<SPRIX>
         [E, P, vals, lagrange] = ...
-            ratingconcentration(Xtr, mask, @sets_square5, delta);
+            ratingconcentration(Xtr, mask, @sets_square5, delta, [], vals);
         P = bsxfun(@rdivide, P, sum(P, 2));
         num_known = num_known + 1;
 

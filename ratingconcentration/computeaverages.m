@@ -1,6 +1,6 @@
 function [mu,nu,varu,varv] = computeaverages(Xtr, F);
 
-settings = max(nonzeros(Xtr));
+settings = 5; % max(nonzeros(Xtr)); % XXX - unhappy if Xtr doesn't include all values
 
 k = size(F,2);
 

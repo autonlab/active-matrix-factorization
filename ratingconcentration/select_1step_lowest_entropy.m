@@ -24,7 +24,7 @@ for idx = 1 : length(I)
     for val_i = 1 : length(vals)        
         new_Xtr(this_i, this_j) = vals(val_i);
         [~, new_P] = ratingconcentration(...
-            new_Xtr, new_mask, featureFunc, delta, lagrange);
+            new_Xtr, new_mask, featureFunc, delta, lagrange, vals);
         
         query_P = new_P(new_mask);
         entropy = -sum(query_P .* log(query_P));
