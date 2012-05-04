@@ -290,7 +290,14 @@ cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
     grad_cov[us,us] += 1 / (2 * sig_u)
     grad_cov[vs,vs] += 1 / (2 * sig_v)
 
-    # gradient of ln(|cov|)/2
-    # need each cofactor of the matrix divided by its determinant;
-    # this is just the transpose of its inverse
-    grad_cov += np.linalg.inv(cov).T / 2
+    # gradient of ln(|cov|)/2 w.r.t. the triangular half
+    #
+    # Derivation sketch: the partial of ln(det(sigma)) by sigma[i,j]
+    # is the cofactor divided by det(sigma), which is just the [j,i]th
+    # element of the inverse (Cramer's rule). But since our matrix is
+    # really constrained to be symmetric, we need to use the chain rule
+    # to account for the other side of the matrix, which is just
+    # the [i,j]th element of the inverse. (For the diagonal, this doesn't
+    # come into play, so don't add that on.)
+    inv = np.linalg.inv(cov)
+    grad_cov += (inv + inv.T * (1 - np.eye(cov.shape[0]))) / 2

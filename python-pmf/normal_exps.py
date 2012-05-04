@@ -82,9 +82,11 @@ def normal_gradient(apmf):
     grad_cov = np.zeros_like(cov)
 
     def inc_cov_quadexp_grad(a,b, c,d):
+        # contribution to grad of sigma_{a,b} by {c,d}, doubled
         inc = np.sum(mean[c] * mean[d] + cov[c, d]) / sig
         grad_cov[a, b] += inc
         grad_cov[b, a] += inc
+
 
     for i, j, rating in apmf.ratings:
         # gradient of sum_k sum_{l>k} E[ U_ki V_kj U_li V_lj ] / sigma^2
@@ -143,9 +145,16 @@ def normal_gradient(apmf):
     grad_cov[us,us] += 1 / (2 * apmf.sigma_u_sq)
     grad_cov[vs,vs] += 1 / (2 * apmf.sigma_v_sq)
 
-    # gradient of ln(|cov|)/2
-    # need each cofactor of the matrix divided by its determinant;
-    # this is just the transpose of its inverse
-    grad_cov += np.linalg.inv(cov).T / 2
+    # gradient of ln(|cov|)/2 w.r.t. the triangular half
+    #
+    # Derivation sketch: the partial of ln(det(sigma)) by sigma[i,j]
+    # is the cofactor divided by det(sigma), which is just the [j,i]th
+    # element of the inverse (Cramer's rule). But since our matrix is
+    # really constrained to be symmetric, we need to use the chain rule
+    # to account for the other side of the matrix, which is just
+    # the [i,j]th element of the inverse. (For the diagonal, this doesn't
+    # come into play, so don't add that on.)
+    inv = np.linalg.inv(cov)
+    grad_cov += (inv + inv.T * (1 - np.eye(cov.shape[0]))) / 2
 
     return grad_mean, grad_cov
