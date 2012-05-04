@@ -3,8 +3,11 @@
 from collections import namedtuple
 import functools
 import os
+import random
+import shutil
+import string
 import subprocess
-import tempfile
+from tempfile import mkdtemp
 
 import numpy as np
 import scipy.io
@@ -17,15 +20,15 @@ from active_pmf import ActivePMF
 KeyFunc = namedtuple('KeyFunc', "nice_name code")
 
 KEY_FUNCS = {
-    'ge-2': KeyFunc("Prob >= 2", "select_ge_cutoff(2)"),
+    'ge-1': KeyFunc("Prob >= 1", "select_ge_cutoff(1)"),
     'ge-4': KeyFunc("Prob >= 4", "select_ge_cutoff(4)"),
     'entropy': KeyFunc("Entropy Lookahead", "@select_1step_lowest_entropy"),
+    'random': KeyFunc("Random", "@select_random"),
 }
 
 
 _M_TEMPLATE = '''
 load {infile}
-whos
 
 X = double(X); % NOTE: true values can't have 0s!
 known = known == 1;
@@ -37,18 +40,27 @@ results = evaluate_active(X, known, selectors, steps, delta);
 save {outfile} results
 '''
 
-def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab'):
+def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab',
+            return_tempdir=False):
     # TODO: choose delta through CV
     # TODO: control parallelism
     # TODO: get sparse matrices to work
 
-    mattemp = functools.partial(tempfile.NamedTemporaryFile,
-            suffix='.mat', delete=False)
-
     # can't contain any zeros
     if 0 in data_matrix:
-        data_matrix += 1
+        data_matrix += .01
         assert 0 not in data_matrix
+
+
+    # make temporary dir
+    tempdir = mkdtemp()
+    path = functools.partial(os.path.join, tempdir)
+
+    infile_path = path('data_in.mat')
+    outfile_path = path('data_out.mat')
+    mfile_name = 'run_mfile_' + \
+            ''.join(random.choice(string.ascii_letters) for x in range(8))
+    mfile_path = path(mfile_name + '.m')
 
     matdata = {
         'X': data_matrix,
@@ -57,37 +69,41 @@ def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab'):
         'delta': delta,
     }
 
-    # make temporary files
-    with mattemp(mode='wb') as matfile:
-        matfilename = matfile.name
-        scipy.io.savemat(matfile, matdata, oned_as='row')
-
-    with mattemp(mode='rb') as outfile:
-        outfilename = outfile.name
-
-    mfile_content = _M_TEMPLATE.format(
-        infile=matfilename,
-        outfile=outfilename,
-        selectors=', '.join(KEY_FUNCS[k].code for k in keys),
-    )
-
     try:
+        scipy.io.savemat(infile_path, matdata, oned_as='row')
+
+        mfile_content = _M_TEMPLATE.format(
+            selectors=', '.join(KEY_FUNCS[k].code for k in keys),
+            infile=infile_path,
+            outfile=outfile_path,
+        )
+        with open(mfile_path, 'w') as mfile:
+            mfile.write(mfile_content)
+
         # run matlab
-        proc = subprocess.Popen([mat_cmd, "-nojvm"], stdin=subprocess.PIPE)
-        proc.communicate(mfile_content.encode())
+        proc = subprocess.Popen([mat_cmd, "-nojvm",
+            '-r', "addpath('{}'); {}; exit".format(tempdir, mfile_name)])
+        proc.wait()
 
         # read results
-        with open(outfilename, 'rb') as outfile:
+        with open(outfile_path, 'rb') as outfile:
             mat_results = scipy.io.loadmat(outfile)['results']
     finally:
-        # delete temp files
-        os.remove(outfilename)
-        os.remove(matfilename)
+        if not return_tempdir:
+            shutil.rmtree(tempdir)
 
+    results = results_from_mat(mat_results, keys)
+
+    if return_tempdir:
+        return results, tempdir
+    else:
+        return results
+
+def results_from_mat(mat_results, keys):
     results = {}
-    for k, v in zip(keys, mat_results):
+    for k, v in zip(keys, mat_results.flat):
         results[k] = res = []
-        for num, rmse, ij, evals in v[0,]:
+        for num, rmse, ij, evals in v:
             if evals.size:
                 if hasattr(evals, 'todense'):
                     evals = evals.todense()
@@ -99,18 +115,15 @@ def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab'):
             res.append([
                 num[0,0],
                 rmse[0,0],
-                (ij[0,0], ij[0,1]) if ij.size else None,
+                (ij[0,0]-1, ij[0,1]-1) if ij.size else None,
                 evals,
             ])
-
     return results
 
 
 def main():
     import argparse
     import pickle
-    import shutil
-
 
     key_names = KEY_FUNCS.keys()
 
@@ -123,8 +136,11 @@ def main():
     parser.add_argument('--steps', '-s', type=int, default=-1)
     parser.add_argument('--data-file', '-D', required=True)
     parser.add_argument('--matlab', '-m', default='matlab')
+    parser.add_argument('--delete-tempdir', action='store_true', default=True)
+    parser.add_argument('--no-delete-tempdir',
+            action='store_false', dest='delete_tempdir')
 
-    parser.add_argument('--results-file', default=None, metavar='FILE',
+    parser.add_argument('--results-file', '-R', default=None, metavar='FILE',
             help="Save results in FILE; by default, add to --data-file.")
 
     args = parser.parse_args()
@@ -153,8 +169,13 @@ def main():
     known[ratings[:,0].astype(int), ratings[:,1].astype(int)] = 1
 
     # get new results
-    results = compare(args.keys, orig['_real'], known, args.steps, args.delta,
-                      args.matlab)
+    results = compare(keys=list(args.keys), data_matrix=orig['_real'],
+                      known=known, steps=args.steps, delta=args.delta,
+                      mat_cmd=args.matlab,
+                      return_tempdir=not args.delete_tempdir)
+    if not args.delete_tempdir:
+        results, tempdir = results
+        print("Temporary files in {}".format(tempdir))
 
     # back up original file if we're overwriting it
     if os.path.exists(args.results_file):
