@@ -85,7 +85,8 @@ def _plot_lines(results, fn, ylabel):
 
     # only show integer values for x ticks
     xmin, xmax = plt.xlim()
-    plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
+    if xmax - xmin < 20:
+        plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
     plt.legend(loc='best', prop=FontProperties(size=9))
 
@@ -155,7 +156,7 @@ def plot_criteria_over_time(name, result, cmap=None):
     for idx, (n, rmse, (i,j), vals) in enumerate(zip(nums, rmses, ijs, valses)):
         # we know n values and have RMSE of rmse, then pick ij based on vals
 
-        grid[idx].set_title("{}: ({:.3})".format(n + 1, rmse))
+        grid[idx].set_title("{}".format(n + 1))
 
         im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
                    origin='upper', aspect='equal', norm=norm)
