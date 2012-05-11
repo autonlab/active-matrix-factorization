@@ -33,6 +33,7 @@ class ProbabilisticMatrixFactorization(object):
         self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
             raise TypeError("invalid rating tuple length")
+        self.mean_rating = np.mean(self.ratings[:,2])
 
         self.num_users = n = int(np.max(self.ratings[:, 0]) + 1)
         self.num_items = m = int(np.max(self.ratings[:, 1]) + 1)
@@ -71,15 +72,8 @@ class ProbabilisticMatrixFactorization(object):
         self.unrated.difference_update(new_items)
 
         self.ratings = np.append(self.ratings, extra, 0)
-        # TODO: this can be done faster with .resize()...
-        #       but the commented-out version is way broken
-        # new_rows = extra.shape[0]
-        # try:
-        #     self.ratings.resize(rows + new_rows, cols)
-        # except ValueError:
-        #     self.ratings = self.ratings.copy()
-        #     self.ratings.resize(rows + new_rows, cols)
-        # self.ratings[rows:, :] = extra
+        self.mean_rating = np.mean(self.ratings[:,2])
+        # TODO: this can be done without a copy by .resize()...
 
 
 

@@ -24,13 +24,16 @@ cimport cython
 DTYPE = np.float
 ctypedef np.float_t DTYPE_t
 
+# TODO: use mean_rating here too
+
 cdef class ProbabilisticMatrixFactorization:
     cdef public int latent_d, num_users, num_items
+    cdef public double mean_rating
     cdef public double learning_rate, min_learning_rate, stop_thresh
     cdef public double sigma_sq, sigma_u_sq, sigma_v_sq
     cdef public double sig_u_mean, sig_u_var, sig_v_mean, sig_v_var
     cdef public np.ndarray ratings, users, items
-    cdef public object rated, unrated
+    cdef public set rated, unrated
 
     def __cinit__(self):
         self.learning_rate = 1e-4
@@ -52,6 +55,7 @@ cdef class ProbabilisticMatrixFactorization:
         self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
             raise TypeError("invalid rating tuple length")
+        self.mean_rating = np.mean(self.ratings[:,2])
 
         cdef int n, m
         self.num_users = n = int(np.max(self.ratings[:, 0]) + 1)
@@ -104,6 +108,7 @@ cdef class ProbabilisticMatrixFactorization:
             users=self.users,
             items=self.items,
 
+            mean_rating=self.mean_rating,
             rated=self.rated,
             unrated=self.unrated,
         )
@@ -130,15 +135,8 @@ cdef class ProbabilisticMatrixFactorization:
         self.unrated.difference_update(new_items)
 
         self.ratings = np.append(self.ratings, extra, 0)
-        # TODO: this can be done faster with .resize()...
-        #       but the commented-out version is way broken
-        # new_rows = extra.shape[0]
-        # try:
-        #     self.ratings.resize(rows + new_rows, cols)
-        # except ValueError:
-        #     self.ratings = self.ratings.copy()
-        #     self.ratings.resize(rows + new_rows, cols)
-        # self.ratings[rows:, :] = extra
+        self.mean_rating = np.mean(self.ratings[:,2])
+        # TODO: this can be done without a copy by .resize()...
 
 
     @cython.cdivision(True)
