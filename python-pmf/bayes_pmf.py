@@ -221,7 +221,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
 if __name__ == '__main__':
     from pmf import fake_ratings
 
-    ratings, true_u, true_v = fake_ratings()
+    ratings, true_u, true_v = fake_ratings(noise=1)
     true_r = np.dot(true_u, true_v.T)
 
     ds = [5, 8, 10, 12]
@@ -259,8 +259,10 @@ if __name__ == '__main__':
 
         print("doing MCMC ({})".format(latent_d))
         b_rmse = rmse(200)
+        bayes_rmses.append(b_rmse)
 
         map_rmse = bpmf.rmse(true_r)
+        map_rmses.append(map_rmse)
 
         print()
         print("MAP RMSE: {}".format(map_rmse))
