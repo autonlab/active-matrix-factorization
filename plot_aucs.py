@@ -42,10 +42,34 @@ def plot_aucs(filenames):
         (KEY_NAMES[k], v) for k, v in get_aucs(filenames).items()))
     aucs = np.array(aucs)
 
-    plt.boxplot(aucs.T)
-    plt.xticks(np.arange(len(names)) + 1, names, rotation=90)
+    if aucs.shape[1] == 1:
+        plt.plot(aucs, linestyle='None', marker='o')
+        indices = np.arange(len(names))
+    else:
+        plt.boxplot(aucs.T)
+        indices = np.arange(len(names)) + 1
+    plt.xticks(indices, names, rotation=90)
+    plt.xlim(indices[0] - .5, indices[-1] + .5)
     plt.ylabel('AUC (RMSE)')
-    #plt.tight_layout()
+    plt.tight_layout()
+
+def plot_cutoff_aucs(filenames, cutoff):
+    import matplotlib.pyplot as plt
+
+    names, aucs = zip(*sorted(
+        (KEY_NAMES[k], v) for k, v in get_num_ge_cutoff_auc(filenames, cutoff).items()))
+    aucs = np.array(aucs)
+
+    if aucs.shape[1] == 1:
+        plt.plot(aucs, linestyle='None', marker='o')
+        indices = np.arange(len(names))
+    else:
+        plt.boxplot(aucs.T)
+        indices = np.arange(len(names)) + 1
+    plt.xticks(indices, names, rotation=90)
+    plt.xlim(indices[0] - .5, indices[-1] + .5)
+    plt.ylabel('AUC (# >= {})'.format(cutoff))
+    plt.tight_layout()
 
 ################################################################################
 
@@ -73,10 +97,20 @@ def get_num_ge_cutoff(filenames, cutoff):
             for i, j in ijs[1:]:
                 poses.append(poses[-1] + (1 if real[i,j] >= cutoff else 0))
 
-            results[k].append(poses)
+            results[k].append(np.asarray(poses))
 
-    return {k: np.mean(v, 0) for k, v in results.items()}, np.asarray(ns)
+    return results, np.asarray(ns)
 
+
+def get_num_ge_cutoff_mean(filenames, cutoff):
+    results, ns = get_num_ge_cutoff(filenames, cutoff)
+    return {k: np.mean(v, 0) for k, v in results.items()}, ns
+
+def get_num_ge_cutoff_auc(filenames, cutoff):
+    results, ns = get_num_ge_cutoff(filenames, cutoff)
+    return {k: np.array([((poses[:-1] + poses[1:]) * np.diff(ns)).sum() / 2
+                for poses in v])
+            for k, v in results.items()}
 
 def plot_num_ge_cutoff(filenames, cutoff):
     import matplotlib.pyplot as plt
@@ -123,6 +157,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-auc', action='store_false', dest='auc')
 
     parser.add_argument('--ge-cutoff', nargs='+', type=float)
+    parser.add_argument('--ge-cutoff-auc', nargs='+', type=float)
 
     #parser.add_argument('--save')
     args = parser.parse_args()
@@ -141,5 +176,10 @@ if __name__ == '__main__':
         for cutoff in args.ge_cutoff:
             plt.figure()
             plot_num_ge_cutoff(args.files, cutoff)
+
+    if args.ge_cutoff_auc:
+        for cutoff in args.ge_cutoff_auc:
+            plt.figure()
+            plot_cutoff_aucs(args.files, cutoff)
 
     plt.show()
