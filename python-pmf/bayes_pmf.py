@@ -224,50 +224,54 @@ if __name__ == '__main__':
     ratings, true_u, true_v = fake_ratings(noise=1)
     true_r = np.dot(true_u, true_v.T)
 
-    ds = [5, 8, 10, 12]
+    ds = [3, 5, 8, 10, 12, 15]
     map_rmses = []
-    bayes_rmses = []
+    bayes_rmses_1 = []
+    bayes_rmses_2 = []
+    bayes_rmses_combo = []
 
     for latent_d in ds:
         bpmf = BayesianPMF(ratings, latent_d)
 
-        print("fitting MAP ({})".format(latent_d))
+        print("\ndimensionality: {}".format(latent_d))
+
+        print("fitting MAP...")
         for ll in bpmf.fit_lls():
             pass
             #print("LL {}".format(ll))
 
         predicted_map = bpmf.predicted_matrix()
 
-        samples = bpmf.samples()
-        def counter():
-            n = 0
-            def inner():
-                nonlocal n
-                n += 1
-                return n
-            return inner
-        n = counter()
 
-        def printslice(count):
-            for i in range(count):
-                #print("sample {}".format(n()))
-                yield next(samples)
-
-        def rmse(count):
-            pred = bpmf.predict(printslice(count))
+        def rmse(samps):
+            pred = bpmf.predict(samps)
             return np.sqrt(((true_r - pred)**2).sum() / true_r.size)
 
-        print("doing MCMC ({})".format(latent_d))
-        b_rmse = rmse(200)
-        bayes_rmses.append(b_rmse)
+        sample_gen = bpmf.samples()
+        samples = []
 
-        map_rmse = bpmf.rmse(true_r)
-        map_rmses.append(map_rmse)
+        print("doing MCMC...")
+        for i in range(500):
+            u, v = next(sample_gen)
+            samples.append((u.copy(), v.copy()))
 
-        print()
-        print("MAP RMSE: {}".format(map_rmse))
-        print("Bayes RMSE [250]: {}".format(b_rmse))
+        bayes_rmses_1.append(rmse(islice(samples, 250)))
+        bayes_rmses_2.append(rmse(islice(samples, 250, None)))
+        bayes_rmses_combo.append(rmse(samples))
+
+        map_rmses.append(bpmf.rmse(true_r))
+
+        print("MAP RMSE:               {}".format(map_rmses[-1]))
+        print("Bayes RMSE [first 250]: {}".format(bayes_rmses_1[-1]))
+        print("Bayes RMSE [next 250]:  {}".format(bayes_rmses_2[-1]))
+        print("Bayes RMSE [combo]:     {}".format(bayes_rmses_combo[-1]))
 
     from matplotlib import pyplot as plt
-    plt.plot(ds, map_rmses, name="MAP")
-    plt.plot(ds, bayes_rmses, name="Bayes")
+    plt.plot(ds, map_rmses, label="MAP")
+    plt.plot(ds, bayes_rmses_1, label="Bayes (first 250)")
+    plt.plot(ds, bayes_rmses_2, label="Bayes (next 250)")
+    plt.plot(ds, bayes_rmses_combo, label="Bayes (all 500)")
+    plt.ylabel("RMSE")
+    plt.xlabel("Dimensionality")
+    plt.legend()
+    plt.show()
