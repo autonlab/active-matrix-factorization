@@ -9,6 +9,8 @@ http://www.mit.edu/~rsalakhu/BPMF.html
 from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
+import multiprocessing
+from threading import Thread
 import warnings
 
 import numpy as np
@@ -53,9 +55,6 @@ def iter_mean(iterable):
     for count, x in enumerate(i):
         total += x
     return total / (count + 2)
-
-def copy_samples(samples_iter):
-    return [deepcopy(sample) for sample in samples_iter]
 
 ################################################################################
 
@@ -160,24 +159,40 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         return np.dot(lam, np.random.normal(0, 1, self.latent_d)) + mean
 
 
-    def samples(self, num_gibbs=2):
+    def samples(self, num_gibbs=2, pool=None, multiproc_mode=None,
+                fit_first=False):
         '''
         Runs the Markov chain starting from the current MAP approximation in
         self.users, self.items. Yields sampled user, item features forever.
-
-        Note that it actually just yields the same numpy arrays over and over:
-        if you need access to the samples later, make a copy. That is, don't do
-            samps = list(islice(self.samples(), n))
-        Instead, do
-            samps = copy_samples(islice(self.samples(), n))
-        (using the copy_samples() utility function from above).
 
         If you add ratings after starting this iterator, it'll continue on
         without accounting for them.
 
         Does num_gibbs updates after each hyperparameter update, then yields
         the result.
+
+        Optionally parallelizes sampling according to multiproc_mode:
+
+          * If 'force', all significant work will be executed in the pool,
+            even things that aren't particularly parallelizable. (This is
+            so the multithreading/multiprocessing setup works.) Throws a
+            ValueError if no pool is passed.
+
+          * If 'none', no multiprocessing is performed and the value of pool
+            is ignored.
+
+          * If None (default), will perform user/item parallelization in the
+            pool if passed, or no parallelization if the pool is not passed.
+
+        If fit_first, first calls .fit() to fit the MAP estimate.
         '''
+
+        if multiproc_mode == 'force' and pool is None:
+            raise ValueError("need a process pool if multiproc is forced")
+        if multiproc_mode == 'none':
+            pool = None
+        force_multiproc = multiproc_mode == 'force'
+
         # find rated indices now, to avoid repeated lookups
         users_by_item = defaultdict(lambda: ([], []))
         items_by_user = defaultdict(lambda: ([], []))
@@ -194,6 +209,14 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         items_by_user = {k: (np.asarray(i, dtype=int), np.asarray(r))
                          for k, (i,r) in items_by_user.items()}
 
+        # fit the MAP estimate, if asked to
+        if fit_first:
+            if force_multiproc:
+                bpmf = pool.apply(_fit_bpmf, (self,))
+                self.users = bpmf.users
+                self.items = bpmf.items
+            else:
+                self.fit()
 
         # initialize the Markov chain with the current MAP estimate
         # TODO: MAP search doesn't currently normalize by the mean rating
@@ -209,32 +232,45 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         alpha_u = np.linalg.inv(np.cov(user_sample, rowvar=0))
         alpha_v = np.linalg.inv(np.cov(item_sample, rowvar=0))
 
+        # TODO: could try using pool.imap if memory becomes an issue
+        mapper = pool.map if pool is not None else map
 
         while True:
             # sample from hyperparameters
-            mu_u, alpha_u = self.sample_hyperparam(user_sample, True)
-            mu_v, alpha_v = self.sample_hyperparam(item_sample, False)
+            if force_multiproc:
+                r1 = pool.apply_async(_hyperparam_sampler,
+                        (self, user_sample, True))
+                r2 = pool.apply_async(_hyperparam_sampler,
+                        (self, item_sample, False))
+
+                mu_u, alpha_u = r1.get()
+                mu_v, alpha_v = r2.get()
+            else:
+                mu_u, alpha_u = self.sample_hyperparam(user_sample, True)
+                mu_v, alpha_v = self.sample_hyperparam(item_sample, False)
 
             # Gibbs updates for user, item feature vectors
-            # TODO: parallelize
-
             for gibbs in range(num_gibbs):
                 #print('\t\t Gibbs sampling {}'.format(gibbs))
 
-                for user_id in range(self.num_users):
-                    #print('user {}'.format(user_id))
+                res = mapper(_feat_sampler,
+                        ((self, user_id, True, mu_v, alpha_v, item_sample)
+                            + items_by_user[user_id]
+                         for user_id in range(self.num_users)))
 
-                    user_sample[user_id, :] = self.sample_feature(
-                            user_id, True, mu_v, alpha_v, item_sample,
-                            *items_by_user[user_id])
+                user_sample = np.zeros_like(user_sample)
+                for n, row in enumerate(res):
+                    user_sample[n, :] = row
 
 
-                for item_id in range(self.num_items):
-                    #print('item {}'.format(item_id))
+                res = mapper(_feat_sampler,
+                        ((self, item_id, False, mu_v, alpha_v, user_sample)
+                            + users_by_item[item_id]
+                         for item_id in range(self.num_items)))
 
-                    item_sample[item_id, :] = self.sample_feature(
-                            item_id, False, mu_v, alpha_v, user_sample,
-                            *users_by_item[item_id])
+                item_sample = np.zeros_like(item_sample)
+                for n, row in enumerate(res):
+                    item_sample[n, :] = row
 
             yield user_sample, item_sample
 
@@ -278,6 +314,19 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         return np.sqrt(((true_r - pred)**2).sum() / true_r.size)
 
 
+# stupid arguments to work around multiprocessing.Pool/pickle silliness
+def _hyperparam_sampler(bpmf, *args):
+    return bpmf.sample_hyperparam(*args)
+
+def _feat_sampler(args):
+    bpmf, *args = args
+    return bpmf.sample_feature(*args)
+
+def _fit_bpmf(bpmf):
+    bpmf.fit()
+    return bpmf
+
+
 ################################################################################
 
 def test_vs_map():
@@ -305,7 +354,7 @@ def test_vs_map():
         predicted_map = bpmf.predicted_matrix()
 
         print("doing MCMC...")
-        samps = copy_samples(islice(bpmf.samples(), 500))
+        samps = list(islice(bpmf.samples(), 500))
 
         bayes_rmses_1.append(bpmf.bayes_rmse(islice(samps, 250), true_r))
         bayes_rmses_2.append(bpmf.bayes_rmse(islice(samps, 250, None), true_r))
@@ -339,48 +388,56 @@ KEYS = {
     'prob-ge-.5': ("Prob >= .5", 'prob_ge_cutoff', True, .5),
 }
 
-def full_test(bpmf, samples, real, key_fn, key_args, choose_max, num_samps):
+def full_test(bpmf, samples, real, key_name, num_samps,
+              pool=None, multiproc_mode=None):
+
+    nice_name, key_fn, choose_max, *key_args = KEYS[key_name]
     total = real.size
     picker_fn = getattr(bpmf, key_fn)
 
     yield (len(bpmf.rated), bpmf.bayes_rmse(samples, real), None, None)
 
+
     while bpmf.unrated:
-        print("\nPicking query point...")
+        print("{:<40} Picking query point {}...".format(
+            nice_name, len(bpmf.rated) + 1))
 
         if len(bpmf.unrated) == 1:
             vals = None
             i, j = next(iter(apmf.unrated))
         else:
+            # TODO: if multiproc_mode == 'force'...?
             vals = picker_fn(samples, *key_args)
             idx = np.array(list(bpmf.unrated))
             test_vals = vals[idx[:,0], idx[:,1]]
             i, j = idx[np.argmax(test_vals), :]
 
         bpmf.add_rating(i, j, real[i, j])
-        print("Queried (%d, %d); %d/%d known" % (i, j, len(bpmf.rated), total))
+        print("{:<40} Queried ({}, {}); {}/{} known".format(
+                nice_name, i, j, len(bpmf.rated), total))
 
-        print("Doing new MAP fit...")
-        bpmf.fit()
-
-        print("Getting new MCMC samples...")
-        samples = copy_samples(islice(bpmf.samples(), num_samps))
+        samp_gen = bpmf.samples(pool=pool, multiproc_mode=multiproc_mode,
+                                fit_first=True)
+        samples = list(islice(samp_gen, num_samps))
 
         rmse = bpmf.bayes_rmse(samples, real)
-        print("RMSE: {:.5}".format(rmse))
+        print("{:<40} RMSE {}: {:.5}".format(nice_name, len(bpmf.rated), rmse))
         yield len(bpmf.rated), rmse, (i,j), vals
 
 
 
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
-                   num_samps=128, num_steps=None):
+                   num_samps=128, num_steps=None, procs=None, threaded=False):
     # do initial fit
     bpmf_init = BayesianPMF(ratings, latent_d)
     print("Doing initial MAP fit...")
     bpmf_init.fit()
 
+    pool = multiprocessing.Pool(procs) if procs is None or procs >= 1 else None
+
     print("Getting initial MCMC samples...")
-    samples = copy_samples(islice(bpmf_init.samples(), num_samps))
+    samples = list(islice(bpmf_init.samples(pool=pool), num_samps))
+    print()
 
     results = {
         '_real': real,
@@ -390,13 +447,25 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     }
 
     # continue with each key for the fit
-    for key_name in key_names:
-        nice_name, key_fn, choose_max, *key_args = KEYS[key_name]
-        print("\n\n" + "="*80 + "Testing {}".format(nice_name))
-
-        res = full_test(deepcopy(bpmf_init), samples, real,
-                        key_fn, key_args, choose_max, num_samps)
+    def eval_key(key_name):
+        res = full_test(
+                deepcopy(bpmf_init), samples, real, key_name,
+                num_samps, pool, 'force' if threaded else None)
         results[key_name] = list(islice(res, num_steps))
+
+    if threaded:
+        threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
+                   for key_name in key_names]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+
+    else:
+        for key_name in key_names:
+            eval_key(key_name)
+
+    if pool is not None:
+        pool.close()
+        pool.join()
 
     return results
 
@@ -415,6 +484,10 @@ def main():
     parser.add_argument('--latent-d', '-D', type=int, default=5)
     parser.add_argument('--steps', '-s', type=int, default=None)
     parser.add_argument('--samps', '-S', type=int, default=128)
+
+    parser.add_argument('--threaded', action='store_true', default=True)
+    parser.add_argument('--unthreaded', action='store_false', dest='threaded')
+    parser.add_argument('--procs', '-P', type=int, default=None)
 
     parser.add_argument('--load-data', required='True', metavar='FILE')
     parser.add_argument('--save-results', nargs='?', default=True, const=True,
@@ -459,9 +532,11 @@ def main():
     # do the comparison
     try:
         results = compare_active(
-                args.keys, args.latent_d,
-                real, ratings, rating_vals,
-                args.samps, args.steps)
+                key_names=args.keys,
+                latent_d=args.latent_d,
+                real=real, ratings=ratings, rating_vals=rating_vals,
+                num_samps=args.samps, num_steps=args.steps,
+                procs=args.procs, threaded=args.threaded)
     except Exception:
         import traceback
         print()
@@ -475,7 +550,7 @@ def main():
 
     # save the results file
     if args.save_results:
-        print("saving results in '{}'".format(args.save_results))
+        print("\nsaving results in '{}'".format(args.save_results))
 
         results['_args'] = args
 
