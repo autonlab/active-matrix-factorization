@@ -12,9 +12,12 @@ import numpy as np
 
 _dirname = os.path.dirname(__file__)
 
+# imports to make pickle happy
 sys.path.append(os.path.join(_dirname, 'python-pmf'))
 import active_pmf
-from active_pmf import ActivePMF # to make pickle happy
+from active_pmf import ActivePMF
+import bayes_pmf
+from bayes_pmf import BayesianPMF
 
 sys.path.append(os.path.join(_dirname, 'ratingconcentration'))
 import active_rc
@@ -353,10 +356,13 @@ def main():
 
     # plot of initial predictions
     if args.initial_preds:
-        print("Plotting initial predictions")
-        fig = plt.figure()
-        plot_predictions(results['_initial_apmf'], results['_real'])
-        save_plot('initial_preds.png', fig)
+        if '_initial_apmf' not in results:
+            print("Can't do initial predictions: not in the file")
+        else:
+            print("Plotting initial predictions")
+            fig = plt.figure()
+            plot_predictions(results['_initial_apmf'], results['_real'])
+            save_plot('initial_preds.png', fig)
 
     # pause to look at plots if interactive
     if args.interactive:
