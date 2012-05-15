@@ -281,33 +281,44 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         # TODO: cut off prediction to lie in valid range?
         return np.dot(u, v.T) + self.mean_rating
 
-    def predict(self, samples_iter):
+    def matrix_results(self, vals, which):
+        res = np.empty((self.num_users, self.num_items))
+        res.fill(np.nan)
+        res[which] = vals
+        return res
+
+    def predict(self, samples_iter, which=Ellipsis):
         '''
         Gives the mean reconstruction given a series of samples.
         '''
-        return iter_mean(self.sample_pred(u, v) for u, v in samples_iter)
+        return iter_mean(self.sample_pred(u, v)[which] for u, v in samples_iter)
 
-    def pred_variance(self, samples_iter):
+    def pred_variance(self, samples_iter, which=Ellipsis):
         '''
         Gives the variance of each prediction in a series of samples.
         '''
-        vals = [self.sample_pred(u, v) for u, v in samples_iter]
+        if which is None:
+            which = Ellipsis
+
+        vals = [self.sample_pred(u, v)[which] for u, v in samples_iter]
         return np.var(vals, 0)
 
-    def prob_ge_cutoff(self, samples_iter, cutoff):
+    def prob_ge_cutoff(self, samples_iter, cutoff, which=Ellipsis):
         '''
         Gives the portion of the time each matrix element was >= cutoff
         in a series of samples.
         '''
-        counts = np.zeros((self.num_users, self.num_items))
+        shape = np.zeros((self.num_users, self.num_items))[which].shape
+        counts = np.zeros(shape)
         num = 0
         for u, v in samples_iter:
-            counts += self.sample_pred(u, v) >= cutoff
+            counts += self.sample_pred(u, v)[which] >= cutoff
             num += 1
         return counts / num
 
-    def random(self, samples_iter):
-        return np.random.rand(self.num_users, self.num_items)
+    def random(self, samples_iter, which=Ellipsis):
+        shape = np.zeros((self.num_users, self.num_items))[which].shape
+        return np.random.rand(*shape)
 
     def bayes_rmse(self, samples_iter, true_r):
         pred = self.predict(samples_iter)
@@ -394,6 +405,7 @@ def full_test(bpmf, samples, real, key_name, num_samps,
     nice_name, key_fn, choose_max, *key_args = KEYS[key_name]
     total = real.size
     picker_fn = getattr(bpmf, key_fn)
+    chooser = np.argmax if choose_max else np.argmin
 
     yield (len(bpmf.rated), bpmf.bayes_rmse(samples, real), None, None)
 
@@ -404,13 +416,14 @@ def full_test(bpmf, samples, real, key_name, num_samps,
 
         if len(bpmf.unrated) == 1:
             vals = None
-            i, j = next(iter(apmf.unrated))
+            i, j = next(iter(bpmf.unrated))
         else:
             # TODO: if multiproc_mode == 'force'...?
-            vals = picker_fn(samples, *key_args)
-            idx = np.array(list(bpmf.unrated))
-            test_vals = vals[idx[:,0], idx[:,1]]
-            i, j = idx[np.argmax(test_vals), :]
+            unrated = np.array(list(bpmf.unrated)).T
+            which = tuple(unrated)
+            evals = picker_fn(samples, *key_args, which=which)
+            i, j = unrated[:, chooser(evals)]
+            vals = bpmf.matrix_results(evals, which)
 
         bpmf.add_rating(i, j, real[i, j])
         print("{:<40} Queried ({}, {}); {}/{} known".format(
