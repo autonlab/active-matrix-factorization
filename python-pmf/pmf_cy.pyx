@@ -78,7 +78,7 @@ cdef class ProbabilisticMatrixFactorization:
     cpdef ProbabilisticMatrixFactorization __deepcopy__(self, memodict):
         cdef ProbabilisticMatrixFactorization res
         res = type(self)(self.ratings.copy(), self.latent_d)
-        res.__setstate__(deepcopy(res.__getstate__(), memodict))
+        res.__setstate__(deepcopy(self.__getstate__(), memodict))
         return res
 
     def __setstate__(self, dict state not None):
