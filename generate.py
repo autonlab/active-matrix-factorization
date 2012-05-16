@@ -119,8 +119,9 @@ def main():
 
     args = parser.parse_args()
 
-    if not os.path.exists(os.path.dirname(args.outfile)):
-        os.makedirs(os.path.dirname(args.outfile))
+    dirname = os.path.dirname(args.outfile)
+    if dirname and not os.path.exists(dirname):
+        os.makedirs(dirname)
 
     vals = DEF_VALS
 
