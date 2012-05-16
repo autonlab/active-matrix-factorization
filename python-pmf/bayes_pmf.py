@@ -60,7 +60,7 @@ def iter_mean(iterable):
 
 class BayesianPMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=5):
-        super().__init__(rating_tuples, latent_d)
+        super().__init__(rating_tuples, latent_d=latent_d, subtract_mean=True)
 
         self.beta = 2 # observation noise precision
 
@@ -219,8 +219,6 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                 self.fit()
 
         # initialize the Markov chain with the current MAP estimate
-        # TODO: MAP search doesn't currently normalize by the mean rating
-        #       should do that, or there'll be a while for burn-in to adjust
         user_sample = self.users.copy()
         item_sample = self.items.copy()
 

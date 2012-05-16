@@ -14,8 +14,9 @@ import random
 import numpy as np
 
 class ProbabilisticMatrixFactorization(object):
-    def __init__(self, rating_tuples, latent_d=1):
+    def __init__(self, rating_tuples, latent_d=1, subtract_mean=False):
         self.latent_d = latent_d
+        self.subtract_mean = subtract_mean
 
         self.learning_rate = 1e-4
         self.min_learning_rate = 1e-10
@@ -75,6 +76,16 @@ class ProbabilisticMatrixFactorization(object):
         self.mean_rating = np.mean(self.ratings[:,2])
         # TODO: this can be done without a copy by .resize()...
 
+    def prediction_for(self, i, j, users=None, items=None):
+        if users is None:
+            users = self.users
+        if items is None:
+            items = self.items
+
+        if self.subtract_mean:
+            return np.dot(users[i], items[j]) + self.mean_rating
+        else:
+            return np.dot(users[i], items[j])
 
 
     def log_likelihood(self, users=None, items=None):
@@ -82,10 +93,11 @@ class ProbabilisticMatrixFactorization(object):
             users = self.users
         if items is None:
             items = self.items
+        predfor = self.prediction_for
 
         sq_error = 0
         for i, j, rating in self.ratings:
-            r_hat = np.dot(users[i], items[j])
+            r_hat = predfor(i, j, users, items)
             sq_error += (rating - r_hat)**2
 
         user_norm2 = np.sum(users * users)
@@ -105,21 +117,25 @@ class ProbabilisticMatrixFactorization(object):
         return self.log_likelihood(users, items) + self.ll_prior_adjustment()
 
     def gradient(self):
-        grad_u = -self.users / self.sigma_u_sq
-        grad_v = -self.items / self.sigma_v_sq
-
+        users = self.users
+        items = self.items
         sig = self.sigma_sq
+        predfor = self.prediction_for
+
+        grad_u = -users / self.sigma_u_sq
+        grad_v = -items / self.sigma_v_sq
+
         for i, j, rating in self.ratings:
-            r_hat = np.dot(self.users[i], self.items[j])
-            grad_u[i, :] += self.items[j, :] * ((rating - r_hat) / sig)
-            grad_v[j, :] += self.users[i, :] * ((rating - r_hat) / sig)
+            r_hat = predfor(i, j, users, items)
+            grad_u[i, :] += items[j, :] * ((rating - r_hat) / sig)
+            grad_v[j, :] += users[i, :] * ((rating - r_hat) / sig)
 
         return grad_u, grad_v
 
     def update_sigma(self):
         sq_error = 0
         for i, j, rating in self.ratings:
-            r_hat = np.dot(self.users[i,:], self.items[j,:])
+            r_hat = self.prediction_for(i, j)
             sq_error += (rating - r_hat)**2
 
         self.sigma_sq = sq_error / self.ratings.shape[0]
@@ -205,7 +221,10 @@ class ProbabilisticMatrixFactorization(object):
             pass
 
     def predicted_matrix(self):
-        return np.dot(self.users, self.items.T)
+        if self.subtract_mean:
+            return np.dot(self.users, self.items.T) + self.mean_rating
+        else:
+            return np.dot(self.users, self.items.T)
 
     def rmse(self, real):
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)

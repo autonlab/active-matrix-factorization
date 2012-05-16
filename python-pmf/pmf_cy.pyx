@@ -24,10 +24,9 @@ cimport cython
 DTYPE = np.float
 ctypedef np.float_t DTYPE_t
 
-# TODO: use mean_rating here too
-
 cdef class ProbabilisticMatrixFactorization:
     cdef public int latent_d, num_users, num_items
+    cdef public bint subtract_mean
     cdef public double mean_rating
     cdef public double learning_rate, min_learning_rate, stop_thresh
     cdef public double sigma_sq, sigma_u_sq, sigma_v_sq
@@ -49,8 +48,10 @@ cdef class ProbabilisticMatrixFactorization:
         self.sig_u_mean = self.sig_v_mean = 0
         self.sig_u_var = self.sig_v_var = -1
 
-    def __init__(self, np.ndarray rating_tuples not None, int latent_d=1):
+    def __init__(self, np.ndarray rating_tuples not None,
+                 int latent_d=1, bint subtract_mean=False):
         self.latent_d = latent_d
+        self.subtract_mean = subtract_mean
 
         self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
@@ -77,7 +78,7 @@ cdef class ProbabilisticMatrixFactorization:
 
     cpdef ProbabilisticMatrixFactorization __deepcopy__(self, memodict):
         cdef ProbabilisticMatrixFactorization res
-        res = type(self)(self.ratings.copy(), self.latent_d)
+        res = type(self)(self.ratings.copy())# , self.latent_d, self.subtract_mean)
         res.__setstate__(deepcopy(self.__getstate__(), memodict))
         return res
 
@@ -108,6 +109,7 @@ cdef class ProbabilisticMatrixFactorization:
             users=self.users,
             items=self.items,
 
+            subtract_mean=self.subtract_mean,
             mean_rating=self.mean_rating,
             rated=self.rated,
             unrated=self.unrated,
@@ -138,6 +140,17 @@ cdef class ProbabilisticMatrixFactorization:
         self.mean_rating = np.mean(self.ratings[:,2])
         # TODO: this can be done without a copy by .resize()...
 
+    cpdef double prediction_for(self, int i, int j,
+            np.ndarray users=None, np.ndarray items=None) except? 1492:
+        if users is None:
+            users = self.users
+        if items is None:
+            items = self.items
+
+        if self.subtract_mean:
+            return np.dot(users[i], items[j]) + self.mean_rating
+        else:
+            return np.dot(users[i], items[j])
 
     @cython.cdivision(True)
     cpdef double log_likelihood(self, np.ndarray users=None,
@@ -151,9 +164,10 @@ cdef class ProbabilisticMatrixFactorization:
         cdef double rating, r_hat, sq_error
 
         # TODO: is it faster to just make the whole matrix? probably...
+        # TODO: save prediction_for into a function pointer
         sq_error = 0.
         for i, j, rating in self.ratings:
-            r_hat = np.dot(users[i,:], items[j,:])
+            r_hat = self.prediction_for(i, j, users, items)
             sq_error += (rating - r_hat)**2
 
         cdef double user_norm2 = np.sum(users * users)
@@ -174,17 +188,20 @@ cdef class ProbabilisticMatrixFactorization:
 
     @cython.cdivision(True)
     cpdef tuple gradient(self):
-        cdef np.ndarray[DTYPE_t,ndim=2] grad_u = -self.users / self.sigma_u_sq
-        cdef np.ndarray[DTYPE_t,ndim=2] grad_v = -self.items / self.sigma_v_sq
-
         cdef double sig = self.sigma_sq
         cdef int i, j
         cdef double rating, r_hat
+        cdef np.ndarray users = self.users
+        cdef np.ndarray items = self.items
+
+        cdef np.ndarray[DTYPE_t,ndim=2] grad_u = -users / self.sigma_u_sq
+        cdef np.ndarray[DTYPE_t,ndim=2] grad_v = -items / self.sigma_v_sq
 
         for i, j, rating in self.ratings:
-            r_hat = np.dot(self.users[i], self.items[j])
-            grad_u[i, :] += self.items[j, :] * ((rating - r_hat) / sig)
-            grad_v[j, :] += self.users[i, :] * ((rating - r_hat) / sig)
+            # TODO: break this out into a function pointer?
+            r_hat = self.prediction_for(i, j, users, items)
+            grad_u[i, :] += items[j, :] * ((rating - r_hat) / sig)
+            grad_v[j, :] += users[i, :] * ((rating - r_hat) / sig)
 
         return grad_u, grad_v
 
@@ -194,7 +211,7 @@ cdef class ProbabilisticMatrixFactorization:
         cdef double sq_error = 0, rating
 
         for i, j, rating in self.ratings:
-            r_hat = np.dot(self.users[i,:], self.items[j,:])
+            r_hat = self.prediction_for(i, j)
             sq_error += (rating - r_hat)**2
 
         self.sigma_sq = sq_error / self.ratings.shape[0]
@@ -289,7 +306,10 @@ cdef class ProbabilisticMatrixFactorization:
             pass
 
     cpdef np.ndarray predicted_matrix(self):
-        return np.dot(self.users, self.items.T)
+        if self.subtract_mean:
+            return np.dot(self.users, self.items.T) + self.mean_rating
+        else:
+            return np.dot(self.users, self.items.T)
 
     cpdef double rmse(self, np.ndarray real) except -1:
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
