@@ -1,15 +1,15 @@
-function [all_results] = evaluate_active(X, known, selectors, steps, delta)
+function [all_results] = evaluate_active(X, known, selectors, steps, delta, vals)
 
+if nargin < 6; vals = unique(X); end
 if nargin < 5; delta = 1.5; end % TODO: delta through CV
 if nargin < 4; steps = -1; end
 if ~iscell(selectors)
     selectors = {selectors};
 end
 
-vals = unique(X);
-if all(vals(:) == (1:5)')
+if length(vals) == 5 && all(vals(:) == (1:5)')
     featureFunc = @sets_square5;
-elseif all(vals(:) == (1:2)')
+elseif length(vals) == 2 && all(vals(:) == (1:2)')
     featureFunc = @sets_onetwo;
 else
     error('ratingconcentration:evaluate_active:vals', ...
