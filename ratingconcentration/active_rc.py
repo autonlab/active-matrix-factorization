@@ -32,16 +32,17 @@ load {infile}
 
 X = double(X); % NOTE: true values can't have 0s!
 known = known == 1;
+vals = double(vals);
 
 selectors = {{ {selectors} }};
 
-results = evaluate_active(X, known, selectors, steps, delta);
+results = evaluate_active(X, known, selectors, steps, delta, vals);
 
 save {outfile} results
 '''
 
 def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab',
-            return_tempdir=False):
+            return_tempdir=False, vals=None):
     # TODO: choose delta through CV
     # TODO: control parallelism
     # TODO: get sparse matrices to work
@@ -67,10 +68,11 @@ def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab',
         'known': known,
         'steps': steps,
         'delta': delta,
+        'vals': vals if vals is not None else sorted(set(data_matrix.flat)),
     }
 
     try:
-        scipy.io.savemat(infile_path, matdata, oned_as='row')
+        scipy.io.savemat(infile_path, matdata, oned_as='column')
 
         mfile_content = _M_TEMPLATE.format(
             selectors=', '.join(KEY_FUNCS[k].code for k in keys),
@@ -160,8 +162,7 @@ def main():
         args.results_file = args.data_file
 
     # load data
-    with open(args.data_file, 'rb') as f:
-        orig = pickle.load(f)
+    orig = dict(**np.load(args.data_file))
     
     # get sparse matrtix of known elements
     known = np.zeros(orig['_real'].shape, dtype=bool)
@@ -172,7 +173,8 @@ def main():
     results = compare(keys=list(args.keys), data_matrix=orig['_real'],
                       known=known, steps=args.steps, delta=args.delta,
                       mat_cmd=args.matlab,
-                      return_tempdir=not args.delete_tempdir)
+                      return_tempdir=not args.delete_tempdir,
+                      vals=orig.get('_rating_vals'))
     if not args.delete_tempdir:
         results, tempdir = results
         print("Temporary files in {}".format(tempdir))
