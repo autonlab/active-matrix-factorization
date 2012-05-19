@@ -7,7 +7,7 @@ import pickle
 
 import numpy as np
 
-from plot_results import KEY_NAMES, ActivePMF # for pickle
+from plot_results import KEY_NAMES, ActivePMF, BayesianPMF # for pickle
 
 
 def load_results(filenames):
@@ -28,9 +28,11 @@ def rmse_auc(result):
 def get_aucs(filenames):
     results = defaultdict(list)
 
-    for r in load_results(filenames):
+    for f, r in zip(filenames, load_results(filenames)):
         for k, v in r.items():
             if not k.startswith('_'):
+                if 'results_bayes.pkl' in f:
+                    k = 'bayes_' + k
                 results[k].append(rmse_auc(v))
 
     return {k: np.array(v) for k, v in results.items()}
@@ -78,12 +80,14 @@ def get_num_ge_cutoff(filenames, cutoff):
 
     des_ns = None
 
-    for r in load_results(filenames):
+    for f, r in zip(filenames, load_results(filenames)):
         real = r['_real']
 
         for k, v in r.items():
             if k.startswith('_'):
                 continue
+            if 'results_bayes' in f:
+                k = 'bayes_' + k
 
             ns, rmses, ijs, evals = zip(*v)
             if des_ns is None:

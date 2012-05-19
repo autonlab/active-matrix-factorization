@@ -25,6 +25,8 @@ import active_rc
 KEY_NAMES = { k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items() }
 KEY_NAMES.update({'rc_'+k: 'RC: '+f.nice_name
                   for k, f in active_rc.KEY_FUNCS.items()})
+KEY_NAMES.update({'bayes_'+k: 'Bayes: ' + v[0]
+                  for k, v in bayes_pmf.KEYS.items()})
 
 
 ################################################################################
