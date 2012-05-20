@@ -187,17 +187,19 @@ cdef class ProbabilisticMatrixFactorization:
         return self.log_likelihood(users, items) + self.ll_prior_adjustment()
 
     @cython.cdivision(True)
-    cpdef tuple gradient(self):
+    cpdef tuple gradient(self, np.ndarray ratings=None):
         cdef double sig = self.sigma_sq
         cdef int i, j
         cdef double rating, r_hat
         cdef np.ndarray users = self.users
         cdef np.ndarray items = self.items
+        if ratings is None:
+            ratings = self.ratings
 
         cdef np.ndarray[DTYPE_t,ndim=2] grad_u = -users / self.sigma_u_sq
         cdef np.ndarray[DTYPE_t,ndim=2] grad_v = -items / self.sigma_v_sq
 
-        for i, j, rating in self.ratings:
+        for i, j, rating in ratings: # TODO: switch ratings to a buffer?
             # TODO: break this out into a function pointer?
             r_hat = self.prediction_for(i, j, users, items)
             grad_u[i, :] += items[j, :] * ((rating - r_hat) / sig)
@@ -273,11 +275,86 @@ cdef class ProbabilisticMatrixFactorization:
                         converged = True
                         break
 
-
     def fit(self):
         cdef double ll
         for ll in self.fit_lls():
             pass
+
+    @cython.cdivision(True)
+    def fit_minibatches(self, int batch_size, float lr=1, float momentum=.8,
+                              np.ndarray ratings=None):
+        # NOTE: this randomly shuffles ratings / self.ratings
+        if ratings is None:
+            ratings = self.ratings
+        cdef int num_ratings = ratings.shape[0]
+
+
+        cdef np.ndarray u_inc = np.zeros((self.num_users, self.latent_d))
+        cdef np.ndarray v_inc = np.zeros((self.num_items, self.latent_d))
+
+        cdef int batch_start, batch_end, n
+        cdef float err
+        cdef np.ndarray batch_ratings, grad_u, grad_v, pred, train_pred
+
+        while True:
+            np.random.shuffle(ratings)
+
+            # follow gradient on minibatches
+            # if it's not evenly divisible, we'll have one smaller batch
+            for batch_start from 0 <= batch_start < num_ratings by batch_size:
+                batch_end = batch_start + batch_size
+                if batch_end > num_ratings:
+                    batch_end = num_ratings
+                n = batch_end - batch_start
+
+                batch_ratings = ratings[batch_start:batch_end, :]
+                grad_u, grad_v = self.gradient(batch_ratings)
+
+                u_inc *= momentum
+                u_inc += grad_u * (lr / n)
+                self.users += u_inc
+
+                v_inc *= momentum
+                v_inc += grad_v * (lr / n)
+                self.items += v_inc
+
+            # get training error
+            pred = self.predicted_matrix()
+            train_pred = pred[tuple(self.ratings[:, :2].astype(int).T)]
+            err = np.sqrt(np.mean((train_pred - self.ratings[:, 2]) ** 2))
+
+            yield err
+
+    def fit_minibatches_validation(self, int batch_size, int valid_size,
+                                   **kwargs):
+        cdef int total = self.ratings.shape[0]
+        cdef set valid_idx_set = set(random.sample(range(total), valid_size))
+        cdef tuple train_idx = tuple(
+                i for i in range(total) if i not in valid_idx_set)
+        cdef np.ndarray train = self.ratings[train_idx,:]
+
+        cdef list valid_idx = list(valid_idx_set)
+        cdef tuple valid_ijs = tuple(self.ratings[valid_idx, :2].T.astype(int))
+        cdef np.ndarray valid_real = self.ratings[valid_idx, 2]
+
+        cdef np.ndarray valid_pred
+        cdef float train_err, valid_err
+
+        for train_err in self.fit_minibatches(batch_size, ratings=train,
+                                              **kwargs):
+            valid_pred = self.predicted_matrix()[valid_ijs]
+            valid_err = np.sqrt(np.mean((valid_pred - valid_real) ** 2))
+            yield train_err, valid_err
+
+    def fit_minibatches_until_validation(self, *args, **kwargs):
+        cdef float last_valid, train, valid
+
+        last_valid = np.inf
+        for train, valid in self.fit_minibatches_validation(*args, **kwargs):
+            if valid > last_valid:
+                break
+            last_valid = valid
+
 
     @cython.cdivision(True)
     def fit_with_sigmas_lls(self, int noise_every=5, int users_every=2):

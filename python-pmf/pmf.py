@@ -116,7 +116,10 @@ class ProbabilisticMatrixFactorization(object):
     def full_ll(self, users=None, items=None):
         return self.log_likelihood(users, items) + self.ll_prior_adjustment()
 
-    def gradient(self):
+    def gradient(self, ratings=None):
+        if ratings is None:
+            ratings = self.ratings
+
         users = self.users
         items = self.items
         sig = self.sigma_sq
@@ -125,7 +128,7 @@ class ProbabilisticMatrixFactorization(object):
         grad_u = -users / self.sigma_u_sq
         grad_v = -items / self.sigma_v_sq
 
-        for i, j, rating in self.ratings:
+        for i, j, rating in ratings:
             r_hat = predfor(i, j, users, items)
             grad_u[i, :] += items[j, :] * ((rating - r_hat) / sig)
             grad_v[j, :] += users[i, :] * ((rating - r_hat) / sig)
@@ -150,13 +153,13 @@ class ProbabilisticMatrixFactorization(object):
 
         if self.sig_u_var > 0:
             self.sigma_u_sq = user_norm2 / (n * d + 2 +
-                    2*(log(self.sigma_u_sq) - self.sig_u_mean) / self.sig_u_var)
+                2*(np.log(self.sigma_u_sq) - self.sig_u_mean) / self.sig_u_var)
         else:
             self.sigma_u_sq = user_norm2 / n / d
 
         if self.sig_v_var > 0:
             self.sigma_v_sq = item_norm2 / (m * d + 2 +
-                    2*(log(self.sigma_v_sq) - self.sig_v_mean) / self.sig_v_var)
+                2*(np.log(self.sigma_v_sq) - self.sig_v_mean) / self.sig_v_var)
         else:
             self.sigma_v_sq = item_norm2 / m / d
 
@@ -198,6 +201,68 @@ class ProbabilisticMatrixFactorization(object):
         for ll in self.fit_lls():
             pass
 
+
+    def fit_minibatches(self, batch_size, lr=1, momentum=.8, ratings=None):
+        # NOTE: this randomly shuffles ratings / self.ratings
+        if ratings is None:
+            ratings = self.ratings
+        num_ratings = ratings.shape[0]
+
+        # if it's not evenly divisible, we'll have one smaller batch
+        batches = list(range(0, num_ratings, batch_size)) + [num_ratings]
+
+        u_inc = np.zeros((self.num_users, self.latent_d))
+        v_inc = np.zeros((self.num_items, self.latent_d))
+
+        while True:
+            np.random.shuffle(ratings)
+
+            # follow gradient on minibatches
+            for batch_start, batch_end in zip(batches[:-1], batches[1:]):
+                n = batch_end - batch_start
+
+                batch_ratings = ratings[batch_start:batch_end, :]
+                grad_u, grad_v = self.gradient(batch_ratings)
+
+                u_inc *= momentum
+                u_inc += grad_u * (lr / n)
+                self.users += u_inc
+
+                v_inc *= momentum
+                v_inc += grad_v * (lr / n)
+                self.items += v_inc
+
+            # get training error
+            pred = self.predicted_matrix()
+            train_pred = pred[tuple(self.ratings[:, :2].astype(int).T)]
+            err = np.sqrt(np.mean((train_pred - self.ratings[:, 2]) ** 2))
+
+            yield err
+
+    def fit_minibatches_validation(self, batch_size, valid_size, **kwargs):
+        total = self.ratings.shape[0]
+        valid_idx = set(random.sample(range(total), valid_size))
+        train_idx = tuple(i for i in range(total) if i not in valid_idx)
+        train = self.ratings[train_idx,:]
+
+        valid_idx = list(valid_idx)
+        valid_ijs = tuple(self.ratings[valid_idx, :2].T.astype(int))
+        valid_real = self.ratings[valid_idx, 2]
+
+        for train_err in self.fit_minibatches(batch_size, ratings=train,
+                                              **kwargs):
+            valid_pred = self.predicted_matrix()[valid_ijs]
+            valid_err = np.sqrt(np.mean((valid_pred - valid_real) ** 2))
+            yield train_err, valid_err
+
+    def fit_minibatches_until_validation(self, *args, **kwargs):
+        last_valid = np.inf
+        for train, valid in self.fit_minibatches_validation(*args, **kwargs):
+            if valid > last_valid:
+                break
+            last_valid = valid
+
+
     def fit_with_sigmas_lls(self, noise_every=10, users_every=5):
         cont = True
 
@@ -219,6 +284,7 @@ class ProbabilisticMatrixFactorization(object):
     def fit_with_sigmas(self, noise_every=10, users_every=5):
         for ll in self.fit_with_sigmas_lls(noise_every, users_every):
             pass
+
 
     def predicted_matrix(self):
         if self.subtract_mean:
