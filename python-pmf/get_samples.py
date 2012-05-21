@@ -22,6 +22,7 @@ arg('--stop-thresh', type=float, default=1e-3)
 args = parser.parse_args()
 
 
+print("Loading data")
 opener = gzip.open if args.data_file.endswith('.gz') else open
 with opener(args.data_file, 'rb') as f:
     data = np.load(f)
