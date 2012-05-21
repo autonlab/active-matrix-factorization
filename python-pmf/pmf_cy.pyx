@@ -346,12 +346,16 @@ cdef class ProbabilisticMatrixFactorization:
             valid_err = np.sqrt(np.mean((valid_pred - valid_real) ** 2))
             yield train_err, valid_err
 
-    def fit_minibatches_until_validation(self, *args, **kwargs):
+    def fit_minibatches_until_validation(self, *args, do_yield=False,
+                                         stop_thresh=1e-3, **kwargs):
         cdef float last_valid, train, valid
 
         last_valid = np.inf
         for train, valid in self.fit_minibatches_validation(*args, **kwargs):
-            if valid > last_valid:
+            if do_yield:
+                yield train, valid
+
+            if valid > last_valid - stop_thresh:
                 break
             last_valid = valid
 
