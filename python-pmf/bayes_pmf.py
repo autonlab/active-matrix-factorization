@@ -239,8 +239,12 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         mu_v = np.mean(item_sample, axis=0).T
 
         # alpha is the inverse covariance among latent dimensions
-        alpha_u = np.linalg.inv(np.cov(user_sample, rowvar=0))
-        alpha_v = np.linalg.inv(np.cov(item_sample, rowvar=0))
+        if self.latent_d == 1:
+            alpha_u = np.array([1 / np.var(user_sample, ddof=1)])
+            alpha_v = np.array([1 / np.var(item_sample, ddof=1)])
+        else:
+            alpha_u = np.linalg.inv(np.cov(user_sample, rowvar=0))
+            alpha_v = np.linalg.inv(np.cov(item_sample, rowvar=0))
 
         # TODO: could try using pool.imap if memory becomes an issue
         mapper = pool.map if pool is not None else map
