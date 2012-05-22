@@ -184,7 +184,15 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
           * If None (default), will perform user/item parallelization in the
             pool if passed, or no parallelization if the pool is not passed.
 
-        If fit_first, first calls .fit() to fit the MAP estimate.
+        If fit_first is
+            * True or 'batch', first calls .fit() to fit the MAP estimate.
+            * a tuple whose first element is 'mini', calls .fit_minibatches()
+              with the rest of the tuple as arguments.
+            * a tuple whose first element is 'mini-valid', calls
+              .fit_minibatches_until_validation() with the rest of the tuple
+              as arguments.
+            * False, does nothing first.
+        If multiproc_mode is 'force', offloads this fitting to the pool.
         '''
 
         if multiproc_mode == 'force' and pool is None:
@@ -210,12 +218,16 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                          for k, (i,r) in items_by_user.items()}
 
         # fit the MAP estimate, if asked to
-        if fit_first:
+        if fit_first is not False:
+            if fit_first is True or fit_first == 'batch':
+                fit_first = ('batch',)
+
             if force_multiproc:
-                bpmf = pool.apply(_fit_bpmf, (self,))
+                bpmf = pool.apply(_fit_bpmf, (self,) + fit_first)
                 self.users = bpmf.users
                 self.items = bpmf.items
             else:
+                _fit_bpmf(self, *fit_first)
                 self.fit()
 
         # initialize the Markov chain with the current MAP estimate
@@ -331,8 +343,16 @@ def _feat_sampler(args):
     bpmf, *args = args
     return bpmf.sample_feature(*args)
 
-def _fit_bpmf(bpmf):
-    bpmf.fit()
+def _fit_bpmf(bpmf, kind, *args, **kwargs):
+    if kind == 'batch':
+        bpmf.fit(*args, **kwargs)
+    elif kind == 'mini':
+        bpmf.fit_minibatches(*args, **kwargs)
+    elif kind == 'mini-valid':
+        bpmf.fit_minibatches_until_validation(*args, **kwargs)
+    else:
+        raise ValueError("unknown fit type '{}'".format(kind))
+
     return bpmf
 
 
@@ -398,7 +418,7 @@ KEYS = {
 }
 
 def full_test(bpmf, samples, real, key_name, num_samps,
-              pool=None, multiproc_mode=None):
+              pool=None, multiproc_mode=None, fit_type='batch'):
 
     nice_name, key_fn, choose_max, *key_args = KEYS[key_name]
     total = real.size
@@ -428,7 +448,7 @@ def full_test(bpmf, samples, real, key_name, num_samps,
                 nice_name, i, j, len(bpmf.rated), total))
 
         samp_gen = bpmf.samples(pool=pool, multiproc_mode=multiproc_mode,
-                                fit_first=True)
+                                fit_first=fit_type)
         samples = list(islice(samp_gen, num_samps))
 
         rmse = bpmf.bayes_rmse(samples, real)
