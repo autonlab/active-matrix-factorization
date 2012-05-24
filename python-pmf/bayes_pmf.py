@@ -65,8 +65,8 @@ def iter_mean(iterable):
 
 class BayesianPMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=5, subtract_mean=True):
-        super().__init__(rating_tuples, latent_d=latent_d,
-                subtract_mean=subtract_mean)
+        super(BayesianPMF, self).__init__(
+                rating_tuples, latent_d=latent_d, subtract_mean=subtract_mean)
 
         self.beta = 2 # observation noise precision
 
@@ -98,7 +98,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         return res
 
     def __getstate__(self):
-        state = super().__getstate__()
+        state = super(BayesianPMF, self).__getstate__()
         if cython.compiled:
             state['beta'] = self.beta
             state['u_hyperparams'] = self.u_hyperparams
@@ -507,7 +507,8 @@ def _fit_bpmf(bpmf, kind, *args, **kwargs):
 
 def _exp_variance_helper(args):
     bpmf, mean, var, i, j = args
-    return 47 # TODO XXX XXX
+
+    return i*100+j # TODO XXX XXX
 
 
 ################################################################################
