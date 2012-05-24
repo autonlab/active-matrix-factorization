@@ -173,7 +173,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
     @cython.locals(
         num_gibbs=cython.int,
         fit_first=cython.int,
-        users_by_item=cython.dict, items_by_user=cython.dict,
+        users_by_item=dict, items_by_user=dict,
         user_sample=np.ndarray, item_sample=np.ndarray,
         mu_u=np.ndarray, mu_v=np.ndarray,
         alpha_u=np.ndarray, alpha_v=np.ndarray,
@@ -253,13 +253,13 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                     rated_indices, ratings = items_by_user[user_id]
 
                     user_sample[user_id] = self.sample_feature(
-                            user_id, True, mu_v, alpha_v, item_sample,
+                            user_id, True, mu_u, alpha_u, item_sample,
                             rated_indices, ratings
                     )
 
                 item_sample = np.empty_like(item_sample)
                 for item_id in range(self.num_items):
-                    rated_indices, ratings = users_by_item[user_id]
+                    rated_indices, ratings = users_by_item[item_id]
 
                     item_sample[item_id] = self.sample_feature(
                             item_id, False, mu_v, alpha_v, user_sample,
@@ -379,7 +379,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                 #print('\t\t Gibbs sampling {}'.format(gibbs))
 
                 res = mapper(_feat_sampler,
-                        ((self, user_id, True, mu_v, alpha_v, item_sample)
+                        ((self, user_id, True, mu_u, alpha_u, item_sample)
                             + items_by_user[user_id]
                          for user_id in range(self.num_users)))
 
