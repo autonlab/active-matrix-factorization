@@ -16,11 +16,16 @@ import warnings
 import numpy as np
 from scipy import stats
 
-try:
-    from pmf_cy import ProbabilisticMatrixFactorization
-except ImportError:
-    warnings.warn("cython PMF not available; using pure-python version")
-    from pmf import ProbabilisticMatrixFactorization
+# TODO: make this actually work....
+#if not cython.compiled:
+#    try:
+#        from pmf_cy import ProbabilisticMatrixFactorization
+#    except ImportError:
+#        warnings.warn("cython PMF not available; using pure-python version")
+#        from pmf import ProbabilisticMatrixFactorization
+from pmf_cy import ProbabilisticMatrixFactorization
+
+import cython
 
 ################################################################################
 ### Utilities
@@ -94,8 +99,13 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
 
     def __getstate__(self):
         state = super().__getstate__()
-        #state.update(self.__dict__)
-        state['__dict__'] = self.__dict__
+        if cython.compiled:
+            state['beta'] = self.beta
+            state['u_hyperparams'] = self.u_hyperparams
+            state['v_hyperparams'] = self.v_hyperparams
+        else:
+            #state.update(self.__dict__)
+            state['__dict__'] = self.__dict__
         return state
 
 
@@ -160,8 +170,106 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         lam = np.linalg.cholesky(cov)
         return np.dot(lam, np.random.normal(0, 1, self.latent_d)) + mean
 
+    @cython.locals(
+        num_gibbs=cython.int,
+        fit_first=cython.int,
+        users_by_item=cython.dict, items_by_user=cython.dict,
+        user_sample=np.ndarray, item_sample=np.ndarray,
+        mu_u=np.ndarray, mu_v=np.ndarray,
+        alpha_u=np.ndarray, alpha_v=np.ndarray,
+        rated_indices=np.ndarray, ratings=np.ndarray,
+        user_id=cython.int, item_id=cython.int,
+    )
+    def samples(self, num_gibbs=2, fit_first=False):
+        '''
+        Runs the Markov chain starting from the current MAP approximation in
+        self.users, self.items. Yields sampled user, item features forever.
 
-    def samples(self, num_gibbs=2, pool=None, multiproc_mode=None,
+        If you add ratings after starting this iterator, it'll continue on
+        without accounting for them.
+
+        Does num_gibbs updates after each hyperparameter update, then yields
+        the result.
+
+        If fit_first is
+            * True or 'batch', first calls .fit() to fit the MAP estimate.
+            * a tuple whose first element is 'mini', calls .fit_minibatches()
+              with the rest of the tuple as arguments.
+            * a tuple whose first element is 'mini-valid', calls
+              .fit_minibatches_until_validation() with the rest of the tuple
+              as arguments.
+            * False, does nothing first.
+        '''
+        # find rated indices now, to avoid repeated lookups
+        users_by_i = defaultdict(lambda: ([], []))
+        items_by_u = defaultdict(lambda: ([], []))
+
+        for user, item, rating in self.ratings:
+            users_by_i[item][0].append(user)
+            users_by_i[item][1].append(rating)
+
+            items_by_u[user][0].append(item)
+            items_by_u[user][1].append(rating)
+
+        users_by_item = {k: (np.asarray(i, dtype=int), np.asarray(r))
+                         for k, (i,r) in users_by_i.items()}
+        items_by_user = {k: (np.asarray(i, dtype=int), np.asarray(r))
+                         for k, (i,r) in items_by_u.items()}
+        del users_by_i, items_by_u
+
+        # fit the MAP estimate, if asked to
+        if fit_first is not False:
+            if fit_first is True or fit_first == 'batch':
+                fit_first = ('batch',)
+
+            _fit_bpmf(self, *fit_first)
+
+        # initialize the Markov chain with the current MAP estimate
+        user_sample = self.users.copy()
+        item_sample = self.items.copy()
+
+        # mu is the average value for each latent dimension
+        mu_u = np.mean(user_sample, axis=0).T
+        mu_v = np.mean(item_sample, axis=0).T
+
+        # alpha is the inverse covariance among latent dimensions
+        if self.latent_d == 1:
+            alpha_u = np.array([1 / np.var(user_sample, ddof=1)])
+            alpha_v = np.array([1 / np.var(item_sample, ddof=1)])
+        else:
+            alpha_u = np.linalg.inv(np.cov(user_sample, rowvar=0))
+            alpha_v = np.linalg.inv(np.cov(item_sample, rowvar=0))
+
+        while True:
+            # sample from hyperparameters
+            mu_u, alpha_u = self.sample_hyperparam(user_sample, True)
+            mu_v, alpha_v = self.sample_hyperparam(item_sample, False)
+
+            # Gibbs updates for user, item feature vectors
+            for gibbs in range(num_gibbs):
+
+                user_sample = np.empty_like(user_sample)
+                for user_id in range(self.num_users):
+                    rated_indices, ratings = items_by_user[user_id]
+
+                    user_sample[user_id] = self.sample_feature(
+                            user_id, True, mu_v, alpha_v, item_sample,
+                            rated_indices, ratings
+                    )
+
+                item_sample = np.empty_like(item_sample)
+                for item_id in range(self.num_items):
+                    rated_indices, ratings = users_by_item[user_id]
+
+                    item_sample[item_id] = self.sample_feature(
+                            item_id, False, mu_v, alpha_v, user_sample,
+                            rated_indices, ratings)
+
+            yield user_sample, item_sample
+
+
+
+    def samples_parallel(self, num_gibbs=2, pool=None, multiproc_mode=None,
                 fit_first=False):
         '''
         Runs the Markov chain starting from the current MAP approximation in
@@ -230,7 +338,6 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                 self.items = bpmf.items
             else:
                 _fit_bpmf(self, *fit_first)
-                self.fit()
 
         # initialize the Markov chain with the current MAP estimate
         user_sample = self.users.copy()
@@ -291,6 +398,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                     item_sample[n, :] = row
 
             yield user_sample, item_sample
+
 
     def matrix_results(self, vals, which):
         res = np.empty((self.num_users, self.num_items))

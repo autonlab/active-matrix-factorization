@@ -25,15 +25,6 @@ DTYPE = np.float
 ctypedef np.float_t DTYPE_t
 
 cdef class ProbabilisticMatrixFactorization:
-    cdef public int latent_d, num_users, num_items
-    cdef public bint subtract_mean
-    cdef public double mean_rating
-    cdef public double learning_rate, min_learning_rate, stop_thresh
-    cdef public double sigma_sq, sigma_u_sq, sigma_v_sq
-    cdef public double sig_u_mean, sig_u_var, sig_v_mean, sig_v_var
-    cdef public np.ndarray ratings, users, items
-    cdef public set rated, unrated
-
     def __cinit__(self):
         self.learning_rate = 1e-4
         self.min_learning_rate = 1e-10
@@ -76,7 +67,7 @@ cdef class ProbabilisticMatrixFactorization:
         res.__setstate__(res.__getstate__())
         return res
 
-    cpdef ProbabilisticMatrixFactorization __deepcopy__(self, memodict):
+    cpdef ProbabilisticMatrixFactorization __deepcopy__(self, object memodict):
         cdef ProbabilisticMatrixFactorization res
         res = type(self)(self.ratings.copy())# , self.latent_d, self.subtract_mean)
         res.__setstate__(deepcopy(self.__getstate__(), memodict))
