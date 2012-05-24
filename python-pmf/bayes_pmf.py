@@ -6,9 +6,9 @@ Based on Matlab code by Ruslan Salakhutdinov:
 http://www.mit.edu/~rsalakhu/BPMF.html
 '''
 
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from copy import deepcopy
-from itertools import islice
+from itertools import islice, repeat
 import multiprocessing
 from threading import Thread
 import warnings
@@ -423,6 +423,48 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         vals = [self.predicted_matrix(u, v)[which] for u, v in samples_iter]
         return np.var(vals, 0)
 
+    def exp_variance(self, samples_iter, which=Ellipsis, pool=None):
+        '''
+        Gives the total expected variance in our predicted R matrix if we knew
+        Rij for each ij in which, using samples_iter to get our distribution
+        for Rij.
+
+        Parallelizes the evaluation over pool if passed (highly recommended,
+        since this is sloooow).
+        '''
+        # figure out the indices of our selection
+        # ...there's gotta be an easier way, right?
+        n = self.num_users
+        m = self.num_items
+        all_indices = np.empty((n, m, 2), dtype=int)
+        for i in range(n):
+            all_indices[i, :, 0] = i
+        for j in range(m):
+            all_indices[:, j, 1] = j
+        indices = all_indices[which]
+        i_indices = indices[...,0]
+        j_indices = indices[...,1]
+
+        # get samples of R_ij for each ij in which
+        vals = [self.predicted_matrix(u, v)[which] for u, v in samples_iter]
+
+        # TODO: for now, just get mean and variance for normal fit
+        mean = np.mean(vals, 0)
+        var = np.var(vals, 0)
+
+        # TODO could experiment with map_async, imap_unordered
+        mapper = pool.map if pool is not None else map
+        exps = mapper(_exp_variance_helper,
+                zip(repeat(self),
+                    mean.flat, var.flat,
+                    i_indices.flat, j_indices.flat))
+
+        res = np.empty(mean.shape); res.fill(np.nan)
+        for idx, exp in enumerate(exps):
+            res.flat[idx] = exp
+        return res
+
+
     def prob_ge_cutoff(self, samples_iter, cutoff, which=Ellipsis):
         '''
         Gives the portion of the time each matrix element was >= cutoff
@@ -462,6 +504,10 @@ def _fit_bpmf(bpmf, kind, *args, **kwargs):
         raise ValueError("unknown fit type '{}'".format(kind))
 
     return bpmf
+
+def _exp_variance_helper(args):
+    bpmf, mean, var, i, j = args
+    return 47 # TODO XXX XXX
 
 
 ################################################################################
@@ -516,52 +562,70 @@ def test_vs_map():
 
 ################################################################################
 
-KEYS = {
-    'random': ("Random", 'random', True),
-    'pred-variance': ("Pred Variance", 'pred_variance', True),
+Key = namedtuple('Key',
+        ['nice_name', 'key_fn', 'choose_max', 'wants_pool', 'args'])
 
-    'pred': ("Pred", 'predict', True),
-    'prob-ge-3.5': ("Prob >= 3.5", 'prob_ge_cutoff', True, 3.5),
-    'prob-ge-.5': ("Prob >= .5", 'prob_ge_cutoff', True, .5),
+KEYS = {
+    'random': Key("Random", 'random', True, False, ()),
+    'pred-variance': Key("Var[R_ij]", 'pred_variance', True, False, ()),
+
+    'exp-variance': Key("E[Var[R]]", 'exp_variance', False, True, ()),
+
+    'pred': Key("Pred", 'predict', True, False, ()),
+    'prob-ge-3.5': Key("Prob >= 3.5", 'prob_ge_cutoff', True, False, (3.5,)),
+    'prob-ge-.5': Key("Prob >= .5", 'prob_ge_cutoff', True, False, (.5,)),
 }
 
-def full_test(bpmf, samples, real, key_name, num_samps,
-              pool=None, multiproc_mode=None, fit_type='batch'):
+def fetch_samples(bpmf, num, *args, **kwargs):
+    samps = list(islice(bpmf.samples(*args, **kwargs), num))
+    pred = bpmf.predict(samps)
+    return samps, pred
 
-    nice_name, key_fn, choose_max, *key_args = KEYS[key_name]
+def full_test(bpmf, samples, real, key_name, num_samps,
+              pool=None, multieval=False, fit_type='batch'):
+
+    key = KEYS[key_name]
     total = real.size
-    picker_fn = getattr(bpmf, key_fn)
-    chooser = np.argmax if choose_max else np.argmin
+    picker_fn = getattr(bpmf, key.key_fn)
+    chooser = np.argmax if key.choose_max else np.argmin
 
     yield (len(bpmf.rated), bpmf.bayes_rmse(samples, real), None, None)
 
 
     while bpmf.unrated:
         print("{:<40} Picking query point {}...".format(
-            nice_name, len(bpmf.rated) + 1))
+            key.nice_name, len(bpmf.rated) + 1))
 
         if len(bpmf.unrated) == 1:
             vals = None
             i, j = next(iter(bpmf.unrated))
         else:
-            # TODO: if multiproc_mode == 'force'...?
             unrated = np.array(list(bpmf.unrated)).T
             which = tuple(unrated)
-            evals = picker_fn(samples, *key_args, which=which)
+
+            key_kwargs = { 'which': which }
+            if key.wants_pool and pool is not None:
+                key_kwargs['pool'] = pool
+
+            evals = picker_fn(samples, *key.key_args, **key_kwargs)
+
             i, j = unrated[:, chooser(evals)]
             vals = bpmf.matrix_results(evals, which)
 
         bpmf.add_rating(i, j, real[i, j])
         print("{:<40} Queried ({}, {}); {}/{} known".format(
-                nice_name, i, j, len(bpmf.rated), total))
+                key.nice_name, i, j, len(bpmf.rated), total))
 
-        samp_gen = bpmf.samples(pool=pool, multiproc_mode=multiproc_mode,
-                                fit_first=fit_type)
-        samples = list(islice(samp_gen, num_samps))
+        samp_args = (bpmf, num_samps)
+        samp_kwargs = {'fit_first': fit_type}
+        if multieval:
+            samples, pred = pool.apply(fetch_samples, samp_args, samp_kwargs)
+        else:
+            samples, pred = fetch_samples(*samp_args, **samp_kwargs)
 
-        rmse = bpmf.bayes_rmse(samples, real)
-        print("{:<40} RMSE {}: {:.5}".format(nice_name, len(bpmf.rated), rmse))
-        yield len(bpmf.rated), rmse, (i,j), vals
+        err = rmse(pred, real)
+        print("{:<40} RMSE {}: {:.5}".format(key.nice_name, len(bpmf.rated), err))
+        yield len(bpmf.rated), err, (i,j), vals
 
 
 
