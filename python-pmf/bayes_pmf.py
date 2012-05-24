@@ -59,8 +59,9 @@ def iter_mean(iterable):
 ################################################################################
 
 class BayesianPMF(ProbabilisticMatrixFactorization):
-    def __init__(self, rating_tuples, latent_d=5):
-        super().__init__(rating_tuples, latent_d=latent_d, subtract_mean=True)
+    def __init__(self, rating_tuples, latent_d=5, subtract_mean=True):
+        super().__init__(rating_tuples, latent_d=latent_d,
+                subtract_mean=subtract_mean)
 
         self.beta = 2 # observation noise precision
 
@@ -290,13 +291,6 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
 
             yield user_sample, item_sample
 
-    def sample_pred(self, u, v):
-        '''
-        Gives the reconstruction based on a single u, v factorization.
-        '''
-        # TODO: cut off prediction to lie in valid range?
-        return np.dot(u, v.T) + self.mean_rating
-
     def matrix_results(self, vals, which):
         res = np.empty((self.num_users, self.num_items))
         res.fill(np.nan)
@@ -307,7 +301,8 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         '''
         Gives the mean reconstruction given a series of samples.
         '''
-        return iter_mean(self.sample_pred(u, v)[which] for u, v in samples_iter)
+        return iter_mean(self.predicted_matrix(u, v)[which]
+                         for u, v in samples_iter)
 
     def pred_variance(self, samples_iter, which=Ellipsis):
         '''
@@ -316,7 +311,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         if which is None:
             which = Ellipsis
 
-        vals = [self.sample_pred(u, v)[which] for u, v in samples_iter]
+        vals = [self.predicted_matrix(u, v)[which] for u, v in samples_iter]
         return np.var(vals, 0)
 
     def prob_ge_cutoff(self, samples_iter, cutoff, which=Ellipsis):
@@ -328,7 +323,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         counts = np.zeros(shape)
         num = 0
         for u, v in samples_iter:
-            counts += self.sample_pred(u, v)[which] >= cutoff
+            counts += self.predicted_matrix(u, v)[which] >= cutoff
             num += 1
         return counts / num
 

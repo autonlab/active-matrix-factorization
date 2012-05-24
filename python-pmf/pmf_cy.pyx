@@ -386,11 +386,17 @@ cdef class ProbabilisticMatrixFactorization:
         for ll in self.fit_with_sigmas_lls(noise_every, users_every):
             pass
 
-    cpdef np.ndarray predicted_matrix(self):
+    cpdef np.ndarray predicted_matrix(self,
+                        np.ndarray u=None, np.ndarray v=None):
+        if u is None:
+            u = self.users
+        if v is None:
+            v = self.items
+
+        cdef np.ndarray pred = np.dot(u, v)
         if self.subtract_mean:
-            return np.dot(self.users, self.items.T) + self.mean_rating
-        else:
-            return np.dot(self.users, self.items.T)
+            pred += self.mean_rating
+        return pred
 
     cpdef double rmse(self, np.ndarray real) except -1:
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)

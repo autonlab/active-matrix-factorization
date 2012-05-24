@@ -290,11 +290,16 @@ class ProbabilisticMatrixFactorization(object):
             pass
 
 
-    def predicted_matrix(self):
+    def predicted_matrix(self, u=None, v=None):
+        if u is None:
+            u = self.users
+        if v is None:
+            v = self.items
+
+        pred = np.dot(u, v)
         if self.subtract_mean:
-            return np.dot(self.users, self.items.T) + self.mean_rating
-        else:
-            return np.dot(self.users, self.items.T)
+            pred += self.mean_rating
+        return pred
 
     def rmse(self, real):
         return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
