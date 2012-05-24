@@ -13,6 +13,9 @@ import random
 
 import numpy as np
 
+def rmse(exp, obs):
+    return np.sqrt(((obs - exp) ** 2).sum() / exp.size)
+
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1, subtract_mean=False):
         self.latent_d = latent_d
@@ -302,7 +305,7 @@ class ProbabilisticMatrixFactorization(object):
         return pred
 
     def rmse(self, real):
-        return np.sqrt(((real - self.predicted_matrix())**2).sum() / real.size)
+        return rmse(self.predicted_matrix(), real)
 
     def print_latent_vectors(self):
         print("Users:")

@@ -23,7 +23,7 @@ from scipy import stats
 #    except ImportError:
 #        warnings.warn("cython PMF not available; using pure-python version")
 #        from pmf import ProbabilisticMatrixFactorization
-from pmf_cy import ProbabilisticMatrixFactorization
+from pmf_cy import ProbabilisticMatrixFactorization, rmse
 
 import cython
 
@@ -428,24 +428,22 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         Gives the portion of the time each matrix element was >= cutoff
         in a series of samples.
         '''
-        shape = np.zeros((self.num_users, self.num_items))[which].shape
-        counts = np.zeros(shape)
+        counts = np.zeros((self.num_users, self.num_items), dtype=int)[which]
         num = 0
         for u, v in samples_iter:
-            counts += self.predicted_matrix(u, v)[which] >= cutoff
+            counts += (self.predicted_matrix(u, v)[which] >= cutoff)
             num += 1
-        return counts / num
+        return counts / float(num)
 
     def random(self, samples_iter, which=Ellipsis):
-        shape = np.zeros((self.num_users, self.num_items))[which].shape
+        shape = np.empty((self.num_users, self.num_items))[which].shape
         return np.random.rand(*shape)
 
     def bayes_rmse(self, samples_iter, true_r):
-        pred = self.predict(samples_iter)
-        return np.sqrt(((true_r - pred)**2).sum() / true_r.size)
+        return rmse(self.predict(samples_iter), true_r)
 
 
-# stupid arguments to work around multiprocessing.Pool/pickle silliness
+# stupid functions to work around multiprocessing.Pool/pickle silliness
 def _hyperparam_sampler(bpmf, *args):
     return bpmf.sample_hyperparam(*args)
 
