@@ -247,6 +247,8 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
             alpha_v = np.linalg.inv(np.cov(item_sample, rowvar=0))
 
         # TODO: could try using pool.imap if memory becomes an issue
+        # could also use map_async
+        # or manually distribute chunks of rows to speed up computation
         mapper = pool.map if pool is not None else map
 
         while True:
