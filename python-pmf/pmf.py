@@ -296,7 +296,7 @@ class ProbabilisticMatrixFactorization(object):
         if v is None:
             v = self.items
 
-        pred = np.dot(u, v)
+        pred = np.dot(u, v.T)
         if self.subtract_mean:
             pred += self.mean_rating
         return pred

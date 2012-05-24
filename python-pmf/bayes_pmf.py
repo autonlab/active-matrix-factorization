@@ -148,12 +148,13 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         '''
 
         rated_feats = oth_feats[rated_indices, :]
-        norm_ratings = ratings - self.mean_rating
+        if self.subtract_mean:
+            ratings = ratings - self.mean_rating
 
         cov = np.linalg.inv(alpha +
                 self.beta * np.dot(rated_feats.T, rated_feats))
         mean = np.dot(cov,
-                self.beta * np.dot(rated_feats.T, norm_ratings)
+                self.beta * np.dot(rated_feats.T, ratings)
                 + np.dot(alpha, mu))
 
         lam = np.linalg.cholesky(cov)

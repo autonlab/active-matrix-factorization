@@ -393,7 +393,7 @@ cdef class ProbabilisticMatrixFactorization:
         if v is None:
             v = self.items
 
-        cdef np.ndarray pred = np.dot(u, v)
+        cdef np.ndarray pred = np.dot(u, v.T)
         if self.subtract_mean:
             pred += self.mean_rating
         return pred
