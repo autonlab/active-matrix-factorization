@@ -76,5 +76,6 @@ else
 fi
 
 # plot results
-../plot_results.py --criteria-firsts --real --kind bayes $bayesfile &
-../plot_results.py --criteria-firsts --kind apmf $apmffile
+../plot_results.py --real --outdir $dir $datafile
+../plot_results.py --criteria-firsts --kind bayes --outdir $dir $bayesfile
+../plot_results.py --criteria-firsts --kind apmf --outdir $dir $apmffile
