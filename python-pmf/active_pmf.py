@@ -101,7 +101,9 @@ def maximize(f):
 
 class ActivePMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=1,
-                 rating_values=None, discrete_expectations=False):
+                 rating_values=None,
+                 discrete_expectations=False,
+                 refit_lookahead=False):
         # the actual PMF model
         super(ActivePMF, self).__init__(rating_tuples, latent_d)
 
@@ -117,6 +119,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         self.rating_values = rating_values
         self.discrete_expectations = discrete_expectations
+        self.refit_lookahead = refit_lookahead
 
         # parameters of the normal approximation
         self.mean = None
@@ -672,7 +675,9 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         def calculate_fn(v):
             apmf = deepcopy(self)
             apmf.add_rating(i, j, v)
-            # apmf.fit() # not necessary, at least for now
+            if apmf.refit_lookahead:
+                apmf.fit()
+                apmf.initialize_approx()
             apmf.fit_normal()
 
             return fn(apmf, v=v) if pass_v else fn(apmf)
@@ -867,6 +872,8 @@ def _in_between_work(apmf, i, j, realval, total, fit_normal,
     else:
         apmf.fit()
     if fit_normal:
+        if apmf.refit_lookahead:
+            apmf.initialize_approx()
         apmf.fit_normal()
 
     return apmf
@@ -1017,8 +1024,8 @@ def get_ratings(real, mask_type=0):
 
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
-            steps=None, discrete_exp=False, fit_sigmas=False,
-            real_ratings_vals=None, apmf=None,
+            steps=None, discrete_exp=False, refit_lookahead=False,
+            fit_sigmas=False, real_ratings_vals=None, apmf=None,
             sig_u_mean=0, sig_u_var=-1, sig_v_mean=0, sig_v_var=-1, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
@@ -1035,7 +1042,9 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
 
     if apmf is None:
         apmf = ActivePMF(ratings, latent_d=latent_d,
-                rating_values=rating_vals, discrete_expectations=discrete_exp)
+                rating_values=rating_vals,
+                discrete_expectations=discrete_exp,
+                refit_lookahead=refit_lookahead)
         apmf.sig_u_mean = sig_u_mean
         apmf.sig_u_var = sig_u_var
         apmf.sig_v_mean = sig_v_mean
@@ -1116,6 +1125,8 @@ def main():
     model.add_argument('--continuous-integration',
             action='store_false', dest='discrete_integration')
     add_bool_opt(model, 'fit-sigmas', default=False)
+
+    add_bool_opt(model, 'refit-lookahead', default=False)
 
     model.add_argument('--sig-u-mean', type=float, default=0)
     model.add_argument('--sig-u-var', type=float, default=-1)
@@ -1220,6 +1231,7 @@ def main():
                 noise=args.noise, mask_type=args.mask,
                 rank=args.gen_rank, latent_d=args.latent_d,
                 discrete_exp=args.discrete_integration,
+                refit_lookahead=args.refit_lookahead,
                 fit_sigmas=args.fit_sigmas,
                 sig_u_mean=args.sig_u_mean, sig_u_var=args.sig_u_var,
                 sig_v_mean=args.sig_v_mean, sig_v_var=args.sig_v_var,
