@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 
-cd `dirname $0`
+cd $(dirname $0)
 
 n=3
 m=3
@@ -14,7 +14,7 @@ v_mean=10
 samps=200
 lookahead=200
 
-procs=0
+procs=4
 
 dir=../results/criteria/${n}x${m}_r${r}_u${u_mean}_v${v_mean}_${id}
 echo $dir
@@ -77,5 +77,5 @@ fi
 
 # plot results
 ../plot_results.py --real --outdir $dir $datafile
-../plot_results.py --criteria-firsts --kind bayes --outdir $dir $bayesfile
-../plot_results.py --criteria-firsts --kind apmf --outdir $dir $apmffile
+../plot_results.py --criteria-firsts --kind bayes --outdir $dir $bayesfile && mv $dir/firsts.png ${bayesfile/.pkl/.png}
+../plot_results.py --criteria-firsts --kind apmf --outdir $dir $apmffile && mv $dir/firsts.png ${apmffile/.pkl/.png}
