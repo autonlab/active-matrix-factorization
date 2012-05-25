@@ -859,7 +859,7 @@ def main():
         rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
 
     if args.discrete is None:
-        args.discrete = rating_vals is None
+        args.discrete = rating_vals is not None
 
     # do the comparison
     try:
