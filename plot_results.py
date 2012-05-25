@@ -267,6 +267,8 @@ def main():
     add_bool_opt(parser, 'criteria-firsts', False)
     add_bool_opt(parser, 'initial-preds', False)
 
+    parser.add_argument('--kind', choices=['apmf','bayes','rc'], default='apmf')
+
     parser.add_argument('--all-plots', default=False, action='store_true')
 
     parser.add_argument('--cmap', default='jet')
@@ -307,6 +309,14 @@ def main():
     # load the results
     with open(args.results_file, 'rb') as resultsfile:
         results = pickle.load(resultsfile)
+
+    # bayes doesn't save keys with a prefix
+    if args.kind == 'bayes':
+        results = {
+            k if k.startswith('_') or k.startswith('bayes_') else ('bayes_' + k)
+            : v
+            for k, v in results.items()
+        }
 
     # check args.keys are actually in the results
     if not args.keys:
