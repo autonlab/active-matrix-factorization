@@ -57,9 +57,42 @@ cdef class BayesianPMF(ProbabilisticMatrixFactorization):
     @cython.locals(vals=cython.list)
     cpdef np.ndarray pred_variance(self, object samples_iter, object which=*)
 
+    #cpdef np.ndarray total_variance(self, object samples_iter, object which=*)
+
+    cpdef np.ndarray exp_variance(self, object samples_iter, object which=*,
+            object pool=*, object fit_first=*, int num_samps=*)
+
+    @cython.locals(
+        n = cython.int,
+        m = cython.int,
+        all_indices = np.ndarray,
+        indices = np.ndarray,
+        j_indices = np.ndarray,
+        i_indices = np.ndarray,
+        vals = np.ndarray,
+        discrete = bint,
+        alpha = cython.float,
+        prev_samps = cython.int,
+        denom = cython.float,
+        mean = np.ndarray,
+        var = np.ndarray,
+        res = np.ndarray,
+        idx = cython.int,
+        exp = cython.float,
+    )
+    cpdef np.ndarray _distribute(self, object fn, object samples_iter,
+            object which, object pool, object fit_first, int num_samps)
+
     @cython.locals(shape=np.ndarray, counts=np.ndarray, num=cython.int)
     cpdef np.ndarray prob_ge_cutoff(self,
             object samples_iter, float cutoff, object which=*)
 
+    @cython.locals(shape=tuple)
+    cpdef np.ndarray random(self, object samples_iter, object which=*)
+
     @cython.locals(pred=np.ndarray)
     cpdef float bayes_rmse(self, object samples_iter, np.ndarray true_r)
+
+
+#cpdef float _integrate_lookahead(object fn, BayesianPMF bpmf, int i, int j,
+#        bint discrete, object params, object fit_first, int num_samps)

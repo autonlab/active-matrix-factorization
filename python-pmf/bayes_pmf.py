@@ -503,7 +503,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
             # round the samples to the nearest thing in rating_vals
             # and do a MAP fit to a categorical with a Dirichlet prior alpha+1
             alpha = .1
-            prev_samps = len(vals)
+            prev_samps = vals.shape[0]
             denom = prev_samps + alpha * len(self.rating_values)
 
             params = [
@@ -529,7 +529,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                     repeat(discrete), params,
                     repeat(fit_first), repeat(num_samps)))
 
-        res = np.empty(vals.shape[1:])
+        res = np.empty(np.shape(vals)[1:])
         res.fill(np.nan)
         for idx, exp in enumerate(exps):
             res.flat[idx] = exp
