@@ -493,22 +493,44 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         j_indices = indices[...,1]
 
         # get samples of R_ij for each ij in which
-        vals = [self.predicted_matrix(u, v)[which] for u, v in samples_iter]
+        vals = np.asarray([
+            self.predicted_matrix(u, v)[which] for u, v in samples_iter])
 
-        # TODO: for now, just get mean and variance for normal fit
-        mean = np.mean(vals, 0)
-        var = np.var(vals, 0)
+        # fit a distribution to the samples for each ij
+        if self.discrete_expectations and self.rating_values is not None:
+            discrete = True
+
+            # round the samples to the nearest thing in rating_vals
+            # and do a MAP fit to a categorical with a Dirichlet prior alpha+1
+            alpha = .1
+            prev_samps = len(vals)
+            denom = prev_samps + alpha * len(self.rating_values)
+
+            params = [
+                (np.histogram(v, bins=self.rating_bounds)[0] + alpha) / denom
+                for v in vals.reshape(prev_samps, -1).T
+            ]
+
+        else:
+            if self.discrete_expectations and self.rating_values is None:
+                warnings.warn("have no rating_values; doing continuous")
+            discrete = False
+
+            # fit an MLE normal to the samples
+            mean = np.mean(vals, 0)
+            var = np.var(vals, 0)
+            params = zip(mean.flat, var.flat)
 
         # TODO could experiment with map_async, imap_unordered
         mapper = pool.map if pool is not None else map
         exps = mapper(fn,
                 zip(repeat(self),
                     i_indices.flat, j_indices.flat,
-                    mean.flat, var.flat,
-                    repeat(fit_first),
-                    repeat(num_samps)))
+                    repeat(discrete), params,
+                    repeat(fit_first), repeat(num_samps)))
 
-        res = np.empty(mean.shape); res.fill(np.nan)
+        res = np.empty(vals.shape[1:])
+        res.fill(np.nan)
         for idx, exp in enumerate(exps):
             res.flat[idx] = exp
         return res
@@ -555,12 +577,10 @@ def _fit_bpmf(bpmf, kind, *args, **kwargs):
     return bpmf
 
 
-def _integrate_lookahead(fn, bpmf, i, j, mean, var, fit_first, num_samps):
+def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps):
     if (i, j) in bpmf.rated:
         warnings.warn("Asked to check a known entry; returning NaN")
         return np.nan
-
-    std = math.sqrt(var)
 
     def calculate_fn(v):
         b = deepcopy(bpmf)
@@ -568,16 +588,15 @@ def _integrate_lookahead(fn, bpmf, i, j, mean, var, fit_first, num_samps):
         samps = b.samples(fit_first=fit_first)
         return fn(b, islice(samps, num_samps))
 
-    points = bpmf.rating_values
-    if bpmf.discrete_expectations and points is not None:
-        # TODO: trapezoidal approximation? simpsons? something better than rect?
-        evals = np.array([calculate_fn(v) for v in points])
-        cdfs = stats.norm.cdf(bpmf.rating_bounds, loc=mean, scale=std) # TODO
-        est = (evals * np.diff(cdfs)).sum()
+    if discrete:
+        # TODO: trapezoidal approximation? simpsons?
+        # TODO: don't calculate for points with very low probability?
+        evals = np.array([calculate_fn(v) for v in bpmf.rating_values])
+        est = (evals * params).sum()
         s = "summed"
     else:
-        if bpmf.discrete_expectations and points is None:
-            warnings.warn("BayesianPMF has no rating_values; doing integral")
+        mean, var = params
+        std = math.sqrt(var)
 
         # only take the expectation out to 2 sigma (>95% of normal mass)
         left = mean - 2 * std
