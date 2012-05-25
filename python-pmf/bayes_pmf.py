@@ -730,7 +730,8 @@ def full_test(bpmf, samples, real, key_name,
             samples, pred = fetch_samples(*samp_args, **samp_kwargs)
 
         err = rmse(pred, real)
-        print("{:<40} RMSE {}: {:.5}".format(key.nice_name, len(bpmf.rated), err))
+        print("{:<40} RMSE {}: {:.5}".format(
+            key.nice_name, len(bpmf.rated), err))
         yield len(bpmf.rated), err, (i,j), vals
 
 
@@ -752,6 +753,8 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
 
     print("Getting initial MCMC samples...")
     samples = list(islice(bpmf_init.samples(fit_first=fit_type), num_samps))
+
+    print("Initial RMSE: {}".format(bpmf_init.bayes_rmse(samples, real)))
     print()
 
     results = {
