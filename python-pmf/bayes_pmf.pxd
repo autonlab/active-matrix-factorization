@@ -13,6 +13,9 @@ cpdef object iter_mean(object iterable)
 
 cdef class BayesianPMF(ProbabilisticMatrixFactorization):
     cdef public float beta
+    cdef public tuple _rating_values
+    cdef public np.ndarray _rating_bounds
+    cdef public bint discrete_expectations
     cdef public tuple u_hyperparams, v_hyperparams
 
     #cpdef BayesianPMF __copy__(self)

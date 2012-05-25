@@ -6,9 +6,12 @@ Based on Matlab code by Ruslan Salakhutdinov:
 http://www.mit.edu/~rsalakhu/BPMF.html
 '''
 
+from __future__ import print_function # silly cython
+
 from collections import defaultdict, namedtuple
 from copy import deepcopy
 from itertools import islice, repeat
+import math
 import multiprocessing
 from threading import Thread
 import warnings
@@ -64,9 +67,19 @@ def iter_mean(iterable):
 ################################################################################
 
 class BayesianPMF(ProbabilisticMatrixFactorization):
-    def __init__(self, rating_tuples, latent_d=5, subtract_mean=True):
+    def __init__(self, rating_tuples, latent_d=5,
+                 subtract_mean=True,
+                 rating_values=None, discrete_expectations=True):
+
         super(BayesianPMF, self).__init__(
                 rating_tuples, latent_d=latent_d, subtract_mean=subtract_mean)
+
+        if rating_values is not None:
+            rating_values = set(map(float, rating_values))
+            if not rating_values.issuperset(self.ratings[:,2]):
+                raise ValueError("got ratings not in rating_values")
+        self.rating_values = rating_values
+        self.discrete_expectations = discrete_expectations
 
         self.beta = 2 # observation noise precision
 
@@ -100,6 +113,8 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
     def __getstate__(self):
         state = super(BayesianPMF, self).__getstate__()
         if cython.compiled:
+            state['discrete_expectations'] = self.discrete_expectations
+            state['rating_values'] = self._rating_values
             state['beta'] = self.beta
             state['u_hyperparams'] = self.u_hyperparams
             state['v_hyperparams'] = self.v_hyperparams
@@ -107,6 +122,27 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
             #state.update(self.__dict__)
             state['__dict__'] = self.__dict__
         return state
+
+
+    def _set_rating_values(self, vals):
+        if vals:
+            vals = tuple(sorted(vals))
+            self._rating_values = vals
+
+            varray = np.empty(len(vals) + 2)
+            varray[0] = -np.inf
+            varray[1:-1] = vals
+            varray[-1] = np.inf
+
+            self._rating_bounds = (varray[1:] + varray[:-1]) / 2
+        else:
+            self._rating_values = None
+            self._rating_bounds = None
+
+    rating_values = property(lambda self: self._rating_values,
+            _set_rating_values)
+    rating_bounds = property(lambda self: self._rating_bounds)
+
 
 
     def sample_hyperparam(self, feats, do_users):
@@ -172,7 +208,6 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
 
     @cython.locals(
         num_gibbs=cython.int,
-        fit_first=cython.int,
         users_by_item=dict, items_by_user=dict,
         user_sample=np.ndarray, item_sample=np.ndarray,
         mu_u=np.ndarray, mu_v=np.ndarray,
@@ -423,7 +458,15 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         vals = [self.predicted_matrix(u, v)[which] for u, v in samples_iter]
         return np.var(vals, 0)
 
-    def exp_variance(self, samples_iter, which=Ellipsis, pool=None):
+    def total_variance(self, samples_iter, which=Ellipsis):
+        '''
+        Gives the sum of the variance of each element of the prediction matrix
+        selected by which over samples_iter.
+        '''
+        return self.pred_variance(samples_iter, which=which).sum()
+
+    def exp_variance(self, samples_iter, which=Ellipsis, pool=None,
+                     fit_first='batch', num_samps=30):
         '''
         Gives the total expected variance in our predicted R matrix if we knew
         Rij for each ij in which, using samples_iter to get our distribution
@@ -432,6 +475,10 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         Parallelizes the evaluation over pool if passed (highly recommended,
         since this is sloooow).
         '''
+        return self._distribute(_exp_variance_helper,
+                samples_iter, which, pool, fit_first, num_samps)
+
+    def _distribute(self, fn, samples_iter, which, pool, fit_first, num_samps):
         # figure out the indices of our selection
         # ...there's gotta be an easier way, right?
         n = self.num_users
@@ -454,10 +501,12 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
 
         # TODO could experiment with map_async, imap_unordered
         mapper = pool.map if pool is not None else map
-        exps = mapper(_exp_variance_helper,
+        exps = mapper(fn,
                 zip(repeat(self),
+                    i_indices.flat, j_indices.flat,
                     mean.flat, var.flat,
-                    i_indices.flat, j_indices.flat))
+                    repeat(fit_first),
+                    repeat(num_samps)))
 
         res = np.empty(mean.shape); res.fill(np.nan)
         for idx, exp in enumerate(exps):
@@ -505,10 +554,46 @@ def _fit_bpmf(bpmf, kind, *args, **kwargs):
 
     return bpmf
 
-def _exp_variance_helper(args):
-    bpmf, mean, var, i, j = args
 
-    return i*100+j # TODO XXX XXX
+def _integrate_lookahead(fn, bpmf, i, j, mean, var, fit_first, num_samps):
+    if (i, j) in bpmf.rated:
+        warnings.warn("Asked to check a known entry; returning NaN")
+        return np.nan
+
+    std = math.sqrt(var)
+
+    def calculate_fn(v):
+        b = deepcopy(bpmf)
+        b.add_rating(i, j, v)
+        samps = b.samples(fit_first=fit_first)
+        return fn(b, islice(samps, num_samps))
+
+    points = bpmf.rating_values
+    if bpmf.discrete_expectations and points is not None:
+        # TODO: trapezoidal approximation? simpsons? something better than rect?
+        evals = np.array([calculate_fn(v) for v in points])
+        cdfs = stats.norm.cdf(bpmf.rating_bounds, loc=mean, scale=std) # TODO
+        est = (evals * np.diff(cdfs)).sum()
+        s = "summed"
+    else:
+        if bpmf.discrete_expectations and points is None:
+            warnings.warn("BayesianPMF has no rating_values; doing integral")
+
+        # only take the expectation out to 2 sigma (>95% of normal mass)
+        left = mean - 2 * std
+        right = mean + 2 * std
+
+        est = stats.norm.expect(calculate_fn, loc=mean, scale=std,
+                lb=left, ub=right, epsrel=.05) # XXX integration eps
+        s = "from {:5.1f} to {:5.1f}".format(left, right)
+
+    name = getattr(fn, '__name__', '')
+    print("\t{:>20}({},{}) {}: {: 10.2f}".format(name, i, j, s, est))
+    return est
+
+
+def _exp_variance_helper(args):
+    return _integrate_lookahead(BayesianPMF.total_variance, *args)
 
 
 ################################################################################
@@ -582,8 +667,10 @@ def fetch_samples(bpmf, num, *args, **kwargs):
     pred = bpmf.predict(samps)
     return samps, pred
 
-def full_test(bpmf, samples, real, key_name, num_samps,
-              pool=None, multieval=False, fit_type='batch'):
+def full_test(bpmf, samples, real, key_name,
+              fit_type='batch', num_samps=128,
+              lookahead_fit='batch', lookahead_samps=128,
+              pool=None, multieval=False):
 
     key = KEYS[key_name]
     total = real.size
@@ -591,7 +678,6 @@ def full_test(bpmf, samples, real, key_name, num_samps,
     chooser = np.argmax if key.choose_max else np.argmin
 
     yield (len(bpmf.rated), bpmf.bayes_rmse(samples, real), None, None)
-
 
     while bpmf.unrated:
         print("{:<40} Picking query point {}...".format(
@@ -608,7 +694,7 @@ def full_test(bpmf, samples, real, key_name, num_samps,
             if key.wants_pool and pool is not None:
                 key_kwargs['pool'] = pool
 
-            evals = picker_fn(samples, *key.key_args, **key_kwargs)
+            evals = picker_fn(samples, *key.args, **key_kwargs)
 
             i, j = unrated[:, chooser(evals)]
             vals = bpmf.matrix_results(evals, which)
@@ -631,16 +717,22 @@ def full_test(bpmf, samples, real, key_name, num_samps,
 
 
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
-                   num_samps=128, num_steps=None, procs=None, threaded=False):
+                   discrete=True, subtract_mean=True, num_steps=None,
+                   procs=None, threaded=False,
+                   fit_type='batch', num_samps=128,
+                   **kwargs):
     # do initial fit
-    bpmf_init = BayesianPMF(ratings, latent_d)
+    bpmf_init = BayesianPMF(ratings, latent_d,
+            subtract_mean=subtract_mean,
+            rating_values=rating_vals,
+            discrete_expectations=discrete)
     print("Doing initial MAP fit...")
     bpmf_init.fit()
 
     pool = multiprocessing.Pool(procs) if procs is None or procs >= 1 else None
 
     print("Getting initial MCMC samples...")
-    samples = list(islice(bpmf_init.samples(pool=pool), num_samps))
+    samples = list(islice(bpmf_init.samples(fit_first=fit_type), num_samps))
     print()
 
     results = {
@@ -654,7 +746,9 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     def eval_key(key_name):
         res = full_test(
                 deepcopy(bpmf_init), samples, real, key_name,
-                num_samps, pool, 'force' if threaded else None)
+                pool=pool, multieval=threaded,
+                fit_type=fit_type, num_samps=num_samps,
+                **kwargs)
         results[key_name] = list(islice(res, num_steps))
 
     if threaded:
@@ -687,7 +781,19 @@ def main():
 
     parser.add_argument('--latent-d', '-D', type=int, default=5)
     parser.add_argument('--steps', '-s', type=int, default=None)
+
+    parser.add_argument('--discrete', action='store_true', default=None)
+    parser.add_argument('--no-discrete', action='store_false', dest='discrete')
+
+    parser.add_argument('--subtract-mean', action='store_true', default=True)
+    parser.add_argument('--no-subtract-mean',
+            action='store_false', dest='subtract_mean')
+
+    parser.add_argument('--fit', default='batch')
+    parser.add_argument('--lookahead-fit', default='batch')
+
     parser.add_argument('--samps', '-S', type=int, default=128)
+    parser.add_argument('--lookahead-samps', type=int, default=128)
 
     parser.add_argument('--threaded', action='store_true', default=True)
     parser.add_argument('--unthreaded', action='store_false', dest='threaded')
@@ -733,13 +839,19 @@ def main():
         ratings = data['_ratings']
         rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
 
+    if args.discrete is None:
+        args.discrete = rating_vals is None
+
     # do the comparison
     try:
         results = compare_active(
                 key_names=args.keys,
                 latent_d=args.latent_d,
                 real=real, ratings=ratings, rating_vals=rating_vals,
-                num_samps=args.samps, num_steps=args.steps,
+                num_steps=args.steps,
+                discrete=args.discrete, subtract_mean=args.subtract_mean,
+                fit_type=args.fit, lookahead_fit=args.lookahead_fit,
+                num_samps=args.samps, lookahead_samps=args.lookahead_samps,
                 procs=args.procs, threaded=args.threaded)
     except Exception:
         import traceback
