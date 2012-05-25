@@ -60,6 +60,15 @@ def plot_predictions(apmf, real):
     show(a_mean, "Normal: Mean", 223)
     show(a_std, "Normal: Std Dev", 224, plt.Normalize(0, a_std.max()))
 
+def plot_real(real, rated=None):
+    from matplotlib import pyplot as plt
+    from matplotlib import cm
+
+    plt.imshow(real, cmap=cm.jet, interpolation='nearest', origin='lower')
+    plt.colorbar()
+    plt.title("True Matrix")
+    if rated is not None:
+        plt.scatter(rated[:,1], rated[:,0], marker='s', s=15, c='white')
 
 def _plot_lines(results, fn, ylabel):
     from matplotlib import pyplot as plt
@@ -251,6 +260,7 @@ def main():
     parser.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(KEY_NAMES))))
 
+    add_bool_opt(parser, 'real', False)
     add_bool_opt(parser, 'rmse', False)
     parser.add_argument('--cutoff', type=float, nargs='+', metavar='CUTOFF')
     add_bool_opt(parser, 'criteria', False)
@@ -267,6 +277,7 @@ def main():
     args = parser.parse_args()
 
     if args.all_plots:
+        args.real = True
         args.rmse = True
         args.criteria = True
         args.criteria_firsts = True
@@ -320,6 +331,12 @@ def main():
     from matplotlib import cm
     cmap = cm.get_cmap(args.cmap)
 
+    # real data plot
+    if args.real:
+        print("Plotting real matrix")
+        fig = plt.figure()
+        plot_real(results['_real'], results['_ratings'])
+        save_plot('real.png', fig)
 
     # RMSE plot
     if args.rmse:
