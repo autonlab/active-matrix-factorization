@@ -80,7 +80,11 @@ cdef class ProbabilisticMatrixFactorization:
 
     def __setstate__(self, dict state not None):
         for k, v in state.items():
-            setattr(self, k, v)
+            if k == '__dict__':
+                for real_k, real_v in v.items():
+                    setattr(self, real_k, real_v)
+            else:
+                setattr(self, k, v)
 
     def __getstate__(self):
         return dict(
