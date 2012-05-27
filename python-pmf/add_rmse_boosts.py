@@ -6,12 +6,12 @@ import functools
 import multiprocessing as mp
 import os
 import pickle
+import random
 
 import numpy as np
 
 from pmf_cy import ProbabilisticMatrixFactorization
 from bayes_pmf import BayesianPMF
-
 
 
 rmse = lambda exp, real: np.sqrt(((real - exp)**2).sum() / real.size)
@@ -49,6 +49,8 @@ def fit(real, known, latent_d=1, ret_pmf=False, subtract_mean=False,
 
 def fit_worker(real, known, num_fits, job_q, result_q, **fit_kwargs):
     real_rmse = functools.partial(rmse, real)
+    random.seed()
+    np.random.seed()
 
     for i, j in iter(job_q.get, None): # iterate until we see stop sentinel
         print(job_q.qsize())
@@ -63,6 +65,10 @@ def fit_worker(real, known, num_fits, job_q, result_q, **fit_kwargs):
 
     result_q.put(None) # send sentinel saying we're done
 
+def dummy_helper(real, known, fit_kwargs, iter_num):
+    random.seed()
+    np.random.seed()
+    return fit(real, known, **fit_kwargs)
 
 def get_fit_options(real, known, num_fits=3, pick=None, procs=None, **fit_kwargs):
     if procs is None:
@@ -74,10 +80,9 @@ def get_fit_options(real, known, num_fits=3, pick=None, procs=None, **fit_kwargs
     
     pool = mp.Pool(min(procs, num_fits))
     print('Getting initial fits...')
-    rs = [pool.apply_async(fit, (real, known), fit_kwargs)
-            for x in range(num_fits)]
+    init_fits = pool.map(dummy_helper,
+        zip(repeat(real), repeat(known), repeat(fit_kwargs), range(num_fits)))
     pool.close()
-    init_fits = [r.get() for r in rs]
 
     init_rmses = sorted(map(real_rmse, init_fits))
     init_rmse = init_rmses[pick]
