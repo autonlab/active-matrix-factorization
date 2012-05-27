@@ -221,6 +221,8 @@ def main():
     print('=' * 80)
     print()
 
+    import matplotlib
+    matplotlib.use('Agg')
     plot(args.dir, data, apmf_results, bayes_results, bayes_name + '.png')
 
 if __name__ == '__main__':
