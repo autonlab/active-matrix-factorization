@@ -31,7 +31,7 @@ def make_known(n, m, num_known):
     if num_known == 'diag-minus-one':
         known[0,:-1] = 1
     else:
-        unknown_indices = (known == 0).reshape(-1).nonzero()[0]
+        unknown_indices = list((known == 0).reshape(-1).nonzero()[0])
         picked = random.sample(unknown_indices, num_known)
         known.flat[picked] = 1
 
@@ -145,7 +145,7 @@ def main():
 
     parser.add_argument('--num-known', '-K', required=True)
 
-    parser.add_argument('--procs', '-p', default=None)
+    parser.add_argument('--procs', '-p', type=int, default=None)
 
     parser.add_argument('--discrete', action='store_const', dest='type',
                         const='discrete', default='continuous')
