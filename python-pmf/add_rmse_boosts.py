@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-from itertools import islice
+from itertools import islice, repeat
 import functools
 import multiprocessing as mp
 import os
