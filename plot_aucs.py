@@ -18,6 +18,63 @@ def load_results(filenames):
 
 ################################################################################
 
+def rmse(result):
+    ns, rmses, ijs, evals = zip(*result)
+    return np.asarray(ns), np.asarray(rmses)
+
+def plot_rmses(filenames):
+    import matplotlib.pyplot as plt
+    from matplotlib.font_manager import FontProperties
+
+    plt.xlabel("# of rated elements")
+    plt.ylabel("RMSE")
+
+    # cycle through colors and line styles
+    colors = 'bgrcmyk'
+    linestyles = ['-', '--', ':']
+    l_c = itertools.cycle(itertools.product(linestyles, colors))
+
+    # read in the actual results
+    results = defaultdict(list)
+    prev_ns = None
+    for f, r in zip(filenames, load_results(filenames)):
+        for k, v in r.items():
+            if not k.startswith('_'):
+                if 'results_bayes' in f:
+                    k = 'bayes_' + k
+                ns, rmses = rmse(v)
+                if prev_ns is None:
+                    prev_ns = ns
+                else:
+                    assert np.all(prev_ns == ns)
+
+                results[k].append(rmses)
+
+    nice_results = sorted((KEY_NAMES[k], v) for k, v in results.items())
+
+    # offset lines a bit so you can see when some of them overlap
+    total = len(ns)
+    offset = .15 / total
+
+    for idx, (nice_name, vals) in enumerate(nice_results):
+        nums = ns + (idx - total/2) * offset
+
+        l, c = next(l_c)
+        plt.plot(nums, np.mean(vals, axis=0),
+                 linestyle=l, color=c, label=nice_name, marker='^')
+
+    # only show integer values for x ticks
+    #xmin, xmax = plt.xlim()
+    #plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
+
+    #plt.legend(loc='best', prop=FontProperties(size=9))
+    ax = plt.gca()
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * .8, box.height])
+    plt.legend(loc='center left', bbox_to_anchor=(1, .5),
+               prop=FontProperties(size=10))
+
+
 def rmse_auc(result):
     ns, rmses, ijs, evals = zip(*result)
     ns = np.asarray(ns)
@@ -141,7 +198,8 @@ def plot_num_ge_cutoff(filenames, cutoff):
         nums = ns + (idx - total/2) * offset
 
         l, c = next(l_c)
-        plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker='^')
+        plt.plot(nums, np.mean(vals, axis=0),
+                 linestyle=l, color=c, label=nice_name, marker='^')
 
     # only show integer values for x ticks
     #xmin, xmax = plt.xlim()
@@ -157,6 +215,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('files', nargs='+')
 
+    parser.add_argument('--rmses', action='store_true', default=False)
+    parser.add_argument('--no-rmses', action='store_false', dest='rmses')
+
     parser.add_argument('--auc', action='store_true', default=True)
     parser.add_argument('--no-auc', action='store_false', dest='auc')
 
@@ -171,6 +232,10 @@ if __name__ == '__main__':
     #    matplotlib.use('Agg')
 
     import matplotlib.pyplot as plt
+
+    if args.rmses:
+        plt.figure()
+        plot_rmses(args.files)
 
     if args.auc:
         plt.figure()

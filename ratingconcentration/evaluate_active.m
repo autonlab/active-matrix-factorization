@@ -1,10 +1,20 @@
-function [all_results] = evaluate_active(X, known, selectors, steps, delta, vals)
+function [all_results] = evaluate_active(X, known, selectors, steps, delta, vals, pred_mode)
 
+if nargin < 7; pred_mode = false; end
 if nargin < 6; vals = unique(X); end
 if nargin < 5; delta = 1.5; end % TODO: delta through CV
 if nargin < 4; steps = -1; end
 if ~iscell(selectors)
     selectors = {selectors};
+end
+
+function [rmse] = get_rmse(X, E, P)
+    if pred_mode
+        [~, pred] = max(P, [], 2);
+    else
+        pred = E;
+    end
+    rmse = sqrt(sum((X(:) - pred(:)).^2) / numel(X));
 end
 
 if length(vals) == 5 && all(vals(:) == (1:5)')
@@ -38,7 +48,7 @@ for selector_i = 1 : length(selectors)
     mask = mask_init;
 
     results = cell(1, 4);
-    results(1,:) = {num_known, get_rmse(X, E), [], []};
+    results(1,:) = {num_known, get_rmse(X, E, P), [], []};
 
     stepnum = 2;
     while (steps == -1 || stepnum <= steps) && nnz(mask) > 0
@@ -60,14 +70,10 @@ for selector_i = 1 : length(selectors)
         num_known = num_known + 1;
 
         % save results
-        results(stepnum,:) = {num_known, get_rmse(X, E), [i,j], evals};
+        results(stepnum,:) = {num_known, get_rmse(X, E, P), [i,j], evals};
         stepnum = stepnum + 1;
     end
 
     all_results{selector_i} = results;
 end
-end
-
-function [rmse] = get_rmse(X, E)
-    rmse = sqrt(sum((X(:) - E(:)).^2) / numel(X));
 end

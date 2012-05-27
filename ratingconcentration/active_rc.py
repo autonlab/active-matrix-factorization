@@ -36,13 +36,13 @@ vals = double(vals);
 
 selectors = {{ {selectors} }};
 
-results = evaluate_active(X, known, selectors, steps, delta, vals);
+results = evaluate_active(X, known, selectors, steps, delta, vals, pred_mode);
 
 save {outfile} results
 '''
 
-def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab',
-            return_tempdir=False, vals=None):
+def compare(keys, data_matrix, known, steps, delta, pred_mode=False,
+            mat_cmd='matlab', return_tempdir=False, vals=None):
     # TODO: choose delta through CV
     # TODO: control parallelism
     # TODO: get sparse matrices to work
@@ -69,6 +69,7 @@ def compare(keys, data_matrix, known, steps, delta, mat_cmd='matlab',
         'steps': steps,
         'delta': delta,
         'vals': vals if vals is not None else sorted(set(data_matrix.flat)),
+        'pred_mode': pred_mode,
     }
 
     try:
@@ -135,6 +136,8 @@ def main():
             help="Choices: {}.".format(', '.join(sorted(key_names))))
 
     parser.add_argument('--delta', '-d', type=float, default=1.5)
+    parser.add_argument('--pred-mode', action='store_true', default=False)
+    parser.add_argument('--pred-mean', action='store_false', dest='pred_mode')
     parser.add_argument('--steps', '-s', type=int, default=-1)
     parser.add_argument('--data-file', '-D', required=True)
     parser.add_argument('--matlab', '-m', default='matlab')
@@ -172,6 +175,7 @@ def main():
     # get new results
     results = compare(keys=list(args.keys), data_matrix=orig['_real'],
                       known=known, steps=args.steps, delta=args.delta,
+                      pred_mode=args.pred_mode,
                       mat_cmd=args.matlab,
                       return_tempdir=not args.delete_tempdir,
                       vals=orig.get('_rating_vals'))
