@@ -104,12 +104,13 @@ def _plot_lines(results, fn, ylabel):
 
     plt.legend(loc='best', prop=FontProperties(size=9))
 
-def plot_rmses(results):
+def plot_rmses(results, keys):
     def get_rmses(nums, rmses, ijs, vals, results):
         return rmses
-    _plot_lines(results, get_rmses, "RMSE")
+    _plot_lines({k:v for k, v in results.items() if k in keys},
+                get_rmses, "RMSE")
 
-def plot_num_ge_cutoff(results, cutoff):
+def plot_num_ge_cutoff(results, cutoff, keys):
     def get_cutoffs(nums, rmses, ijs, vals, results):
         real = results['_real']
 
@@ -121,7 +122,8 @@ def plot_num_ge_cutoff(results, cutoff):
 
         return ns
 
-    _plot_lines(results, get_cutoffs, "# found > {}".format(cutoff))
+    _plot_lines({k:v for k, v in results.items() if k in keys},
+                get_cutoffs, "# found > {}".format(cutoff))
 
 
 def subplot_config(n):
@@ -352,7 +354,7 @@ def main():
     if args.rmse:
         print("Plotting RMSEs")
         fig = plt.figure()
-        plot_rmses(results)
+        plot_rmses(results, args.keys)
         save_plot('rmses.png', fig)
 
     # plot of numbers >= a cutoff
@@ -360,7 +362,7 @@ def main():
         for cutoff in args.cutoff:
             print("Plotting cutoff {}".format(cutoff))
             fig = plt.figure()
-            plot_num_ge_cutoff(results, cutoff)
+            plot_num_ge_cutoff(results, cutoff, args.keys)
             save_plot('ge-{}.png'.format(cutoff), fig)
 
     # plot of each criterion

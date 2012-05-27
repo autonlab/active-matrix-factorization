@@ -54,7 +54,7 @@ def fit_worker(real, known, num_fits, job_q, result_q, **fit_kwargs):
         new_known = known.copy()
         new_known[i, j] = True
 
-        fits = [fit(real=real, known=known, **fit_kwargs)
+        fits = [fit(real=real, known=new_known, **fit_kwargs)
                 for x in range(num_fits)]
         rmses = sorted(map(real_rmse, fits))
         result_q.put((i, j, fits, rmses), timeout=5)
