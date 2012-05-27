@@ -137,10 +137,11 @@ def add_to_datafile(path, force=False, num_fits=5, pick=None, procs=None,
     fit_args = dict(latent_d=latent_d, sig_u=sig_u, sig_v=sig_v,
             stop_thresh=stop_thresh, min_learning_rate=min_learning_rate)
 
-    init, _, _, rmses = get_fit_options(
+    init, child_fits, child_rmses, rmses = get_fit_options(
             real, known, num_fits, pick, procs, **fit_args)
 
     data['_rmse_boosts'] = init - rmses
+    data['_child_rmses'] = child_rmses
 
     with open(path + '.tmp', 'wb') as f:
         pickle.dump(data, f)
