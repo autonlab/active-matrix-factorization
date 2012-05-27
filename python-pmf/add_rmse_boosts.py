@@ -51,6 +51,8 @@ def fit_worker(real, known, num_fits, job_q, result_q, **fit_kwargs):
     real_rmse = functools.partial(rmse, real)
 
     for i, j in iter(job_q.get, None): # iterate until we see stop sentinel
+        print(job_q.qsize())
+
         new_known = known.copy()
         new_known[i, j] = True
 
@@ -70,7 +72,7 @@ def get_fit_options(real, known, num_fits=3, pick=None, procs=None, **fit_kwargs
         pick = num_fits // 2
     real_rmse = functools.partial(rmse, real)
     
-    pool = mp.Pool(procs)
+    pool = mp.Pool(min(procs, num_fits))
     print('Getting initial fits...')
     rs = [pool.apply_async(fit, (real, known), fit_kwargs)
             for x in range(num_fits)]
