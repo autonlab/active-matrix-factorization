@@ -63,7 +63,8 @@ def fit_worker(real, known, num_fits, job_q, result_q, **fit_kwargs):
 
     result_q.put(None) # send sentinel saying we're done
 
-def dummy_helper(real, known, fit_kwargs, iter_num):
+def dummy_helper(args):
+    real, known, fit_kwargs, iter_num = args
     random.seed()
     np.random.seed()
     return fit(real, known, **fit_kwargs)
