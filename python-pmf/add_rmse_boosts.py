@@ -64,17 +64,23 @@ def fit_worker(real, known, num_fits, job_q, result_q, **fit_kwargs):
 
 def get_fit_options(real, known, num_fits=3, pick=None, procs=None, **fit_kwargs):
     if procs is None:
-        procs = multiprocessing.cpu_count()
+        procs = mp.cpu_count()
     if pick is None:
         assert num_fits % 2 == 1
         pick = num_fits // 2
     real_rmse = functools.partial(rmse, real)
     
-    init_fits = [fit(real=real, known=known, **fit_kwargs)
-                 for x in range(num_fits)]
+    pool = mp.Pool(procs)
+    print('Getting initial fits...')
+    rs = [pool.apply_async(fit, (real, known), fit_kwargs)
+            for x in range(num_fits)]
+    pool.close()
+    init_fits = [r.get() for r in rs]
+
     init_rmses = sorted(map(real_rmse, init_fits))
     init_rmse = init_rmses[pick]
-    print('Initial fits: ' + ', '.join("{:<5.4}".format(r) for r in init_rmses))
+    print('Initial RMSEs: ' + ', '.join("{:<5.4}".format(r) for r in init_rmses))
+    pool.join()
     
     child_fits = {}
     child_rmses = {}
