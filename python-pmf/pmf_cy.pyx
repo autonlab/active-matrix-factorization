@@ -133,7 +133,7 @@ cdef class ProbabilisticMatrixFactorization:
 
         rating_vals = getattr(self, 'rating_values', None)
         if rating_vals is not None:
-            if not set(rating_values).issuperset(extra[:,2]):
+            if not set(rating_vals).issuperset(extra[:,2]):
                 raise ValueError("got ratings with bad values")
 
         new_items = set((int(i), int(j)) for i, j in extra[:,:2])
