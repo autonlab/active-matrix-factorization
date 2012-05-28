@@ -103,9 +103,11 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=1,
                  rating_values=None,
                  discrete_expectations=False,
-                 refit_lookahead=False):
+                 refit_lookahead=False,
+                 knowable=None):
         # the actual PMF model
-        super(ActivePMF, self).__init__(rating_tuples, latent_d)
+        super(ActivePMF, self).__init__(rating_tuples,
+                latent_d=latent_d, subtract_mean=False, knowable=knowable)
 
         # make sure that the ratings matrix is in floats
         # because the cython code currently only handles floats
@@ -1025,7 +1027,7 @@ def get_ratings(real, mask_type=0):
 
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
             steps=None, discrete_exp=False, refit_lookahead=False,
-            fit_sigmas=False, real_ratings_vals=None, apmf=None,
+            fit_sigmas=False, real_ratings_vals=None, apmf=None, knowable=None,
             sig_u_mean=0, sig_u_var=-1, sig_v_mean=0, sig_v_var=-1, **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
@@ -1044,7 +1046,8 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         apmf = ActivePMF(ratings, latent_d=latent_d,
                 rating_values=rating_vals,
                 discrete_expectations=discrete_exp,
-                refit_lookahead=refit_lookahead)
+                refit_lookahead=refit_lookahead,
+                knowable=knowable)
         apmf.sig_u_mean = sig_u_mean
         apmf.sig_u_var = sig_u_var
         apmf.sig_v_mean = sig_v_mean
@@ -1204,6 +1207,7 @@ def main():
     # load previous data, if we're doing that
     real_ratings_vals = None
     apmf = None
+    knowable = None
     if args.load_data:
         with open(args.load_data, 'rb') as f:
             data = np.load(f)
@@ -1220,6 +1224,11 @@ def main():
             )
             if args.load_model:
                 apmf = data['_initial_apmf']
+
+        knowable = np.isfinite(real)
+        knowable[real == 0] = 0
+        knowable = zip(*knowable.nonzero())
+
 
     # get results
     try:

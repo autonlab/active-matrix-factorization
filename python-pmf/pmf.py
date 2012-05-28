@@ -17,7 +17,8 @@ def rmse(exp, obs):
     return np.sqrt(((obs - exp) ** 2).sum() / exp.size)
 
 class ProbabilisticMatrixFactorization(object):
-    def __init__(self, rating_tuples, latent_d=1, subtract_mean=False):
+    def __init__(self, rating_tuples, latent_d=1, subtract_mean=False,
+                 knowable=None):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
 
@@ -43,8 +44,9 @@ class ProbabilisticMatrixFactorization(object):
         self.num_items = m = int(np.max(self.ratings[:, 1]) + 1)
 
         self.rated = set((i, j) for i, j, rating in self.ratings)
-        self.unrated = set(itertools.product(range(n), range(m)))\
-                .difference(self.rated)
+        if knowable is None:
+            knowable = itertools.product(range(n), range(m))
+        self.unrated = set(knowable).difference(self.rated)
 
         self.users = np.random.random((n, self.latent_d))
         self.items = np.random.random((m, self.latent_d))
@@ -70,7 +72,7 @@ class ProbabilisticMatrixFactorization(object):
 
         new_items = set((int(i), int(j)) for i, j in extra[:,:2])
 
-        if not new_items.issubset(self.unrated):
+        if not new_items.isdisjoint(self.rated):
             raise ValueError("can't rate already rated items")
         self.rated.update(new_items)
         self.unrated.difference_update(new_items)

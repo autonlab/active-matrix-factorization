@@ -45,7 +45,8 @@ cdef class ProbabilisticMatrixFactorization:
         self.sig_u_var = self.sig_v_var = -1
 
     def __init__(self, np.ndarray rating_tuples not None,
-                 int latent_d=1, bint subtract_mean=False):
+                 int latent_d=1, bint subtract_mean=False,
+                 object knowable=None):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
 
@@ -59,8 +60,9 @@ cdef class ProbabilisticMatrixFactorization:
         self.num_items = m = int(np.max(self.ratings[:, 1]) + 1)
 
         self.rated = set(map(tuple, self.ratings[:,:2]))
-        self.unrated = set(itertools.product(range(n), range(m)))\
-                .difference(self.rated)
+        if knowable is None:
+            knowable = itertools.product(range(n), range(m))
+        self.unrated = set(knowable).difference(self.rated)
 
         self.users = np.random.random((n, self.latent_d))
         self.items = np.random.random((m, self.latent_d))
@@ -131,7 +133,7 @@ cdef class ProbabilisticMatrixFactorization:
 
         new_items = set((int(i), int(j)) for i, j in extra[:,:2])
 
-        if not new_items.issubset(self.unrated):
+        if not new_items.isdisjoint(self.rated):
             raise ValueError("can't rate already rated items")
         self.rated.update(new_items)
         self.unrated.difference_update(new_items)

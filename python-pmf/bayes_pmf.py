@@ -69,10 +69,12 @@ def iter_mean(iterable):
 class BayesianPMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=5,
                  subtract_mean=True,
-                 rating_values=None, discrete_expectations=True):
+                 rating_values=None, discrete_expectations=True,
+                 knowable=None):
 
         super(BayesianPMF, self).__init__(
-                rating_tuples, latent_d=latent_d, subtract_mean=subtract_mean)
+                rating_tuples, latent_d=latent_d,
+                subtract_mean=subtract_mean, knowable=knowable)
 
         if rating_values is not None:
             rating_values = set(map(float, rating_values))
@@ -742,10 +744,15 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                    fit_type='batch', num_samps=128,
                    **kwargs):
     # do initial fit
+    knowable = np.isfinite(real)
+    knowable[real == 0] = 0
+    knowable = zip(*knowable.nonzero())
+
     bpmf_init = BayesianPMF(ratings, latent_d,
             subtract_mean=subtract_mean,
             rating_values=rating_vals,
-            discrete_expectations=discrete)
+            discrete_expectations=discrete,
+            knowable=knowable)
     print("Doing initial MAP fit...")
     bpmf_init.fit()
 
