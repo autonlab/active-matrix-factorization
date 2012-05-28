@@ -70,6 +70,11 @@ class ProbabilisticMatrixFactorization(object):
         assert np.max(extra[:,0] + 1) <= self.num_users
         assert np.max(extra[:,1] + 1) <= self.num_items
 
+        rating_values = getattr(self, 'rating_values', None)
+        if rating_values is not None:
+            if not set(rating_values).issuperset(extra[:,2]):
+                raise ValueError("got ratings with bad values")
+
         new_items = set((int(i), int(j)) for i, j in extra[:,:2])
 
         if not new_items.isdisjoint(self.rated):
