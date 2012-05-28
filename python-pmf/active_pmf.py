@@ -183,11 +183,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             self._rating_values = None
             self._rating_bounds = None
 
-    def add_ratings(self, extra):
-        if self.rating_values is not None:
-            assert set(self.rating_values).issuperset(extra[:,2])
-        super().add_ratings(extra)
-
 
     ############################################################################
     ### Gradient descent to find the normal approximation

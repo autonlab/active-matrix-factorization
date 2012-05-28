@@ -124,12 +124,17 @@ cdef class ProbabilisticMatrixFactorization:
         cdef int rows = self.ratings.shape[0]
         cdef int cols = self.ratings.shape[1]
 
-        extra = np.array(extra, copy=False, ndmin=2)
+        extra = np.asarray(extra, ndmin=2)
         if len(extra.shape) != 2 or extra.shape[1] != cols:
             raise TypeError("bad shape for extra")
 
         assert np.max(extra[:,0] + 1) <= self.num_users
         assert np.max(extra[:,1] + 1) <= self.num_items
+
+        rating_vals = getattr(self, 'rating_values', None)
+        if rating_vals is not None:
+            if not set(rating_values).issuperset(extra[:,2]):
+                raise ValueError("got ratings with bad values")
 
         new_items = set((int(i), int(j)) for i, j in extra[:,:2])
 
