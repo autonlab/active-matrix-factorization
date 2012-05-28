@@ -22,11 +22,16 @@ from bayes_pmf import BayesianPMF
 sys.path.append(os.path.join(_dirname, 'ratingconcentration'))
 import active_rc
 
+sys.path.append(os.path.join(_dirname, 'mmmf'))
+import active_mmmf
+
 KEY_NAMES = { k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items() }
-KEY_NAMES.update({'rc_'+k: 'RC: '+f.nice_name
+KEY_NAMES.update({'rc_'+k: 'RC: ' + f.nice_name
                   for k, f in active_rc.KEY_FUNCS.items()})
-KEY_NAMES.update({'bayes_'+k: 'Bayes: ' + v[0]
-                  for k, v in bayes_pmf.KEYS.items()})
+KEY_NAMES.update({'mmmf_'+k: 'MMMF: ' + f.nice_name
+                  for k, f in active_mmmf.KEY_FUNCS.items()})
+KEY_NAMES.update({'bayes_'+k: 'Bayes: ' + f.nice_name
+                  for k, f in bayes_pmf.KEYS.items()})
 
 
 ################################################################################
@@ -164,8 +169,10 @@ def plot_criteria_over_time(name, result, cmap=None):
     xticks = np.linspace(-.5, n_items - .5, n_items + 1)
     yticks = np.linspace(-.5, n_users - .5, n_users + 1)
 
-    vmin = min(vals[np.isfinite(vals)].min() for vals in valses)
-    vmax = max(vals[np.isfinite(vals)].max() for vals in valses)
+
+    finite_vals = [vals[np.isfinite(vals)] for vals in valses]
+    vmin = min(f_vals.min() for f_vals in finite_vals if f_vals.size)
+    vmax = max(f_vals.max() for f_vals in finite_vals if f_vals.size)
     norm = plt.Normalize(vmin, vmax)
     # TODO: dynamically adjust color range to be more distinguishable?
 
