@@ -144,9 +144,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
 
 
-    rating_values = property(lambda self: self._rating_values)
-    rating_bounds = property(lambda self: self._rating_bounds)
-
     def __copy__(self):
         # need to copy fields from super
         res = ActivePMF(self.ratings, self.latent_d, self.rating_values,
@@ -160,6 +157,15 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                 self.discrete_expectations)
         res.__setstate__(deepcopy(self.__getstate__(), memodict))
         return res
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        #state.update(self.__dict__)
+        state['__dict__'] = self.__dict__
+        return state
+
+    rating_values = property(lambda self: self._rating_values)
+    rating_bounds = property(lambda self: self._rating_bounds)
 
     @rating_values.setter
     def rating_values(self, vals):
@@ -177,11 +183,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             self._rating_values = None
             self._rating_bounds = None
 
-    def __getstate__(self):
-        state = super().__getstate__()
-        #state.update(self.__dict__)
-        state['__dict__'] = self.__dict__
-        return state
+    def add_ratings(self, extra):
+        if self.rating_values is not None:
+            assert set(self.rating_values).issuperset(extra[:,2])
+        super().add_ratings(extra)
 
 
     ############################################################################

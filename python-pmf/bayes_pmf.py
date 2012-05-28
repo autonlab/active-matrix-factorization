@@ -145,6 +145,10 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
             _set_rating_values)
     rating_bounds = property(lambda self: self._rating_bounds)
 
+    def add_ratings(self, extra):
+        if self.rating_values is not None:
+            assert set(self.rating_values).issuperset(extra[:,2])
+        super().add_ratings(extra)
 
 
     def sample_hyperparam(self, feats, do_users):
