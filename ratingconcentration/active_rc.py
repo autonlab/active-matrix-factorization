@@ -28,6 +28,7 @@ KEY_FUNCS = {
 
 
 _M_TEMPLATE = '''
+dbstop if error
 load {infile}
 
 X = double(X); % NOTE: true values can't have 0s!

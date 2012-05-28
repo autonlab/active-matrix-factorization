@@ -8,7 +8,7 @@ if ~iscell(selectors)
     selectors = {selectors};
 end
 
-function [rmse] = get_rmse(X, E, P)
+function [rmse] = get_rmse(E, P)
     if pred_mode
         [~, pred] = max(P, [], 2);
     else
@@ -33,12 +33,12 @@ mask_init = sparse(known == 0); % TODO: query on less than the full matrix
 [known_i, known_j] = find(known);
 num_known_init = nnz(known);
 
-Xtr = sparse(known_i, known_j, X(known ~= 0));
+Xtr_init = sparse(known_i, known_j, X(known ~= 0));
 
 % initial fit
-[E, P, vals, lagrange] = ...
-    ratingconcentration(Xtr, mask_init, featureFunc, delta, [], vals);
-P = bsxfun(@rdivide, P, sum(P, 2)); % normalize prediction dists
+[E_init, P_init, vals, lagrange_init] = ...
+    ratingconcentration(Xtr_init, mask_init, featureFunc, delta, [], vals);
+P_init = bsxfun(@rdivide, P_init, sum(P_init, 2)); % normalize prediction dists
 
 all_results = cell(1, length(selectors));
 
@@ -46,9 +46,13 @@ for selector_i = 1 : length(selectors)
     selector = selectors{selector_i};
     num_known = num_known_init;
     mask = mask_init;
+    Xtr = Xtr_init;
+    lagrange = lagrange_init;
+    E = E_init;
+    P = P_init;
 
     results = cell(1, 4);
-    results(1,:) = {num_known, get_rmse(X, E, P), [], []};
+    results(1,:) = {num_known, get_rmse(E, P), [], []};
 
     stepnum = 2;
     while (steps == -1 || stepnum <= steps) && nnz(mask) > 0
@@ -64,13 +68,13 @@ for selector_i = 1 : length(selectors)
         % learn the value of that query item
         Xtr(i, j) = X(i, j); %#ok<SPRIX>
         mask(i, j) = 0; %#ok<SPRIX>
-        [E, P, vals, lagrange] = ...
-            ratingconcentration(Xtr, mask, @sets_square5, delta, [], vals);
+        [E, P, ~, lagrange] = ...
+           ratingconcentration(Xtr, mask, @sets_square5, delta, lagrange, vals);
         P = bsxfun(@rdivide, P, sum(P, 2));
         num_known = num_known + 1;
 
         % save results
-        results(stepnum,:) = {num_known, get_rmse(X, E, P), [i,j], evals};
+        results(stepnum,:) = {num_known, get_rmse(E, P), [i,j], evals};
         stepnum = stepnum + 1;
     end
 
