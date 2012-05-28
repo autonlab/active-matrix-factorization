@@ -13,6 +13,7 @@ from copy import deepcopy
 from itertools import islice, repeat
 import math
 import multiprocessing
+import random
 from threading import Thread
 import warnings
 
@@ -553,8 +554,8 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         shape = np.empty((self.num_users, self.num_items))[which].shape
         return np.random.rand(*shape)
 
-    def bayes_rmse(self, samples_iter, true_r):
-        return rmse(self.predict(samples_iter), true_r)
+    def bayes_rmse(self, samples_iter, true_r, which=Ellipsis):
+        return rmse(self.predict(samples_iter, which), true_r[which])
 
 
 # stupid functions to work around multiprocessing.Pool/pickle silliness
@@ -690,14 +691,16 @@ def fetch_samples(bpmf, num, *args, **kwargs):
 def full_test(bpmf, samples, real, key_name,
               fit_type='batch', num_samps=128,
               lookahead_fit='batch', lookahead_samps=128,
-              pool=None, multieval=False):
+              pool=None, multieval=False, init_rmse=None, test_on=Ellipsis):
 
     key = KEYS[key_name]
     total = real.size
     picker_fn = getattr(bpmf, key.key_fn)
     chooser = np.argmax if key.choose_max else np.argmin
 
-    yield (len(bpmf.rated), bpmf.bayes_rmse(samples, real), None, None)
+    if init_rmse is None:
+        init_rmse = bpmf.bayes_rmse(samples, real, which=test_on)
+    yield (len(bpmf.rated), init_rmse, None, None)
 
     while bpmf.unrated:
         print("{:<40} Picking query point {}...".format(
@@ -730,7 +733,7 @@ def full_test(bpmf, samples, real, key_name,
         else:
             samples, pred = fetch_samples(*samp_args, **samp_kwargs)
 
-        err = rmse(pred, real)
+        err = rmse(pred[test_on], real[test_on])
         print("{:<40} RMSE {}: {:.5}".format(
             key.nice_name, len(bpmf.rated), err))
         yield len(bpmf.rated), err, (i,j), vals
@@ -741,17 +744,50 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                    discrete=True, subtract_mean=True, num_steps=None,
                    procs=None, threaded=False,
                    fit_type='batch', num_samps=128,
+                   test_set='all',
                    **kwargs):
-    # do initial fit
+    # figure out which points we know the answers to
     knowable = np.isfinite(real)
     knowable[real == 0] = 0
-    knowable = zip(*knowable.nonzero())
 
+    # ... and which points we can query
+    pickable = knowable.copy()
+    pickable[ratings[:,0].astype(int), ratings[:,1].astype(int)] = 0
+
+    # figure out test set
+    try:
+        test_set = float(test_set)
+    except ValueError:
+        if test_set != 'all':
+            warnings.warn("dunno what to do with test_set {}".format(test_set))
+            test_set = 'all'
+
+    if test_set == 'all':
+        test_on = knowable
+        query_on = pickable
+    else:
+        if test_set % 1 == 0 and test_set != 1:
+            avail_pts = list(zip(*pickable.nonzero()))
+            picked_indices = random.sample(avail_pts, int(test_set))
+            picker = np.zeros(pickable.shape, bool)
+            picker[tuple(np.transpose(picked_indices))] = 1
+        else:
+            picker = np.random.binomial(1, test_set, size=pickable.shape)
+        test_on = picker * pickable
+        query_on = (1 - picker) * pickable
+
+    query_set = set(zip(*query_on.nonzero()))
+
+    print("{} points known, {} to query, testing on {}, {} knowable, {} total"
+            .format(ratings.shape[0], query_on.sum(), test_on.sum(),
+                    knowable.sum(), real.size))
+
+    # do initial fit
     bpmf_init = BayesianPMF(ratings, latent_d,
             subtract_mean=subtract_mean,
             rating_values=rating_vals,
             discrete_expectations=discrete,
-            knowable=knowable)
+            knowable=query_set)
     print("Doing initial MAP fit...")
     bpmf_init.fit()
 
@@ -760,7 +796,8 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     print("Getting initial MCMC samples...")
     samples = list(islice(bpmf_init.samples(fit_first=fit_type), num_samps))
 
-    print("Initial RMSE: {}".format(bpmf_init.bayes_rmse(samples, real)))
+    init_rmse = bpmf_init.bayes_rmse(samples, real, test_on)
+    print("Initial RMSE: {}".format(init_rmse))
     print()
 
     results = {
@@ -776,6 +813,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                 deepcopy(bpmf_init), samples, real, key_name,
                 pool=pool, multieval=threaded,
                 fit_type=fit_type, num_samps=num_samps,
+                init_rmse=init_rmse, test_on=test_on,
                 **kwargs)
         results[key_name] = list(islice(res, num_steps))
 
@@ -827,6 +865,8 @@ def main():
     parser.add_argument('--unthreaded', action='store_false', dest='threaded')
     parser.add_argument('--procs', '-P', type=int, default=None)
 
+    parser.add_argument('--test-set', default='all')
+
     parser.add_argument('--load-data', required='True', metavar='FILE')
     parser.add_argument('--save-results', nargs='?', default=True, const=True,
             metavar='FILE')
@@ -876,7 +916,7 @@ def main():
                 key_names=args.keys,
                 latent_d=args.latent_d,
                 real=real, ratings=ratings, rating_vals=rating_vals,
-                num_steps=args.steps,
+                test_set=args.test_set, num_steps=args.steps,
                 discrete=args.discrete, subtract_mean=args.subtract_mean,
                 fit_type=args.fit, lookahead_fit=args.lookahead_fit,
                 num_samps=args.samps, lookahead_samps=args.lookahead_samps,

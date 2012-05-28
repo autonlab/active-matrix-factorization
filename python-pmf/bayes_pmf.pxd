@@ -91,7 +91,8 @@ cdef class BayesianPMF(ProbabilisticMatrixFactorization):
     cpdef np.ndarray random(self, object samples_iter, object which=*)
 
     @cython.locals(pred=np.ndarray)
-    cpdef float bayes_rmse(self, object samples_iter, np.ndarray true_r)
+    cpdef float bayes_rmse(self, object samples_iter,
+                           np.ndarray true_r, object which=*)
 
 
 #cpdef float _integrate_lookahead(object fn, BayesianPMF bpmf, int i, int j,
