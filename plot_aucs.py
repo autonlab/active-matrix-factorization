@@ -54,7 +54,7 @@ def plot_rmses(filenames):
 
     # offset lines a bit so you can see when some of them overlap
     total = len(ns)
-    offset = .15 / total
+    offset = .15 / total if total > 3 else .02
 
     for idx, (nice_name, vals) in enumerate(nice_results):
         nums = ns + (idx - total/2) * offset
@@ -88,7 +88,7 @@ def get_aucs(filenames):
     for f, r in zip(filenames, load_results(filenames)):
         for k, v in r.items():
             if not k.startswith('_'):
-                if 'results_bayes.pkl' in f:
+                if 'results_bayes' in f:
                     k = 'bayes_' + k
                 results[k].append(rmse_auc(v))
 
