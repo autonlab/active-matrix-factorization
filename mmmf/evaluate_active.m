@@ -49,7 +49,7 @@ for selector_i = 1 : length(selectors)
     can_query = queryable;
 
     results = cell(1, 4);
-    results(1,:) = {num_known, get_rmse(x), [], []};
+    results(1,:) = {num_known, get_rmse(sign(x)), [], []};
 
     stepnum = 2;
     while (steps == -1 || stepnum <= steps) && nnz(can_query) > 0

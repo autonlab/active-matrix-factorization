@@ -56,6 +56,7 @@ def compare(keys, data_matrix, known, queryable=None, steps=-1, C=1,
         new_data_matrix = np.zeros_like(data_matrix)
         orig_known = np.isfinite(data_matrix) * (data_matrix != 0)
         new_data_matrix[orig_known] = (data_matrix[orig_known] > cutoff) * 2 - 1
+        data_matrix = new_data_matrix
 
     # make temporary dir
     tempdir = mkdtemp()
