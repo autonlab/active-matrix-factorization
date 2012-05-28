@@ -124,7 +124,7 @@ cdef class ProbabilisticMatrixFactorization:
         cdef int rows = self.ratings.shape[0]
         cdef int cols = self.ratings.shape[1]
 
-        extra = np.asarray(extra, ndmin=2)
+        extra = np.array(extra, copy=False, ndmin=2)
         if len(extra.shape) != 2 or extra.shape[1] != cols:
             raise TypeError("bad shape for extra")
 
