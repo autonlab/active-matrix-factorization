@@ -28,7 +28,7 @@ for j in np.logical_not(known.sum(axis=0)).nonzero()[0]:
     knowable[i, j] = 0
 
 for i in np.logical_not(known.sum(axis=1)).nonzero()[0]:
-    j = random.choice(list(knowable[:,i].nonzero()[0]))
+    j = random.choice(list(knowable[i,:].nonzero()[0]))
     known[i, j] = 1
     knowable[i, j] = 0
 
