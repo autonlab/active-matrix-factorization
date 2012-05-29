@@ -97,15 +97,14 @@ def get_aucs(filenames):
 def plot_aucs(filenames):
     import matplotlib.pyplot as plt
 
-    names, aucs = zip(*sorted(
-        (KEY_NAMES[k], v) for k, v in get_aucs(filenames).items()))
-    aucs = np.array(aucs)
+    names, aucs = list(zip(*sorted(
+        (KEY_NAMES[k], v) for k, v in get_aucs(filenames).items())))
 
-    if aucs.shape[1] == 1:
+    if all(a.size == 1 for a in aucs):
         plt.plot(aucs, linestyle='None', marker='o')
         indices = np.arange(len(names))
     else:
-        plt.boxplot(aucs.T)
+        plt.boxplot(aucs)
         indices = np.arange(len(names)) + 1
     plt.xticks(indices, names, rotation=90)
     plt.xlim(indices[0] - .5, indices[-1] + .5)
