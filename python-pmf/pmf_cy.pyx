@@ -298,8 +298,6 @@ cdef class ProbabilisticMatrixFactorization:
         kind, *args = self.fit_type
         if kind == 'batch':
             self.fit(*args)
-        elif kind == 'mini':
-            self.fit_minibatches(*args)
         elif kind == 'mini-valid':
             self.fit_minibatches_until_validation(*args)
         else:
