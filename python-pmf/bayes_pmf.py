@@ -11,14 +11,13 @@ from __future__ import print_function # silly cython
 from collections import defaultdict, namedtuple
 from copy import deepcopy
 from itertools import islice, repeat
-import math
 import multiprocessing
 import random
 from threading import Thread
 import warnings
 
 import numpy as np
-from scipy import stats
+from scipy import stats, integrate
 
 # TODO: make this actually work....
 #if not cython.compiled:
@@ -70,7 +69,9 @@ def iter_mean(iterable):
 class BayesianPMF(ProbabilisticMatrixFactorization):
     def __init__(self, rating_tuples, latent_d=5,
                  subtract_mean=True,
-                 rating_values=None, discrete_expectations=True,
+                 rating_values=None,
+                 discrete_expectations=True,
+                 num_integration_pts=50,
                  knowable=None):
 
         super(BayesianPMF, self).__init__(
@@ -83,6 +84,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                 raise ValueError("got ratings not in rating_values")
         self.rating_values = rating_values
         self.discrete_expectations = discrete_expectations
+        self.num_integration_pts = num_integration_pts
 
         self.beta = 2 # observation noise precision
 
@@ -598,15 +600,22 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps)
         s = "summed"
     else:
         mean, var = params
-        std = math.sqrt(var)
+        dist = stats.norm(loc=mean, scale=np.sqrt(var))
 
-        # only take the expectation out to 2 sigma (>95% of normal mass)
-        left = mean - 2 * std
-        right = mean + 2 * std
+        # find points to evaluate at
+        # TODO: do fewer evaluations if the distribution is really narrow
+        pts = dist.ppf(np.linspace(.001, .999, bpmf.num_integration_pts))
+        evals = np.fromiter(map(calculate_fn, pts), float, pts.size)
+        est = integrate.trapz(evals * dist.pdf(pts), pts)
+        s = "from {:5.1f} to {:5.1f} in {}".format(pts[0], pts[-1], pts.size)
 
-        est = stats.norm.expect(calculate_fn, loc=mean, scale=std,
-                lb=left, ub=right, epsrel=.05) # XXX integration eps
-        s = "from {:5.1f} to {:5.1f}".format(left, right)
+        # # only take the expectation out to 2 sigma (>95% of normal mass)
+        # left = mean - 2 * std
+        # right = mean + 2 * std
+
+        # est = stats.norm.expect(calculate_fn, loc=mean, scale=np.sqrt(var),
+        #         lb=left, ub=right, epsrel=.05) # XXX integration eps
+        # s = "from {:5.1f} to {:5.1f}".format(left, right)
 
     name = getattr(fn, '__name__', '')
     print("\t{:>20}({},{}) {}: {: 10.2f}".format(name, i, j, s, est))
