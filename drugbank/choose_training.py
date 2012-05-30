@@ -21,8 +21,11 @@ if len(sys.argv) > 2:
 else:
     num_to_pick = int(np.round(real.size * .05))
 
+# assume all non-entries are negatives
+assert set(real.flat) == {0, 1}
+real[real == 0] = -1
 
-knowable = real > 0
+knowable = real != 0
 known = np.zeros(real.shape, bool)
 
 # choose at least one rating from every row and column
@@ -45,6 +48,7 @@ known.flat[picked] = 1
 # make the ratings matrix, rating_vals
 ratings = get_criteria.make_ratings(real, known)
 rating_vals = tuple(sorted(set(real.flat) - {0, np.nan}))
+
 
 dct = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
 
