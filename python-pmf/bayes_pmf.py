@@ -663,6 +663,7 @@ KEYS = {
     'pred': Key("Pred", 'predict', True, False, ()),
     'prob-ge-3.5': Key("Prob >= 3.5", 'prob_ge_cutoff', True, False, (3.5,)),
     'prob-ge-.5': Key("Prob >= .5", 'prob_ge_cutoff', True, False, (.5,)),
+    'prob-ge-0': Key("Prob >= 0", 'prob_ge_cutoff', True, False, (0,)),
 }
 
 def fetch_samples(bpmf, num, *args, **kwargs):
