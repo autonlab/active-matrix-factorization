@@ -122,15 +122,17 @@ def plot(dirname, data, apmf_results, bayes_results, bayes_name='bayes.png'):
     plot_results.plot_real(data['_real'], data['_ratings'])
     save_plot('real.png')
 
-    plot_results.plot_criteria_firsts(sorted(
-        filter(lambda kv: not kv[0].startswith('_'), apmf_results.items()),
-        key=lambda item: plot_results.KEY_NAMES[item[0]]))
-    save_plot('apmf.png')
+    if apmf_results:
+        plot_results.plot_criteria_firsts(sorted(
+            filter(lambda kv: not kv[0].startswith('_'), apmf_results.items()),
+            key=lambda item: plot_results.KEY_NAMES[item[0]]))
+        save_plot('apmf.png')
 
-    plot_results.plot_criteria_firsts(sorted(
-        (('bayes_'+k,v) for k,v in bayes_results.items() if not k.startswith('_')),
-        key=lambda item: plot_results.KEY_NAMES[item[0]]))
-    save_plot(bayes_name)
+    if bayes_results:
+        plot_results.plot_criteria_firsts(sorted(
+            (('bayes_'+k,v) for k,v in bayes_results.items() if not k.startswith('_')),
+            key=lambda item: plot_results.KEY_NAMES[item[0]]))
+        save_plot(bayes_name)
 
 ################################################################################
 
@@ -163,6 +165,13 @@ def main():
     parser.add_argument('--no-refit-lookahead', action='store_false',
                         dest='refit_lookahead')
 
+    parser.add_argument('--no-apmf', action='store_false', default=True,
+                        dest='do_apmf')
+    parser.add_argument('--no-bayes', action='store_false', default=True,
+                        dest='do_bayes')
+    parser.add_argument('--no-plot', action='store_false', default=True,
+                        dest='do_plot')
+
     parser.add_argument('dir')
     args = parser.parse_args()
 
@@ -189,41 +198,48 @@ def main():
                 args.rows, args.cols, args.rank, args.num_known, args.type,
                 u_mean=args.u_mean, v_mean=args.v_mean, noise=args.noise)
 
-    print()
-    print('=' * 80)
-    print()
+    if args.do_apmf:
+        print()
+        print('=' * 80)
+        print()
 
-    apmf_path = os.path.join(args.dir, 'apmf.pkl')
-    if os.path.exists(apmf_path):
-        print("APMF results already exist: {}".format(apmf_path))
-        with open(apmf_path, 'rb') as f:
-            apmf_results = pickle.load(f)
+        apmf_path = os.path.join(args.dir, 'apmf.pkl')
+        if os.path.exists(apmf_path):
+            print("APMF results already exist: {}".format(apmf_path))
+            with open(apmf_path, 'rb') as f:
+                apmf_results = pickle.load(f)
+        else:
+            apmf_results = get_apmf_criteria(data, apmf_path, args.latent_d,
+                    args.procs, args.refit_lookahead)
     else:
-        apmf_results = get_apmf_criteria(data, apmf_path, args.latent_d,
-                args.procs, args.refit_lookahead)
+        apmf_results = {}
 
-    print()
-    print('=' * 80)
-    print()
+    if args.do_bayes:
+        print()
+        print('=' * 80)
+        print()
 
-    bayes_name = 'bayes_{}_{}'.format(args.samps, args.lookahead_samps)
-    bayes_path = os.path.join(args.dir, bayes_name + '.pkl')
-    if os.path.exists(bayes_path):
-        print("Bayes results already exist: {}".format(bayes_path))
-        with open(bayes_path, 'rb') as f:
-            bayes_results = pickle.load(f)
+        bayes_name = 'bayes_{}_{}'.format(args.samps, args.lookahead_samps)
+        bayes_path = os.path.join(args.dir, bayes_name + '.pkl')
+        if os.path.exists(bayes_path):
+            print("Bayes results already exist: {}".format(bayes_path))
+            with open(bayes_path, 'rb') as f:
+                bayes_results = pickle.load(f)
+        else:
+            bayes_results = get_bayes_criteria(data, bayes_path,
+                    args.latent_d, args.procs,
+                    samps=args.samps, lookahead_samps=args.lookahead_samps)
     else:
-        bayes_results = get_bayes_criteria(data, bayes_path,
-                args.latent_d, args.procs,
-                samps=args.samps, lookahead_samps=args.lookahead_samps)
+        bayes_results = {}
 
-    print()
-    print('=' * 80)
-    print()
+    if args.do_plot:
+        print()
+        print('=' * 80)
+        print()
 
-    import matplotlib
-    matplotlib.use('Agg')
-    plot(args.dir, data, apmf_results, bayes_results, bayes_name + '.png')
+        import matplotlib
+        matplotlib.use('Agg')
+        plot(args.dir, data, apmf_results, bayes_results, bayes_name + '.png')
 
 if __name__ == '__main__':
     main()
