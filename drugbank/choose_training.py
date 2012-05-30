@@ -23,16 +23,29 @@ assert set(real.flat) == {-1, 1}
 
 known = np.zeros(real.shape, bool)
 
-# choose the passed number of positives
-positives = (real == 1).reshape(-1)
-pos_indices = list(positives.nonzero()[0])
-pos_picked = random.sample(pos_indices, num_pos)
+# choose one positive per row
+positives = (real == 1)
+for row in range(real.shape[0]):
+    known[row, random.choice(positives[row].nonzero()[0])] = 1
+
+# choose the passed number of extra positives
+pos_indices = list((positives - known).nonzero()[0])
+pos_picked = random.sample(pos_indices, num_pos - real.shape[0])
 known.flat[pos_picked] = 1
 
-# choose the passed number of negatives
-known[-1,-1] = 1
+# make sure each column has at least one known
+negatives = np.logical_not(positives)
+zero_cols = known.sum(axis=0) == 0
+for col in zero_cols.nonzero()[0]:
+    known[random.choice(negatives[:,col].nonzero()[0]), col] = 1
+    num_neg -= 1
+
+assert np.all(known.sum(axis=0) > 0)
+assert np.all(known.sum(axis=1) > 0)
+
+# choose the passed number of extra negatives
 neg_indices = list(np.logical_not(positives).nonzero()[0])
-neg_picked = random.sample(neg_indices, num_neg-1)
+neg_picked = random.sample(neg_indices, num_neg)
 known.flat[neg_picked] = 1
 
 
