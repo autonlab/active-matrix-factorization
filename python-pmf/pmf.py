@@ -18,13 +18,14 @@ def rmse(exp, obs):
 
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1, subtract_mean=False,
-                 knowable=None):
+                 knowable=None, fit_type=('batch',)):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
 
         self.learning_rate = 1e-4
         self.min_learning_rate = 1e-10
         self.stop_thresh = 1e-2
+        self.fit_type = fit_type
 
         self.sigma_sq = 1
         self.sigma_u_sq = 10
@@ -211,6 +212,17 @@ class ProbabilisticMatrixFactorization(object):
         for ll in self.fit_lls():
             pass
 
+    def do_fit(self):
+        kind, *args = self.fit_type
+        if kind == 'batch':
+            self.fit(*args)
+        elif kind == 'mini':
+            self.fit_minibatches(*args)
+        elif kind == 'mini-valid':
+            self.fit_minibatches_until_validation(*args)
+        else:
+            raise ValueError("unknown fit type '{}'".format(kind))
+
 
     def fit_minibatches(self, batch_size, lr=1, momentum=.8, ratings=None):
         # NOTE: this randomly shuffles ratings / self.ratings
@@ -328,6 +340,19 @@ class ProbabilisticMatrixFactorization(object):
         self.users.dump(prefix + "%sd_users.pickle" % self.latent_d)
         self.items.dump(prefix + "%sd_items.pickle" % self.latent_d)
 
+def parse_fit_type(string):
+    parts = string.split(',')
+    res = []
+    for x in parts:
+        for fn in (int, float):
+            try:
+                res.append(fn(x))
+                break
+            except ValueError:
+                pass
+        else:
+            res.append(x)
+    return tuple(res)
 
 ################################################################################
 ### Testing code

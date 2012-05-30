@@ -12,6 +12,7 @@ from __future__ import print_function # silly cython
 
 import itertools
 import random
+import warnings
 from copy import deepcopy
 
 import numpy as np
@@ -46,9 +47,14 @@ cdef class ProbabilisticMatrixFactorization:
 
     def __init__(self, np.ndarray rating_tuples not None,
                  int latent_d=1, bint subtract_mean=False,
-                 object knowable=None):
+                 object knowable=None, tuple fit_type=('batch',)):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
+
+        if fit_type is None:
+            warnings.warn('passed None fit_type; using batch')
+            fit_type = ('batch',)
+        self.fit_type = fit_type
 
         self.ratings = np.array(rating_tuples, dtype=float, copy=False)
         if self.ratings.shape[1] != 3:
@@ -101,6 +107,7 @@ cdef class ProbabilisticMatrixFactorization:
             sigma_sq=self.sigma_sq,
             sigma_u_sq=self.sigma_u_sq,
             sigma_v_sq=self.sigma_v_sq,
+            fit_type=self.fit_type,
 
             sig_u_mean=self.sig_u_mean,
             sig_u_var=self.sig_u_var,
@@ -287,6 +294,18 @@ cdef class ProbabilisticMatrixFactorization:
         for ll in self.fit_lls():
             pass
 
+    def do_fit(self):
+        kind, *args = self.fit_type
+        if kind == 'batch':
+            self.fit(*args)
+        elif kind == 'mini':
+            self.fit_minibatches(*args)
+        elif kind == 'mini-valid':
+            self.fit_minibatches_until_validation(*args)
+        else:
+            raise ValueError("unknown fit type '{}'".format(kind))
+
+
     @cython.cdivision(True)
     def fit_minibatches(self, int batch_size, float lr=1, float momentum=.8,
                               np.ndarray ratings=None):
@@ -423,6 +442,20 @@ cdef class ProbabilisticMatrixFactorization:
         self.users.dump(prefix + "%sd_users.pickle" % self.latent_d)
         self.items.dump(prefix + "%sd_items.pickle" % self.latent_d)
 
+
+def parse_fit_type(string):
+    parts = string.split(',')
+    res = []
+    for x in parts:
+        for fn in (int, float):
+            try:
+                res.append(fn(x))
+                break
+            except ValueError:
+                pass
+        else:
+            res.append(x)
+    return tuple(res)
 
 ################################################################################
 ### Testing code

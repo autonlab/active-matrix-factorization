@@ -17,10 +17,10 @@ from scipy import stats
 import scipy.integrate
 
 try:
-    from pmf_cy import ProbabilisticMatrixFactorization
+    from pmf_cy import ProbabilisticMatrixFactorization, parse_fit_type
 except ImportError:
     warnings.warn("cython PMF not available; using pure-python version")
-    from pmf import ProbabilisticMatrixFactorization
+    from pmf import ProbabilisticMatrixFactorization, parse_fit_type
 
 try:
     from normal_exps_cy import (quadexpect, exp_a2bc, exp_dotprod_sq,
@@ -104,10 +104,12 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                  rating_values=None,
                  discrete_expectations=False,
                  refit_lookahead=False,
-                 knowable=None):
+                 knowable=None,
+                 fit_type=('batch',)):
         # the actual PMF model
         super(ActivePMF, self).__init__(rating_tuples,
-                latent_d=latent_d, subtract_mean=False, knowable=knowable)
+                latent_d=latent_d, subtract_mean=False,
+                knowable=knowable, fit_type=fit_type)
 
         # make sure that the ratings matrix is in floats
         # because the cython code currently only handles floats
@@ -678,7 +680,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             apmf = deepcopy(self)
             apmf.add_rating(i, j, v)
             if apmf.refit_lookahead:
-                apmf.fit()
+                apmf.do_fit()
                 apmf.initialize_approx()
             apmf.fit_normal()
 
@@ -812,7 +814,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
     if fit_sigmas:
         apmf.fit_with_sigmas()
     else:
-        apmf.fit()
+        apmf.do_fit()
 
     apmf.initialize_approx()
 
@@ -872,7 +874,7 @@ def _in_between_work(apmf, i, j, realval, total, fit_normal,
     if fit_sigmas:
         apmf.fit_with_sigmas()
     else:
-        apmf.fit()
+        apmf.do_fit()
     if fit_normal:
         if apmf.refit_lookahead:
             apmf.initialize_approx()
@@ -1028,7 +1030,8 @@ def get_ratings(real, mask_type=0):
 def compare(key_names, latent_d=5, processes=None, do_threading=True,
             steps=None, discrete_exp=False, refit_lookahead=False,
             fit_sigmas=False, real_ratings_vals=None, apmf=None, knowable=None,
-            sig_u_mean=0, sig_u_var=-1, sig_v_mean=0, sig_v_var=-1, **kwargs):
+            sig_u_mean=0, sig_u_var=-1, sig_v_mean=0, sig_v_var=-1,
+            fit_type=('batch',), **kwargs):
     import multiprocessing as mp
     from threading import Thread, Lock
 
@@ -1047,7 +1050,8 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
                 rating_values=rating_vals,
                 discrete_expectations=discrete_exp,
                 refit_lookahead=refit_lookahead,
-                knowable=knowable)
+                knowable=knowable,
+                fit_type=fit_type)
         apmf.sig_u_mean = sig_u_mean
         apmf.sig_u_var = sig_u_var
         apmf.sig_v_mean = sig_v_mean
@@ -1058,10 +1062,10 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         if fit_sigmas:
             apmf.fit_with_sigmas()
         else:
-            apmf.fit()
-        apmf.initialize_approx()
+            apmf.do_fit()
 
         if any(KEY_FUNCS[name].do_normal_fit for name in key_names):
+            apmf.initialize_approx()
             print("Initial approximation fit")
             apmf.fit_normal()
             print("Mean diff of means: {}; mean cov {}\n".format(
@@ -1131,6 +1135,7 @@ def main():
 
     add_bool_opt(model, 'refit-lookahead', default=False)
 
+    model.add_argument('--fit', default='batch')
     model.add_argument('--sig-u-mean', type=float, default=0)
     model.add_argument('--sig-u-var', type=float, default=-1)
     model.add_argument('--sig-v-mean', type=float, default=0)
@@ -1246,6 +1251,7 @@ def main():
                 sig_v_mean=args.sig_v_mean, sig_v_var=args.sig_v_var,
                 data_type=args.type,
                 steps=args.steps,
+                fit_type=parse_fit_type(args.fit),
                 processes=args.processes, do_threading=args.threading)
     except Exception:
         import traceback

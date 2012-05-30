@@ -26,7 +26,7 @@ from scipy import stats, integrate
 #    except ImportError:
 #        warnings.warn("cython PMF not available; using pure-python version")
 #        from pmf import ProbabilisticMatrixFactorization
-from pmf_cy import ProbabilisticMatrixFactorization, rmse
+from pmf_cy import ProbabilisticMatrixFactorization, rmse, parse_fit_type
 
 import cython
 
@@ -72,11 +72,13 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                  rating_values=None,
                  discrete_expectations=True,
                  num_integration_pts=50,
-                 knowable=None):
+                 knowable=None,
+                 fit_type=('batch',)):
 
         super(BayesianPMF, self).__init__(
                 rating_tuples, latent_d=latent_d,
-                subtract_mean=subtract_mean, knowable=knowable)
+                subtract_mean=subtract_mean,
+                knowable=knowable, fit_type=fit_type)
 
         if rating_values is not None:
             rating_values = set(map(float, rating_values))
@@ -230,14 +232,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         Does num_gibbs updates after each hyperparameter update, then yields
         the result.
 
-        If fit_first is
-            * True or 'batch', first calls .fit() to fit the MAP estimate.
-            * a tuple whose first element is 'mini', calls .fit_minibatches()
-              with the rest of the tuple as arguments.
-            * a tuple whose first element is 'mini-valid', calls
-              .fit_minibatches_until_validation() with the rest of the tuple
-              as arguments.
-            * False, does nothing first.
+        If fit_first is True, calls self.do_fit() to fit the MAP estimate.
         '''
         # find rated indices now, to avoid repeated lookups
         users_by_i = defaultdict(lambda: ([], []))
@@ -257,11 +252,8 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         del users_by_i, items_by_u
 
         # fit the MAP estimate, if asked to
-        if fit_first is not False:
-            if fit_first is True or fit_first == 'batch':
-                fit_first = ('batch',)
-
-            _fit_bpmf(self, *fit_first)
+        if fit_first:
+            self.do_fit()
 
         # initialize the Markov chain with the current MAP estimate
         user_sample = self.users.copy()
@@ -333,14 +325,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
           * If None (default), will perform user/item parallelization in the
             pool if passed, or no parallelization if the pool is not passed.
 
-        If fit_first is
-            * True or 'batch', first calls .fit() to fit the MAP estimate.
-            * a tuple whose first element is 'mini', calls .fit_minibatches()
-              with the rest of the tuple as arguments.
-            * a tuple whose first element is 'mini-valid', calls
-              .fit_minibatches_until_validation() with the rest of the tuple
-              as arguments.
-            * False, does nothing first.
+        If fit_first is True, first calls .do_fit() to fit the MAP estimate.
         If multiproc_mode is 'force', offloads this fitting to the pool.
         '''
 
@@ -367,16 +352,13 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
                          for k, (i,r) in items_by_user.items()}
 
         # fit the MAP estimate, if asked to
-        if fit_first is not False:
-            if fit_first is True or fit_first == 'batch':
-                fit_first = ('batch',)
-
+        if fit_first:
             if force_multiproc:
-                bpmf = pool.apply(_fit_bpmf, (self,) + fit_first)
+                bpmf = pool.apply(_fit_pmf)
                 self.users = bpmf.users
                 self.items = bpmf.items
             else:
-                _fit_bpmf(self, *fit_first)
+                self.do_fit()
 
         # initialize the Markov chain with the current MAP estimate
         user_sample = self.users.copy()
@@ -470,7 +452,7 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
         return self.pred_variance(samples_iter, which=which).sum()
 
     def exp_variance(self, samples_iter, which=Ellipsis, pool=None,
-                     fit_first='batch', num_samps=30):
+                     fit_first=True, num_samps=30):
         '''
         Gives the total expected variance in our predicted R matrix if we knew
         Rij for each ij in which, using samples_iter to get our distribution
@@ -561,25 +543,16 @@ class BayesianPMF(ProbabilisticMatrixFactorization):
 
 
 # stupid functions to work around multiprocessing.Pool/pickle silliness
+def _fit_pmf(pmf):
+    pmf.do_fit()
+    return pmf
+
 def _hyperparam_sampler(bpmf, *args):
     return bpmf.sample_hyperparam(*args)
 
 def _feat_sampler(args):
     bpmf, *args = args
     return bpmf.sample_feature(*args)
-
-def _fit_bpmf(bpmf, kind, *args, **kwargs):
-    if kind == 'batch':
-        bpmf.fit(*args, **kwargs)
-    elif kind == 'mini':
-        bpmf.fit_minibatches(*args, **kwargs)
-    elif kind == 'mini-valid':
-        bpmf.fit_minibatches_until_validation(*args, **kwargs)
-    else:
-        raise ValueError("unknown fit type '{}'".format(kind))
-
-    return bpmf
-
 
 def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps):
     if (i, j) in bpmf.rated:
@@ -693,13 +666,17 @@ KEYS = {
 }
 
 def fetch_samples(bpmf, num, *args, **kwargs):
-    samps = list(islice(bpmf.samples(*args, **kwargs), num))
-    pred = bpmf.predict(samps)
+    try:
+        samps = list(islice(bpmf.samples(*args, **kwargs), num))
+        pred = bpmf.predict(samps)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise
     return samps, pred
 
 def full_test(bpmf, samples, real, key_name,
-              fit_type='batch', num_samps=128,
-              lookahead_fit='batch', lookahead_samps=128,
+              num_samps=128, lookahead_fit='batch', lookahead_samps=128,
               pool=None, multieval=False, init_rmse=None, test_on=Ellipsis):
 
     key = KEYS[key_name]
@@ -736,7 +713,7 @@ def full_test(bpmf, samples, real, key_name,
                 key.nice_name, i, j, len(bpmf.rated), total))
 
         samp_args = (bpmf, num_samps)
-        samp_kwargs = {'fit_first': fit_type}
+        samp_kwargs = {'fit_first': True}
         if multieval:
             samples, pred = pool.apply(fetch_samples, samp_args, samp_kwargs)
         else:
@@ -752,7 +729,7 @@ def full_test(bpmf, samples, real, key_name,
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                    discrete=True, subtract_mean=True, num_steps=None,
                    procs=None, threaded=False,
-                   fit_type='batch', num_samps=128,
+                   fit_type=('batch',), num_samps=128,
                    test_set='all',
                    **kwargs):
     # figure out which points we know the answers to
@@ -796,7 +773,8 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             subtract_mean=subtract_mean,
             rating_values=rating_vals,
             discrete_expectations=discrete,
-            knowable=query_set)
+            knowable=query_set,
+            fit_type=fit_type)
     print("Doing initial MAP fit...")
     bpmf_init.fit()
 
@@ -821,7 +799,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
         res = full_test(
                 deepcopy(bpmf_init), samples, real, key_name,
                 pool=pool, multieval=threaded,
-                fit_type=fit_type, num_samps=num_samps,
+                num_samps=num_samps,
                 init_rmse=init_rmse, test_on=test_on,
                 **kwargs)
         results[key_name] = list(islice(res, num_steps))
@@ -927,7 +905,8 @@ def main():
                 real=real, ratings=ratings, rating_vals=rating_vals,
                 test_set=args.test_set, num_steps=args.steps,
                 discrete=args.discrete, subtract_mean=args.subtract_mean,
-                fit_type=args.fit, lookahead_fit=args.lookahead_fit,
+                fit_type=parse_fit_type(args.fit),
+                lookahead_fit=args.lookahead_fit,
                 num_samps=args.samps, lookahead_samps=args.lookahead_samps,
                 procs=args.procs, threaded=args.threaded)
     except Exception:

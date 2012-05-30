@@ -7,6 +7,7 @@ cdef class ProbabilisticMatrixFactorization:
     cdef public bint subtract_mean
     cdef public double mean_rating
     cdef public double learning_rate, min_learning_rate, stop_thresh
+    cdef public tuple fit_type
     cdef public double sigma_sq, sigma_u_sq, sigma_v_sq
     cdef public double sig_u_mean, sig_u_var, sig_v_mean, sig_v_var
     cdef public np.ndarray ratings, users, items
