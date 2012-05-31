@@ -16,6 +16,7 @@ import scipy.io
 import sys
 sys.path.append('../python-pmf')
 from active_pmf import ActivePMF
+from bayes_pmf import BayesianPMF
 
 KeyFunc = namedtuple('KeyFunc', "nice_name code")
 
@@ -23,6 +24,8 @@ KEY_FUNCS = {
     'random': KeyFunc("Random", "@select_random"),
     'min-margin': KeyFunc("Min Margin", "@select_min_margin"),
     'min-margin-pos': KeyFunc("Min Margin Positive", "@select_min_margin_pos"),
+    'max-margin': KeyFunc("Max Margin", "@select_max_margin"),
+    'max-margin-pos': KeyFunc("Max Margin Positive", "@select_max_margin_pos"),
 }
 
 
