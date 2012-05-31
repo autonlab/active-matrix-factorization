@@ -11,7 +11,7 @@ function [all_results] = evaluate_active(Y, selectors, steps, known, queryable, 
 %   all_results: a cell array with one entry per selector, containing
 %                cell arrays of num_known, rmse, pick [i,j], evaluations array
 
-function [rmse] = get_rmse(X, selec)
+function [rmse] = get_rmse(X)
     rmse = sqrt(sum((Y(Y ~= 0) - X(Y ~= 0)).^2) / numel(X))
 end
 
@@ -68,7 +68,7 @@ for selector_i = 1 : length(selectors)
         num_known = num_known + 1;
 
         % save results
-        results(stepnum, :) = {num_known, get_rmse(x), [i,j], evals};
+        results(stepnum, :) = {num_known, get_rmse(sign(x)), [i,j], evals};
         stepnum = stepnum + 1;
     end
 
