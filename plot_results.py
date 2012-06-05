@@ -75,6 +75,17 @@ def plot_real(real, rated=None):
     if rated is not None:
         plt.scatter(rated[:,1], rated[:,0], marker='s', s=15, c='white')
 
+def linestyle_color_marker(num=0):
+    from itertools import cycle
+
+    linestyles = ('-', '--')
+    colors = 'bgrck'
+    if num < 100:
+        markers = ('o', '^', 's')
+    else:
+        markers = [None]
+    return zip(cycle(linestyles), cycle(colors), cycle(markers))
+
 def _plot_lines(results, fn, ylabel):
     from matplotlib import pyplot as plt
     from matplotlib.font_manager import FontProperties
@@ -83,9 +94,7 @@ def _plot_lines(results, fn, ylabel):
     plt.ylabel(ylabel)
 
     # cycle through colors and line styles
-    colors = 'bgrcmyk'
-    linestyles = ['-', '--', ':']
-    l_c = itertools.cycle(itertools.product(linestyles, colors))
+    l_c_m = linestyle_color_marker()
 
     # offset lines a bit so you can see when some of them overlap
     total = len(results)
@@ -99,8 +108,8 @@ def _plot_lines(results, fn, ylabel):
         vals = fn(nums, rmses, ijs, vals, results)
         nums = np.array(nums, copy=False) + (idx - total/2) * offset
 
-        l, c = next(l_c)
-        plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker='^')
+        l, c, m = next(l_c_m)
+        plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker=m)
 
     # only show integer values for x ticks
     xmin, xmax = plt.xlim()
@@ -161,7 +170,7 @@ def plot_criteria_over_time(name, result, cmap=None):
     nr, nc = subplot_config(len(ijs))
 
     fig = plt.figure()
-    fig.suptitle(name)
+    #fig.suptitle(name)
     grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.3,
             cbar_location='right', cbar_mode='single')
 
@@ -179,7 +188,7 @@ def plot_criteria_over_time(name, result, cmap=None):
     for idx, (n, rmse, (i,j), vals) in enumerate(zip(nums, rmses, ijs, valses)):
         # we know n values and have RMSE of rmse, then pick ij based on vals
 
-        grid[idx].set_title("{}".format(n + 1))
+        #grid[idx].set_title("{}".format(n + 1))
 
         im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
                    origin='upper', aspect='equal', norm=norm)
@@ -193,7 +202,7 @@ def plot_criteria_over_time(name, result, cmap=None):
         grid[idx].grid()
 
         # mark the selected point (indices are transposed)
-        grid[idx].scatter(j, i, marker='s', c='white', s=15)
+        grid[idx].scatter(j, i, marker='s', c='white', s=50) # s=15)
 
     for idx in range(len(ijs), nr * nc):
         grid[idx].set_visible(False)
@@ -281,6 +290,7 @@ def main():
     parser.add_argument('--all-plots', default=False, action='store_true')
 
     parser.add_argument('--cmap', default='jet')
+    parser.add_argument('--filetype', default='png')
     parser.add_argument('--outdir', nargs='?', const=True, default=None,
             metavar='DIR')
     add_bool_opt(parser, 'interactive', None)
@@ -306,7 +316,7 @@ def main():
             if fig is None:
                 from matplotlib import pyplot as fig
             fname = os.path.join(args.outdir, name)
-            fig.savefig(fname, bbox_inches='tight', pad_inches=.1)
+            fig.savefig(fname + '.' + args.filetype, bbox_inches='tight', pad_inches=.1)
     else:
         def save_plot(name, fig=None):
             pass
@@ -355,14 +365,14 @@ def main():
         print("Plotting real matrix")
         fig = plt.figure()
         plot_real(results['_real'], results['_ratings'])
-        save_plot('real.png', fig)
+        save_plot('real', fig)
 
     # RMSE plot
     if args.rmse:
         print("Plotting RMSEs")
         fig = plt.figure()
         plot_rmses(results, args.keys)
-        save_plot('rmses.png', fig)
+        save_plot('rmses', fig)
 
     # plot of numbers >= a cutoff
     if args.cutoff is not None:
@@ -370,7 +380,7 @@ def main():
             print("Plotting cutoff {}".format(cutoff))
             fig = plt.figure()
             plot_num_ge_cutoff(results, cutoff, args.keys)
-            save_plot('ge-{}.png'.format(cutoff), fig)
+            save_plot('ge-{}'.format(cutoff), fig)
 
     # plot of each criterion
     if args.criteria:
@@ -380,7 +390,7 @@ def main():
             print("Plotting {}".format(nice_name))
 
             fig = plot_criteria_over_time(nice_name, result, cmap)
-            save_plot('{}.png'.format(criterion), fig)
+            save_plot('{}'.format(criterion), fig)
 
     # plot of criteria first steps
     if args.criteria_firsts:
@@ -390,7 +400,7 @@ def main():
                 key=lambda item: KEY_NAMES[item[0]])
 
         fig = plot_criteria_firsts(items)
-        save_plot('firsts.png', fig)
+        save_plot('firsts', fig)
 
     # plot of initial predictions
     if args.initial_preds:
@@ -400,7 +410,7 @@ def main():
             print("Plotting initial predictions")
             fig = plt.figure()
             plot_predictions(results['_initial_apmf'], results['_real'])
-            save_plot('initial_preds.png', fig)
+            save_plot('initial_preds', fig)
 
     # pause to look at plots if interactive
     if args.interactive:
