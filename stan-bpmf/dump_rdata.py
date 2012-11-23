@@ -14,7 +14,7 @@ def _write_vec(vec, output):
     for thing in intersperse(', ', vec):
         output.write(str(thing))
     output.write(')');
-               
+
 def _write_rep(val, output):
     if isinstance(val, numbers.Real):
         output.write(str(val))
@@ -35,7 +35,7 @@ def _write_rep(val, output):
 
 def dump_to_rdata(output=sys.stdout, **things):
     assert hasattr(output, 'write')
-    
+
     for name, val in things.iteritems():
         output.write(name)
         output.write(' <- ')
@@ -62,7 +62,7 @@ def main():
     data = {k: _handle(v)
             for k, v in loadmat(args.input).iteritems()
             if not k.startswith('__')}
-    
+
     with open(args.output, 'w') as f:
         dump_to_rdata(output=f, **data)
 
