@@ -11,21 +11,25 @@ data {
     real obs_ratings[n_obs];
 
     // fixed hyperparameters
-    real<lower=0> rating_std;
+    real<lower=0> rating_std; // observation noise precision, usually 2
 
-    vector[rank] mu_0; // usually zero
-    int<lower=1> nu_0; // usually == rank
-    cov_matrix[rank] w_0; // usually identity
+    vector[rank] mu_0; // mean for feature means, usually zero
+
+    // feature mean covariances are beta_0 * inv wishart(nu_0, w_0)
+    real<lower=0> beta_0; // usually 2
+    int<lower=1> nu_0; // deg of freedom, usually == rank
+    cov_matrix[rank] w_0; // scale matrix, usually identity
 }
 
 parameters {
+    // latent factors
     vector[rank] U[n_users];
     vector[rank] V[n_items];
 
+    // means and covs on latent factors
     vector[rank] mu_u;
-    cov_matrix[rank] cov_u;
-
     vector[rank] mu_v;
+    cov_matrix[rank] cov_u;
     cov_matrix[rank] cov_v;
 }
 
@@ -41,8 +45,8 @@ model {
         V[j] ~ multi_normal(mu_v, cov_v);
 
     // hyperpriors on latent factor hyperparams
-    mu_u ~ multi_normal(mu_0, cov_u);
-    mu_v ~ multi_normal(mu_0, cov_v);
+    mu_u ~ multi_normal(mu_0, cov_u * beta_0);
+    mu_v ~ multi_normal(mu_0, cov_v * beta_0);
 
     cov_u ~ inv_wishart(nu_0, w_0);
     cov_v ~ inv_wishart(nu_0, w_0);
