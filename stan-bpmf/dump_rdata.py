@@ -1,10 +1,13 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 
 import numpy as np
-import numbers
 import sys
 
-from itertools import chain, izip, repeat, islice
+from six import iteritems
+from six.moves import zip as izip
+from six.moves import xrange
+from itertools import chain, repeat, islice
+
 def intersperse(delimiter, seq):
     # http://stackoverflow.com/a/5655803/344821
     return islice(chain.from_iterable(izip(repeat(delimiter), seq)), 1, None)
@@ -16,7 +19,7 @@ def _write_vec(vec, output):
     output.write(')');
 
 def _write_rep(val, output):
-    if isinstance(val, numbers.Real):
+    if np.isscalar(val) and np.isreal(val):
         output.write(str(val))
     elif isinstance(val, xrange) and abs(val[0] - val[1]) == 1:
         output.write('{}:{}'.format(val[0], val[-1]))
@@ -36,7 +39,7 @@ def _write_rep(val, output):
 def dump_to_rdata(output=sys.stdout, **things):
     assert hasattr(output, 'write')
 
-    for name, val in things.iteritems():
+    for name, val in iteritems(things):
         output.write(name)
         output.write(' <- ')
         _write_rep(val, output)
@@ -60,7 +63,7 @@ def main():
         return val
 
     data = {k: _handle(v)
-            for k, v in loadmat(args.input).iteritems()
+            for k, v in iteritems(loadmat(args.input))
             if not k.startswith('__')}
 
     with open(args.output, 'w') as f:
