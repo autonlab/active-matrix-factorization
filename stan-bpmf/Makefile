@@ -3,7 +3,7 @@
 STAN_HOME ?= $(HOME)/misc/stan-src-1.0.3
 TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-bpmf:
+bpmf: bpmf.stan
 	make -C $(STAN_HOME) $(TOP)/bpmf
 
 tidy:
