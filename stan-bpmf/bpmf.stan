@@ -23,8 +23,8 @@ data {
 
 parameters {
     // latent factors
-    vector[rank] U[n_users];
-    vector[rank] V[n_items];
+    matrix[n_users, rank] U;
+    matrix[n_users, rank] V;
 
     // means and covs on latent factors
     vector[rank] mu_u;
@@ -36,13 +36,13 @@ parameters {
 model {
     // observed data likelihood
     for (n in 1:n_obs)
-        obs_ratings[n] ~ normal(U[obs_users[n]]' * V[obs_items[n]], rating_std);
+        obs_ratings[n] ~ normal(U[obs_users[n]] * V[obs_items[n]]', rating_std);
 
     // prior on latent factors
     for (i in 1:n_users)
-        U[i] ~ multi_normal(mu_u, cov_u);
+        U[i]' ~ multi_normal(mu_u, cov_u);
     for (j in 1:n_items)
-        V[j] ~ multi_normal(mu_v, cov_v);
+        V[j]' ~ multi_normal(mu_v, cov_v);
 
     // hyperpriors on latent factor hyperparams
     mu_u ~ multi_normal(mu_0, cov_u * beta_0);
@@ -50,4 +50,9 @@ model {
 
     cov_u ~ inv_wishart(nu_0, w_0);
     cov_v ~ inv_wishart(nu_0, w_0);
+}
+
+generated quantities {
+    matrix[n_users, n_items] predictions;
+    predictions <- U * V';
 }
