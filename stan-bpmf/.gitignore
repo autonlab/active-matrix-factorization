@@ -4,3 +4,5 @@
 
 bpmf
 bpmf.cpp
+
+*.rdata
