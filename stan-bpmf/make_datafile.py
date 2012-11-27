@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 
 import numpy as np
 from dump_rdata import dump_to_rdata
