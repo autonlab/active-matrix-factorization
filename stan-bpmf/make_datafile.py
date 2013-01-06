@@ -40,7 +40,7 @@ def make_vars(ratings, rank, n_users=None, n_items=None):
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-            description='Makes a .Rdata file for the stan bpmf code.')
+            description='Makes a data file for the stan bpmf code.')
 
     parser.add_argument('infile')
     parser.add_argument('outfile')
@@ -49,6 +49,9 @@ def main():
     parser.add_argument('--n-users', default=None, type=int)
     parser.add_argument('--n-items', default=None, type=int)
 
+    parser.add_argument('--output-format', default='numpy',
+        choices=['rdata', 'matlab', 'numpy'])
+
     # TODO: option to standardize ratings
 
     args = parser.parse_args()
@@ -56,8 +59,19 @@ def main():
     infile = np.load(args.infile)
     data = make_vars(infile['_ratings'], rank=args.rank,
                      n_users=args.n_users, n_items=args.n_items)
-    with open(args.outfile, 'w') as f:
-        dump_to_rdata(output=f, **data)
+
+    if args.output_format == 'rdata':
+        if not args.outfile.endswith('.rdata'):
+            args.outfile += '.rdata'
+        with open(args.outfile, 'w') as f:
+            dump_to_rdata(output=f, **data)
+    elif args.output_format == 'matlab':
+        from scipy.io import savemat
+        savemat(args.outfile, data, oned_as='column')
+    elif args.output_format == 'numpy':
+        np.savez(args.outfile, **data)
+    else:
+        raise ValueError
 
 if __name__ == '__main__':
     main()
