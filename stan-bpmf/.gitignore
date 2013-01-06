@@ -4,5 +4,6 @@
 
 bpmf
 bpmf.cpp
+bpmf.stan.model.pkl.gz
 
-*.rdata
+/data
