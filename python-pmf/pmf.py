@@ -68,15 +68,15 @@ class ProbabilisticMatrixFactorization(object):
         if len(extra.shape) != 2 or extra.shape[1] != cols:
             raise TypeError("bad shape for extra")
 
-        assert np.max(extra[:,0] + 1) <= self.num_users
-        assert np.max(extra[:,1] + 1) <= self.num_items
+        assert np.max(extra[:, 0] + 1) <= self.num_users
+        assert np.max(extra[:, 1] + 1) <= self.num_items
 
         rating_values = getattr(self, 'rating_values', None)
         if rating_values is not None:
-            if not set(rating_values).issuperset(extra[:,2]):
+            if not set(rating_values).issuperset(extra[:, 2]):
                 raise ValueError("got ratings with bad values")
 
-        new_items = set((int(i), int(j)) for i, j in extra[:,:2])
+        new_items = set((int(i), int(j)) for i, j in extra[:, :2])
 
         if not new_items.isdisjoint(self.rated):
             raise ValueError("can't rate already rated items")
@@ -84,7 +84,7 @@ class ProbabilisticMatrixFactorization(object):
         self.unrated.difference_update(new_items)
 
         self.ratings = np.append(self.ratings, extra, 0)
-        self.mean_rating = np.mean(self.ratings[:,2])
+        self.mean_rating = np.mean(self.ratings[:, 2])
         # TODO: this can be done without a copy by .resize()...
 
     def prediction_for(self, i, j, users=None, items=None):
@@ -98,7 +98,6 @@ class ProbabilisticMatrixFactorization(object):
         else:
             return np.dot(users[i], items[j])
 
-
     def log_likelihood(self, users=None, items=None):
         if users is None:
             users = self.users
@@ -109,7 +108,7 @@ class ProbabilisticMatrixFactorization(object):
         sq_error = 0
         for i, j, rating in self.ratings:
             r_hat = predfor(i, j, users, items)
-            sq_error += (rating - r_hat)**2
+            sq_error += (rating - r_hat) ** 2
 
         user_norm2 = np.sum(users * users)
         item_norm2 = np.sum(items * items)
@@ -221,7 +220,6 @@ class ProbabilisticMatrixFactorization(object):
         else:
             raise ValueError("unknown fit type '{}'".format(kind))
 
-
     def fit_minibatches(self, batch_size, lr=1, momentum=.8, ratings=None):
         # NOTE: this randomly shuffles ratings / self.ratings
         if ratings is None:
@@ -263,7 +261,7 @@ class ProbabilisticMatrixFactorization(object):
         total = self.ratings.shape[0]
         valid_idx = set(random.sample(range(total), valid_size))
         train_idx = tuple(i for i in range(total) if i not in valid_idx)
-        train = self.ratings[train_idx,:]
+        train = self.ratings[train_idx, :]
 
         valid_idx = list(valid_idx)
         valid_ijs = tuple(self.ratings[valid_idx, :2].T.astype(int))
@@ -282,10 +280,8 @@ class ProbabilisticMatrixFactorization(object):
                 break
             last_valid = valid
 
-
     def fit_with_sigmas_lls(self, noise_every=10, users_every=5):
         cont = True
-
         while cont:
             cont = False
             for i, ll in enumerate(self.fit_lls()):
@@ -296,7 +292,7 @@ class ProbabilisticMatrixFactorization(object):
 
                 yield ll
 
-                cont = True # continue if we made any steps
+                cont = True  # continue if we made any steps
 
             self.update_sigma()
             self.update_sigma_uv()
@@ -304,7 +300,6 @@ class ProbabilisticMatrixFactorization(object):
     def fit_with_sigmas(self, noise_every=10, users_every=5):
         for ll in self.fit_with_sigmas_lls(noise_every, users_every):
             pass
-
 
     def predicted_matrix(self, u=None, v=None):
         if u is None:
@@ -329,10 +324,10 @@ class ProbabilisticMatrixFactorization(object):
         for j in range(self.num_items):
             print("%d: %s" % (j, self.items[j, :]))
 
-
     def save_latent_vectors(self, prefix):
         self.users.dump(prefix + "%sd_users.pickle" % self.latent_d)
         self.items.dump(prefix + "%sd_items.pickle" % self.latent_d)
+
 
 def parse_fit_type(string):
     parts = string.split(',')
@@ -347,6 +342,7 @@ def parse_fit_type(string):
         else:
             res.append(x)
     return tuple(res)
+
 
 ################################################################################
 ### Testing code

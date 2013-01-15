@@ -47,7 +47,6 @@ model {
     // hyperpriors on latent factor hyperparams
     mu_u ~ multi_normal(mu_0, cov_u * beta_0);
     mu_v ~ multi_normal(mu_0, cov_v * beta_0);
-
     cov_u ~ inv_wishart(nu_0, w_0);
     cov_v ~ inv_wishart(nu_0, w_0);
 }

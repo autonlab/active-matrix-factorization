@@ -65,7 +65,7 @@ def sample(model, data, par_names=None, return_fit=False, **fit_params):
     If return_fit, returns the stanfit object as the last element of the
     returned list.
     '''
-    fit = rstan.sampling(model, data=ro.r.list(**data), **fit_params)
+    fit = rstan.sampling(model, data=ro.r.list(**data), verbose=True, **fit_params)
 
     args = {'pars': par_names} if par_names else {}
     samples = ro.r.extract(fit, permuted=True, **args)
