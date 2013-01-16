@@ -33,10 +33,17 @@ parameters {
   cov_matrix[rank] cov_v;
 }
 
+transformed parameters {
+  matrix[n_users, n_items] predictions;
+  predictions <- U * V';
+}
+
 model {
   // observed data likelihood
   for (n in 1:n_obs)
-    obs_ratings[n] ~ normal(U[obs_users[n]] * V[obs_items[n]]', rating_std);
+    obs_ratings[n] ~ normal(predictions[obs_users[n], obs_items[n]],
+                            rating_std);
+    // obs_ratings[n] ~ normal(U[obs_users[n]] * V[obs_items[n]]', rating_std);
 
   // prior on latent factors
   for (i in 1:n_users)
@@ -51,7 +58,9 @@ model {
   cov_v ~ inv_wishart(nu_0, w_0);
 }
 
+/* moved this to transformed parameters; figure out which is better
 generated quantities {
     matrix[n_users, n_items] predictions;
     predictions <- U * V';
 }
+*/
