@@ -41,8 +41,7 @@ transformed parameters {
 model {
   // observed data likelihood
   for (n in 1:n_obs)
-    obs_ratings[n] ~ normal(predictions[obs_users[n], obs_items[n]],
-                            rating_std);
+    obs_ratings[n] ~ normal(predictions[obs_users[n],obs_items[n]], rating_std);
     // obs_ratings[n] ~ normal(U[obs_users[n]] * V[obs_items[n]]', rating_std);
 
   // prior on latent factors
