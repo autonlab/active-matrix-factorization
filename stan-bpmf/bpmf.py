@@ -33,7 +33,7 @@ def rmse(a, b):
     return np.sqrt(((a - b) ** 2).sum() / a.size)
 
 
-class BayesianPMF(object):
+class BPMF(object):
     def __init__(self, rating_tuples, latent_d,
                  subtract_mean=True,
                  rating_values=None,
@@ -327,7 +327,7 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
 
 
 def _exp_variance_helper(args, **sample_args):
-    return _integrate_lookahead(BayesianPMF.total_variance, *args, **sample_args)
+    return _integrate_lookahead(BPMF.total_variance, *args, **sample_args)
 
 ################################################################################
 
@@ -363,7 +363,7 @@ def full_test(bpmf, samples, real, key_name,
               pool=None, sample_in_pool=False, test_on=Ellipsis):
     '''
     Evaluates the chosen selection criterion (key_name) on the data (real),
-    starting with an initial instance of BayesianPMF and some samples from it.
+    starting with an initial instance of BPMF and some samples from it.
 
     Yields tuples of # of rated items, the current RMSE, the (i, j) index of
     the last choice, and an array of evaluations for the full matrix.
@@ -459,7 +459,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             .format(ratings.shape[0], query_on.sum(), test_on.sum(),
                     knowable.sum(), real.size))
 
-    bpmf_init = BayesianPMF(ratings, latent_d,
+    bpmf_init = BPMF(ratings, latent_d,
             subtract_mean=subtract_mean,
             rating_values=rating_vals,
             discrete_expectations=discrete,
