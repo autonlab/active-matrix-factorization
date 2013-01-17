@@ -153,7 +153,7 @@ def main():
 
     parser.add_argument('--results-file', '-R', default=None, metavar='FILE',
             help="Save results in FILE; by default, add to --data-file.")
-    parser.add_argument('--notes', nargs='+', metavar='NOTE',
+    parser.add_argument('--note', action='append',
         help="Doesn't do anything, just there to save any notes you'd like "
              "in the results file.")
 

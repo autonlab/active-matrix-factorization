@@ -1172,7 +1172,7 @@ def main():
             metavar='FILE')
     results.add_argument('--no-save-results',
             action='store_false', dest='save_results')
-    results.add_argument('--notes', nargs='+', metavar="NOTE",
+    results.add_argument('--note', action='append',
         help="Doesn't do anything, just there to save any notes you'd like "
              "in the results file.")
 

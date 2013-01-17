@@ -42,7 +42,7 @@ run%/data.pkl: | run%
 run%/results_stan.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) bpmf.py \
-		--notes "git rev {{REV}}" \
+		--note "git rev {{REV}}" \
 		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
 		--samps 200 --warmup 200 \
 		--lookahead-samps 100 --lookahead-warmup 50 \
@@ -53,7 +53,7 @@ run%/results_stan.pkl: | run%/data.pkl
 run%/results_bayes.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) run_bayes_pmf.py \
-		--notes "git rev {{REV}}" \
+		--note "git rev {{REV}}" \
 		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
 		--samps 200 --lookahead-samps 100 \
 		--procs $(PROCS) \
@@ -63,7 +63,7 @@ run%/results_bayes.pkl: | run%/data.pkl
 run%/results_apmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) active_pmf.py \
-		--notes "git rev {{REV}}" \
+		--note "git rev {{REV}}" \
 		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
 		--refit-lookahead \
 		--procs $(PROCS) \
@@ -74,7 +74,7 @@ run%/results_apmf.pkl: | run%/data.pkl
 run%/results_mmmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) active_mmmf.py \
-		--notes "git rev {{REV}}" \
+		--note "git rev {{REV}}" \
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
 		-C 1 --cutoff 3.5 \
@@ -87,5 +87,5 @@ run%/results_rc.pkl: | run%/data.pkl
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
 		--delta 1.5 --pred-mean \
-		entropy random	\
+		entropy random \
 		2>&1 | tee $(RESULTS_BASE)/$@.log

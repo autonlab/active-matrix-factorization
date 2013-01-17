@@ -568,7 +568,7 @@ def main():
     parser.add_argument('--no-save-results',
             action='store_false', dest='save_results')
 
-    parser.add_argument('--notes', nargs='+', metavar="NOTE",
+    parser.add_argument('--note', action='append',
         help="Doesn't do anything, just there to save any notes you'd like "
              "in the results file.")
 
