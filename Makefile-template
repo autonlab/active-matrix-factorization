@@ -41,39 +41,39 @@ run%/data.pkl: | run%
 
 run%/results_stan.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
-		xargs -I '{{REV}}' -R 1 $(PYTHON) bpmf.py \
+		xargs -I '{{REV}}' $(PYTHON) bpmf.py \
 		--note "git rev {{REV}}" \
 		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
 		--samps 200 --warmup 200 \
 		--lookahead-samps 100 --lookahead-warmup 50 \
 		--procs $(PROCS) \
-		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		--load-data $(RESULTS_BASE)/$< --save-results $(RESULTS_BASE)/$@ \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
 run%/results_bayes.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
-		xargs -I '{{REV}}' -R 1 $(PYTHON) run_bayes_pmf.py \
+		xargs -I '{{REV}}' $(PYTHON) run_bayes_pmf.py \
 		--note "git rev {{REV}}" \
 		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
 		--samps 200 --lookahead-samps 100 \
 		--procs $(PROCS) \
-		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		--load-data $(RESULTS_BASE)/$< --save-results $(RESULTS_BASE)/$@ \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
 run%/results_apmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
-		xargs -I '{{REV}}' -R 1 $(PYTHON) active_pmf.py \
+		xargs -I '{{REV}}' $(PYTHON) active_pmf.py \
 		--note "git rev {{REV}}" \
 		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
 		--refit-lookahead \
 		--procs $(PROCS) \
-		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		--data-file $(RESULTS_BASE)/$< --save-results $(RESULTS_BASE)/$@ \
 		pred-variance exp-variance random \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
 run%/results_mmmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
-		xargs -I '{{REV}}' -R 1 $(PYTHON) active_mmmf.py \
+		xargs -I '{{REV}}' $(PYTHON) active_mmmf.py \
 		--note "git rev {{REV}}" \
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
@@ -82,7 +82,7 @@ run%/results_mmmf.pkl: | run%/data.pkl
 
 run%/results_rc.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/ratingconcentration && $(GIT_SCRIPT) | head -n 1 | \
-		xargs -I '{{REV}}' -R 1 $(PYTHON) active_rc.py \
+		xargs -I '{{REV}}' $(PYTHON) active_rc.py \
 		--notes "git rev {{REV}}" \
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
