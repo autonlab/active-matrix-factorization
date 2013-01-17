@@ -148,6 +148,9 @@ def main():
 
     parser.add_argument('--results-file', '-R', default=None, metavar='FILE',
             help="Save results in FILE; by default, add to --data-file.")
+    parser.add_argument('--notes', nargs='+', metavar="NOTE",
+        help="Doesn't do anything, just there to save any notes you'd like "
+             "in the results file.")
 
     args = parser.parse_args()
 
@@ -167,7 +170,7 @@ def main():
 
     # load data
     orig = dict(**np.load(args.data_file))
-    
+
     # get sparse matrtix of known elements
     known = np.zeros(orig['_real'].shape, dtype=bool)
     ratings = orig['_ratings']
