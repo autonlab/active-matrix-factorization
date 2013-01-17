@@ -1,8 +1,11 @@
+from functools import partial
 import gzip
 import os
 import pickle
+import sys
 
 import numpy as np
+import six
 
 from rpy2 import robjects as ro
 from rpy2.robjects.packages import importr
@@ -51,29 +54,101 @@ def get_model(filename, cache_filename=None, check_times=True, use_cache=True):
     return model
 
 
-def sample(model, data, par_names=None, return_fit=False, **fit_params):
+class OutputCapturer(object):
+    def __init__(self, do_stdout=True, do_stderr=True, merge=False):
+        try:
+            from StringIO import StringIO
+        except ImportError:
+            from io import StringIO
+
+        self.do_stdout = do_stdout
+        self.do_stderr = do_stderr
+        self.merge = merge
+
+        if do_stdout and do_stderr and merge:
+            self.stdout = self.stderr = StringIO()
+        else:
+            if do_stdout:
+                self.stdout = StringIO()
+            if do_stderr:
+                self.stderr = StringIO()
+
+        if self.do_stdout:
+            self.old_stdout = sys.stdout
+            sys.stdout = self.stdout
+        if self.do_stderr:
+            self.old_stderr = sys.stderr
+            sys.stderr = self.stderr
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def close(self):
+        if self.do_stdout:
+            sys.stdout = self.old_stdout
+        if self.do_stderr:
+            sys.stderr = self.old_stderr
+
+        if self.do_stdout and self.do_stderr and self.merge:
+            self.stdout.close()
+        else:
+            if self.do_stdout:
+                self.stdout.close()
+            if self.do_stderr:
+                self.stderr.close()
+
+
+def sample(model, data, par_names=None, return_fit=False,
+           eat_output=False, return_output=True, **fit_params):
     '''
     Samples from the model (returned from get_model) with the given data.
     Any kwargs are passed on to the sampling() function from rstan.
 
-    If par_names is a list of parameter names, returns a tuple of sample arrays
-    (one array per parameter, first dimension the number of samples.)
+    Returns a dictionary mapping parameter names to sample arrays (whose first
+    dimension is the number of samples). The par_names argumet limits which
+    parameters are put in the dictionary.
 
-    If par_names is None, returns that tuple for all params, and also the tuple
-    of parameter names, in a list.
+    If return_fit, returns a pair of the dictionary above and the stanfit
+    object.
 
-    If return_fit, returns the stanfit object as the last element of the
-    returned list.
+    If eat_output, grabs output from Stan instead of printing it. If
+    return_output is also true (default), returns the output string as the last
+    element of the return array.
     '''
-    fit = rstan.sampling(model, data=ro.r.list(**data), **fit_params)
+    if 'warmup' in fit_params and 'iter' in fit_params:
+        assert fit_params['iter'] > fit_params['warmup']
 
-    args = {'pars': par_names} if par_names else {}
-    samples = ro.r.extract(fit, permuted=True, **args)
+    if 'init' in fit_params:
+        init = fit_params['init']
+        if init is None:
+            del fit_params['init']
+        elif isinstance(init, six.string_types) or init == 0 or callable(init):
+            pass  # do callables work?
+        else:
+            n_chains = fit_params.get('chains', 4)
+            fit_params['init'] = [ro.r.list(**init)] * n_chains
 
-    ret = [tuple(np.asarray(x) for x in samples)]
-    if not par_names:
-        ret.append(tuple(samples.names))
+    eat = eat_output
+    with OutputCapturer(do_stdout=eat, do_stderr=eat, merge=True) as cap:
+        fit = rstan.sampling(model, data=ro.r.list(**data), **fit_params)
+        if eat_output:
+            output = cap.stdout.getvalue()
+    # TODO: handle error conditions better here
+
+    extract = partial(ro.r.extract, fit, permuted=True)
+    if par_names:
+        samples = extract(pars=par_names)
+    else:
+        samples = extract()
+        par_names = samples.names
+    samps = {k: np.asarray(v) for k, v in zip(par_names, samples)}
+
+    ret = [samps]
     if return_fit:
         ret.append(fit)
-
+    if eat_output and return_output:
+        ret.append(output)
     return ret[0] if len(ret) == 1 else ret

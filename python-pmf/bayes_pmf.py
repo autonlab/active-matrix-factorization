@@ -679,7 +679,6 @@ def fetch_samples(bpmf, num, *args, **kwargs):
 def full_test(bpmf, samples, real, key_name,
               num_samps=128, lookahead_fit='batch', lookahead_samps=128,
               pool=None, multieval=False, init_rmse=None, test_on=Ellipsis):
-
     key = KEYS[key_name]
     total = real.size
     picker_fn = getattr(bpmf, key.key_fn)
@@ -704,6 +703,7 @@ def full_test(bpmf, samples, real, key_name,
             if key.wants_pool and pool is not None:
                 key_kwargs['pool'] = pool
 
+            # XXX: should use lookahead_samps in here somewhere?
             evals = picker_fn(samples, *key.args, **key_kwargs)
 
             i, j = unrated[:, chooser(evals)]

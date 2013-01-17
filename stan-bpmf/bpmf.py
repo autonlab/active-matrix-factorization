@@ -3,10 +3,14 @@
 Implementation of Bayesian PMF with Hamiltonian MCMC/NUTS (through Stan).
 '''
 
+# TODO: don't pickle big things for pool, inherit them: http://goo.gl/tpS15
+# TODO: save in more portable format than pickle?
+
 from __future__ import print_function, division
 
 from collections import defaultdict, namedtuple
 from copy import deepcopy
+from functools import partial
 from itertools import islice, product, repeat
 import multiprocessing
 import random
@@ -14,7 +18,9 @@ from threading import Thread
 import warnings
 
 import numpy as np
-from scipy import stats, integrate
+from scipy import stats
+import six
+import six.moves as sixm
 
 # XXX this import isn't in this folder...
 # from pmf_cy import ProbabilisticMatrixFactorization, rmse, parse_fit_type
@@ -28,7 +34,7 @@ def rmse(a, b):
 
 
 class BayesianPMF(object):
-    def __init__(self, rating_tuples, latent_d=5,
+    def __init__(self, rating_tuples, latent_d,
                  subtract_mean=True,
                  rating_values=None,
                  discrete_expectations=True,
@@ -55,16 +61,21 @@ class BayesianPMF(object):
 
         self.rated = set((i, j) for i, j, rating in self.ratings)
         if knowable is None:
-            knowable = product(range(n), range(m))
+            knowable = product(sixm.xrange(n), sixm.xrange(m))
         self.unrated = set(knowable).difference(self.rated)
 
         if rating_values is not None:
-            rating_values = set(map(float, rating_values))
+            rating_values = set(sixm.map(float, rating_values))
             if not rating_values.issuperset(self.ratings[:, 2]):
                 raise ValueError("got ratings not in rating_values")
         self.rating_values = rating_values
         self.discrete_expectations = discrete_expectations
         self.num_integration_pts = num_integration_pts
+
+        # keep track of the highest-likelihood sample so far
+        # we'll sometimes want to initialize sampling here
+        self.sampled_mode = None
+        self.sampled_mode_lp = -np.inf
 
     def _set_rating_values(self, vals):
         if vals:
@@ -114,17 +125,20 @@ class BayesianPMF(object):
         self.mean_rating = np.mean(self.ratings[:, 2])
         # TODO: this can be done without a copy by .resize()...
 
-    def samples(self, num_samps, warmup=None, chains=1, fit_first=None):
-        '''
-        Runs the Markav chain for num_samps samples.
+        # keep the old sampled mode, but immediately replace it once we have
+        # a new one, since the old log-likelihood is no longer valid
+        self.sampled_mode_lp = -np.inf
 
-        Returns:
-            - a num_samps x num_users x latent_d array of user samples
-            - a num_samps x num_items x latent_d array of item samples
-            - a num_samps x num_users x num_items array of predictions
+    def samples(self, num_samps, warmup=None, chains=1,
+                start_at_mode=True, update_mode=True):
         '''
-        # TODO: options about starting points...previous points with some SGD?
-        # also, make the fit_first option do something
+        Runs the Markav chain for num_samps samples, after warming up for
+        warmup iterations beforehand (default: num_samps // 2).
+
+        Returns a dictionary with keys the name of the param, values
+        an array with first dimension num_samps.
+        '''
+        # TODO: options about starting at previous points...
         if warmup is None:
             warmup = num_samps // 2
 
@@ -144,9 +158,18 @@ class BayesianPMF(object):
             'nu_0': self.nu_0,
             'w_0': self.w_0,
         }
+        args = {'chains': chains, 'iter': warmup + num_samps, 'warmup': warmup,
+                'eat_output': True, 'return_output': False}
+        if start_at_mode:
+            args['init'] = self.sampled_mode
+        samples = sample(stan_model, data=data, **args)
 
-        return sample(stan_model, data, par_names=['U', 'V', 'predictions'],
-                      chains=chains, iter=num_samps, warmup=warmup)
+        if update_mode:
+            i = samples['lp__'].argmax()
+            if samples['lp__'][i] > self.sampled_mode_lp:
+                self.sampled_mode = {k: v[i] for k, v in six.iteritems(samples)}
+                self.sampled_mode_lp = samples['lp__'][i]
+        return samples
 
     def matrix_results(self, vals, which):
         "Returns a num_users x num_items matrix with `which` set to `vals`."
@@ -157,7 +180,7 @@ class BayesianPMF(object):
 
     def pick_out_predictions(self, samples, which=Ellipsis):
         # TODO: better way to index with which on the non-first axis
-        return np.asarray([p[which] for p in samples[2]])
+        return np.asarray([p[which] for p in samples['predictions']])
 
     def predict(self, samples, which=Ellipsis):
         "Gives the mean reconstruction given a series of samples."
@@ -170,33 +193,33 @@ class BayesianPMF(object):
     def total_variance(self, samples, which=Ellipsis):
         '''
         Gives the sum of the variance of each element of the prediction matrix
-        selected by which over samples_iter.
+        selected by which over samples_iter: \sum Var[R_ij].
         '''
         return self.pred_variance(samples, which=which).sum()
 
     def exp_variance(self, samples, which=Ellipsis, pool=None,
-                     fit_first=True, num_samps=30):
+                     num_samps=30, warmup=15, **sample_args):
         '''
         Gives the total expected variance in our predicted R matrix if we knew
         Rij for each ij in which, using samples to represent our distribution
-        for Rij.
+        for Rij: \sum E[Var[R_ij]].
 
         Parallelizes the evaluation over pool if passed (highly recommended,
         since this is sloooow).
         '''
         return self._distribute(_exp_variance_helper,
                 samples=samples, which=which, pool=pool,
-                fit_first=fit_first, num_samps=num_samps)
+                num_samps=num_samps, warmup=warmup, **sample_args)
 
-    def _distribute(self, fn, samples, which, pool, fit_first, num_samps):
+    def _distribute(self, fn, samples, which, pool, **sample_args):
         # figure out the indices of our selection
         # ...there's gotta be an easier way, right?
         n = self.num_users
         m = self.num_items
         all_indices = np.empty((n, m, 2), dtype=int)
-        for i in range(n):
+        for i in sixm.xrange(n):
             all_indices[i, :, 0] = i
-        for j in range(m):
+        for j in sixm.xrange(m):
             all_indices[:, j, 1] = j
         indices = all_indices[which]
         i_indices = indices[..., 0]
@@ -205,7 +228,7 @@ class BayesianPMF(object):
         # get samples of R_ij for each ij in which
         vals = self.pick_out_predictions(samples, which)
 
-        # estimate the distribution of the samples for each R_ij
+        # estimate the marginal distribution of each R_ij from the samples
         if self.discrete_expectations and self.rating_values is not None:
             discrete = True
 
@@ -214,7 +237,6 @@ class BayesianPMF(object):
             alpha = .1
             prev_samps = vals.shape[0]
             denom = prev_samps + alpha * len(self.rating_values)
-
             params = [
                 (np.histogram(v, bins=self.rating_bounds)[0] + alpha) / denom
                 for v in vals.reshape(prev_samps, -1).T
@@ -228,15 +250,13 @@ class BayesianPMF(object):
             # fit an MLE normal to the samples
             mean = np.mean(vals, 0)
             var = np.var(vals, 0)
-            params = zip(mean.flat, var.flat)
+            params = sixm.zip(mean.flat, var.flat)
 
         # TODO could experiment with map_async, imap_unordered
         mapper = pool.map if pool is not None else map
-        exps = mapper(fn,
-                zip(repeat(self),
-                    i_indices.flat, j_indices.flat,
-                    repeat(discrete), params,
-                    repeat(fit_first), repeat(num_samps)))
+        exps = mapper(partial(fn, **sample_args),
+                sixm.zip(repeat(self),
+                    i_indices.flat, j_indices.flat, repeat(discrete), params))
 
         res = np.empty(np.shape(vals)[1:])
         res.fill(np.nan)
@@ -263,21 +283,8 @@ class BayesianPMF(object):
 
 
 # stupid functions to work around multiprocessing.Pool/pickle silliness
-def _fit_pmf(pmf):
-    pmf.do_fit()
-    return pmf
 
-
-def _hyperparam_sampler(bpmf, *args):
-    return bpmf.sample_hyperparam(*args)
-
-
-def _feat_sampler(args):
-    bpmf = args[0]
-    return bpmf.sample_feature(*args[1:])
-
-
-def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps):
+def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
     if (i, j) in bpmf.rated:
         warnings.warn("Asked to check a known entry; returning NaN")
         return np.nan
@@ -285,7 +292,7 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps)
     def calculate_fn(v):
         b = deepcopy(bpmf)
         b.add_rating(i, j, v)
-        samps = b.samples(num_samps=num_samps, fit_first=fit_first)
+        samps = b.samples(**sample_args)
         return fn(b, samps)
 
     if discrete:
@@ -301,14 +308,13 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps)
         # find points to evaluate at
         # TODO: do fewer evaluations if the distribution is really narrow
         pts = dist.ppf(np.linspace(.001, .999, bpmf.num_integration_pts))
-        evals = np.fromiter(map(calculate_fn, pts), float, pts.size)
-        est = integrate.trapz(evals * dist.pdf(pts), pts)
+        evals = np.fromiter(sixm.map(calculate_fn, pts), float, pts.size)
+        est = np.trapz(evals * dist.pdf(pts), pts)
         s = "from {:5.1f} to {:5.1f} in {}".format(pts[0], pts[-1], pts.size)
 
         # # only take the expectation out to 2 sigma (>95% of normal mass)
         # left = mean - 2 * std
         # right = mean + 2 * std
-
         # est = stats.norm.expect(calculate_fn, loc=mean, scale=np.sqrt(var),
         #         lb=left, ub=right, epsrel=.05) # XXX integration eps
         # s = "from {:5.1f} to {:5.1f}".format(left, right)
@@ -318,65 +324,13 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, fit_first, num_samps)
     return est
 
 
-def _exp_variance_helper(args):
-    return _integrate_lookahead(BayesianPMF.total_variance, *args)
-
-
-################################################################################
-
-def test_vs_map():
-    from pmf import fake_ratings
-
-    ratings, true_u, true_v = fake_ratings(noise=1)
-    true_r = np.dot(true_u, true_v.T)
-
-    ds = [3, 5, 8, 10, 12, 15]
-    map_rmses = []
-    bayes_rmses_1 = []
-    bayes_rmses_2 = []
-    bayes_rmses_combo = []
-
-    for latent_d in ds:
-        bpmf = BayesianPMF(ratings, latent_d)
-
-        print("\ndimensionality: {}".format(latent_d))
-
-        print("fitting MAP...")
-        for ll in bpmf.fit_lls():
-            pass
-            #print("LL {}".format(ll))
-
-        predicted_map = bpmf.predicted_matrix()  # TODO
-
-        print("doing MCMC...")
-        samps = bpmf.samples(num_samps=500)
-
-        bayes_rmses_1.append(bpmf.bayes_rmse(samps[:250], true_r))
-        bayes_rmses_2.append(bpmf.bayes_rmse(samps[250:], true_r))
-        bayes_rmses_combo.append(bpmf.bayes_rmse(samps, true_r))
-
-        map_rmses.append(rmse(predicted_map, true_r))
-
-        print("MAP RMSE:               {}".format(map_rmses[-1]))
-        print("Bayes RMSE [first 250]: {}".format(bayes_rmses_1[-1]))
-        print("Bayes RMSE [next 250]:  {}".format(bayes_rmses_2[-1]))
-        print("Bayes RMSE [combo]:     {}".format(bayes_rmses_combo[-1]))
-
-    from matplotlib import pyplot as plt
-    plt.plot(ds, map_rmses, label="MAP")
-    plt.plot(ds, bayes_rmses_1, label="Bayes (first 250)")
-    plt.plot(ds, bayes_rmses_2, label="Bayes (next 250)")
-    plt.plot(ds, bayes_rmses_combo, label="Bayes (all 500)")
-    plt.ylabel("RMSE")
-    plt.xlabel("Dimensionality")
-    plt.legend()
-    plt.show()
+def _exp_variance_helper(args, **sample_args):
+    return _integrate_lookahead(BayesianPMF.total_variance, *args, **sample_args)
 
 ################################################################################
 
-Key = namedtuple('Key',
-        ['nice_name', 'key_fn', 'choose_max', 'wants_pool', 'args'])
-
+# The various evaluation functions we consider
+Key = namedtuple('Key', 'nice_name key_fn choose_max does_sampling args')
 KEYS = {
     'random': Key("Random", 'random', True, False, ()),
     'pred-variance': Key("Var[R_ij]", 'pred_variance', True, False, ()),
@@ -390,9 +344,9 @@ KEYS = {
 }
 
 
-def fetch_samples(bpmf, num, *args, **kwargs):
+def fetch_samples(bpmf, num_samps, **kwargs):
     try:
-        samps = bpmf.samples(num, *args, **kwargs)
+        samps = bpmf.samples(num_samps=num_samps, **kwargs)
         pred = bpmf.predict(samps)
     except Exception:
         import traceback
@@ -402,16 +356,28 @@ def fetch_samples(bpmf, num, *args, **kwargs):
 
 
 def full_test(bpmf, samples, real, key_name,
-              num_samps=128, fit_first=False, lookahead_samps=128,
-              pool=None, multieval=False, init_rmse=None, test_on=Ellipsis):
+              num_samps=128, samp_args=None,
+              lookahead_samps=128, lookahead_samp_args=None,
+              pool=None, sample_in_pool=False, test_on=Ellipsis):
+    '''
+    Evaluates the chosen selection criterion (key_name) on the data (real),
+    starting with an initial instance of BayesianPMF and some samples from it.
 
+    Yields tuples of # of rated items, the current RMSE, the (i, j) index of
+    the last choice, and an array of evaluations for the full matrix.
+    '''
     key = KEYS[key_name]
     total = real.size
     picker_fn = getattr(bpmf, key.key_fn)
     chooser = np.argmax if key.choose_max else np.argmin
 
-    if init_rmse is None:
-        init_rmse = bpmf.bayes_rmse(samples, real, which=test_on)
+    samp_args = (samp_args or {}).copy()
+    samp_args['num_samps'] = num_samps
+
+    lookahead_samp_args = (lookahead_samp_args or {}).copy()
+    lookahead_samp_args['num_samps'] = lookahead_samps
+
+    init_rmse = bpmf.bayes_rmse(samples, real, which=test_on)
     yield (len(bpmf.rated), init_rmse, None, None)
 
     while bpmf.unrated:
@@ -426,8 +392,10 @@ def full_test(bpmf, samples, real, key_name,
             which = tuple(unrated)
 
             key_kwargs = {'which': which}
-            if key.wants_pool and pool is not None:
-                key_kwargs['pool'] = pool
+            if key.does_sampling:
+                key_kwargs.update(lookahead_samp_args)
+                if pool is not None:
+                    key_kwargs['pool'] = pool
 
             evals = picker_fn(samples, *key.args, **key_kwargs)
 
@@ -438,12 +406,10 @@ def full_test(bpmf, samples, real, key_name,
         print("{:<40} Queried ({}, {}); {}/{} known".format(
                 key.nice_name, i, j, len(bpmf.rated), total))
 
-        samp_args = (bpmf, num_samps)
-        samp_kwargs = {'fit_first': True}
-        if multieval:
-            samples, pred = pool.apply(fetch_samples, samp_args, samp_kwargs)
+        if sample_in_pool:
+            samples, pred = pool.apply(fetch_samples, [bpmf], samp_args)
         else:
-            samples, pred = fetch_samples(*samp_args, **samp_kwargs)
+            samples, pred = fetch_samples(bpmf, **samp_args)
 
         err = rmse(pred[test_on], real[test_on])
         print("{:<40} RMSE {}: {:.5}".format(
@@ -452,9 +418,9 @@ def full_test(bpmf, samples, real, key_name,
 
 
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
-                   discrete=True, subtract_mean=True, num_steps=None,
-                   procs=None, threaded=False, num_samps=128,
-                   test_set='all', fit_first=False, **kwargs):
+                   discrete=True, subtract_mean=True, num_integration_pts=50,
+                   num_steps=None, procs=None, threaded=False,
+                   num_samps=128, samp_args=None, test_set='all', **kwargs):
     # figure out which points we know the answers to
     knowable = np.isfinite(real)
     knowable[real == 0] = 0
@@ -476,7 +442,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
         query_on = pickable
     else:
         if test_set % 1 == 0 and test_set != 1:
-            avail_pts = list(zip(*pickable.nonzero()))
+            avail_pts = list(sixm.zip(*pickable.nonzero()))
             picked_indices = random.sample(avail_pts, int(test_set))
             picker = np.zeros(pickable.shape, bool)
             picker[tuple(np.transpose(picked_indices))] = 1
@@ -485,7 +451,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
         test_on = picker * pickable
         query_on = (1 - picker) * pickable
 
-    query_set = set(zip(*query_on.nonzero()))
+    query_set = set(sixm.zip(*query_on.nonzero()))
 
     print("{} points known, {} to query, testing on {}, {} knowable, {} total"
             .format(ratings.shape[0], query_on.sum(), test_on.sum(),
@@ -495,17 +461,13 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             subtract_mean=subtract_mean,
             rating_values=rating_vals,
             discrete_expectations=discrete,
+            num_integration_pts=num_integration_pts,
             knowable=query_set)
 
-    # do initial fit
-    if fit_first:
-        print("Doing initial MAP fit...")
-        bpmf_init.fit()
-
-    pool = multiprocessing.Pool(procs) if procs is None or procs >= 1 else None
+    pool = multiprocessing.Pool(procs) if procs is None or procs > 1 else None
 
     print("Getting initial MCMC samples...")
-    samples = bpmf_init.samples(num_samps=num_samps, fit_first=fit_first)
+    samples = bpmf_init.samples(num_samps=num_samps, **samp_args)
 
     init_rmse = bpmf_init.bayes_rmse(samples, real, test_on)
     print("Initial RMSE: {}".format(init_rmse))
@@ -522,13 +484,11 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     def eval_key(key_name):
         res = full_test(
                 deepcopy(bpmf_init), samples, real, key_name,
-                pool=pool, multieval=threaded,
-                num_samps=num_samps, fit_first=fit_first,
-                init_rmse=init_rmse, test_on=test_on,
-                **kwargs)
+                num_samps=num_samps, samp_args=samp_args,
+                pool=pool, sample_in_pool=threaded, test_on=test_on, **kwargs)
         results[key_name] = list(islice(res, num_steps))
 
-    # TODO: no concurrent access to R. use another way...
+    # TODO: no concurrent access to R. be careful here...
     if threaded:
         threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
                    for key_name in key_names]
@@ -583,20 +543,18 @@ def main():
     parser.add_argument('--latent-d', '-D', type=int, default=5)
     parser.add_argument('--steps', '-s', type=int, default=None)
 
-    parser.add_argument('--discrete', action='store_true', default=None)
-    parser.add_argument('--no-discrete', action='store_false', dest='discrete')
+    parser._add_action(ActionNoYes('discrete', default=None))
+    parser.add_argument('--num-integration-pts', type=int, default=50)
 
-    parser.add_argument('--subtract-mean', action='store_true', default=True)
-    parser.add_argument('--no-subtract-mean',
-            action='store_false', dest='subtract_mean')
+    parser._add_action(ActionNoYes('subtract-mean', default=True))
 
-    parser._add_action(ActionNoYes('fit-first', default=False))
+    parser.add_argument('--samps', '-S', type=int, default=100)
+    parser.add_argument('--warmup', type=int, default=50)
 
-    parser.add_argument('--samps', '-S', type=int, default=128)
-    parser.add_argument('--lookahead-samps', type=int, default=128)
+    parser.add_argument('--lookahead-samps', type=int, default=100)
+    parser.add_argument('--lookahead-warmup', type=int, default=50)
 
-    parser.add_argument('--threaded', action='store_true', default=True)
-    parser.add_argument('--unthreaded', action='store_false', dest='threaded')
+    parser._add_action(ActionNoYes('threaded', 'unthreaded', default=True))
     parser.add_argument('--procs', '-P', type=int, default=None)
 
     parser.add_argument('--test-set', default='all')
@@ -651,9 +609,12 @@ def main():
                 latent_d=args.latent_d,
                 real=real, ratings=ratings, rating_vals=rating_vals,
                 test_set=args.test_set, num_steps=args.steps,
-                discrete=args.discrete, subtract_mean=args.subtract_mean,
-                fit_first=args.fit_first,
+                subtract_mean=args.subtract_mean,
+                discrete=args.discrete,
+                num_integration_pts=args.num_integration_pts,
                 num_samps=args.samps, lookahead_samps=args.lookahead_samps,
+                samp_args={'warmup': args.warmup},
+                lookahead_samp_args={'warmup': args.lookahead_warmup},
                 procs=args.procs, threaded=args.threaded)
     except Exception:
         import traceback
@@ -673,7 +634,7 @@ def main():
         results['_args'] = args
 
         with open(args.save_results, 'wb') as f:
-            pickle.dump(results, f)
+            pickle.dump(results, f, protocol=2)
 
 if __name__ == '__main__':
     main()
