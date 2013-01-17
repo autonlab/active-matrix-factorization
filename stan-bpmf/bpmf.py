@@ -565,6 +565,10 @@ def main():
     parser.add_argument('--no-save-results',
             action='store_false', dest='save_results')
 
+    parser.add_argument('--notes', nargs='+',
+        help="Doesn't do anything, just there to save any notes you'd like "
+             "in the results file.")
+
     parser.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
 
