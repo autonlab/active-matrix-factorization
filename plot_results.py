@@ -19,19 +19,25 @@ from active_pmf import ActivePMF
 import bayes_pmf
 from bayes_pmf import BayesianPMF
 
+sys.path.append(os.path.join(_dirname, 'stan-bpmf'))
+import bpmf
+from bpmf import BPMF
+
 sys.path.append(os.path.join(_dirname, 'ratingconcentration'))
 import active_rc
 
 sys.path.append(os.path.join(_dirname, 'mmmf'))
 import active_mmmf
 
-KEY_NAMES = { k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items() }
-KEY_NAMES.update({'rc_'+k: 'RC: ' + f.nice_name
+KEY_NAMES = {k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items()}
+KEY_NAMES.update({'rc_' + k: 'RC: ' + f.nice_name
                   for k, f in active_rc.KEY_FUNCS.items()})
-KEY_NAMES.update({'mmmf_'+k: 'MMMF: ' + f.nice_name
+KEY_NAMES.update({'mmmf_' + k: 'MMMF: ' + f.nice_name
                   for k, f in active_mmmf.KEY_FUNCS.items()})
-KEY_NAMES.update({'bayes_'+k: 'Bayes: ' + f.nice_name
+KEY_NAMES.update({'bayes_' + k: 'Bayes: ' + f.nice_name
                   for k, f in bayes_pmf.KEYS.items()})
+KEY_NAMES.update({'stan_ ' + k: 'Stan: ' + f.nice_name
+                  for k, f in bpmf.KEYS.items()})
 
 
 ################################################################################
@@ -49,6 +55,7 @@ def plot_predictions(apmf, real):
     norm = plt.Normalize(min(a.min() for a in xs), max(a.max() for a in xs))
 
     rated = np.array(list(apmf.rated))
+
     def show(mat, title, subplot, norm_=norm):
         plt.subplot(subplot)
 
@@ -58,12 +65,13 @@ def plot_predictions(apmf, real):
         plt.title(title)
 
         if apmf.rated:
-            plt.scatter(rated[:,1], rated[:,0], marker='s', s=15, c='white')
+            plt.scatter(rated[:, 1], rated[:, 0], marker='s', s=15, c='white')
 
     show(real, "Real", 221)
     show(pred, "MAP", 222)
     show(a_mean, "Normal: Mean", 223)
     show(a_std, "Normal: Std Dev", 224, plt.Normalize(0, a_std.max()))
+
 
 def plot_real(real, rated=None):
     from matplotlib import pyplot as plt
@@ -73,7 +81,8 @@ def plot_real(real, rated=None):
     plt.colorbar()
     plt.title("True Matrix")
     if rated is not None:
-        plt.scatter(rated[:,1], rated[:,0], marker='s', s=15, c='white')
+        plt.scatter(rated[:, 1], rated[:, 0], marker='s', s=15, c='white')
+
 
 def linestyle_color_marker(num=0):
     from itertools import cycle
@@ -85,6 +94,7 @@ def linestyle_color_marker(num=0):
     else:
         markers = [None]
     return zip(cycle(linestyles), cycle(colors), cycle(markers))
+
 
 def _plot_lines(results, fn, ylabel):
     from matplotlib import pyplot as plt
@@ -106,7 +116,7 @@ def _plot_lines(results, fn, ylabel):
     for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
         nums, rmses, ijs, vals = zip(*result)
         vals = fn(nums, rmses, ijs, vals, results)
-        nums = np.array(nums, copy=False) + (idx - total/2) * offset
+        nums = np.array(nums, copy=False) + (idx - total / 2) * offset
 
         l, c, m = next(l_c_m)
         plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker=m)
@@ -118,25 +128,27 @@ def _plot_lines(results, fn, ylabel):
 
     plt.legend(loc='best', prop=FontProperties(size=9))
 
+
 def plot_rmses(results, keys):
     def get_rmses(nums, rmses, ijs, vals, results):
         return rmses
-    _plot_lines({k:v for k, v in results.items() if k in keys},
+    _plot_lines({k: v for k, v in results.items() if k in keys},
                 get_rmses, "RMSE")
+
 
 def plot_num_ge_cutoff(results, cutoff, keys):
     def get_cutoffs(nums, rmses, ijs, vals, results):
         real = results['_real']
 
         assert ijs[0] is None
-        ns = [(results['_ratings'][:,2] >= cutoff).sum()]
+        ns = [(results['_ratings'][:, 2] >= cutoff).sum()]
 
         for i, j in ijs[1:]:
-            ns.append(ns[-1] + (1 if real[i,j] >= cutoff else 0))
+            ns.append(ns[-1] + (1 if real[i, j] >= cutoff else 0))
 
         return ns
 
-    _plot_lines({k:v for k, v in results.items() if k in keys},
+    _plot_lines({k: v for k, v in results.items() if k in keys},
                 get_cutoffs, "# found > {}".format(cutoff))
 
 
@@ -171,13 +183,12 @@ def plot_criteria_over_time(name, result, cmap=None):
 
     fig = plt.figure()
     #fig.suptitle(name)
-    grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.3,
+    grid = ImageGrid(fig, 111, nrows_ncols=(nr, nc), axes_pad=.3,
             cbar_location='right', cbar_mode='single')
 
     n_users, n_items = valses[0].shape
     xticks = np.linspace(-.5, n_items - .5, n_items + 1)
     yticks = np.linspace(-.5, n_users - .5, n_users + 1)
-
 
     finite_vals = [vals[np.isfinite(vals)] for vals in valses]
     vmin = min(f_vals.min() for f_vals in finite_vals if f_vals.size)
@@ -202,7 +213,7 @@ def plot_criteria_over_time(name, result, cmap=None):
         grid[idx].grid()
 
         # mark the selected point (indices are transposed)
-        grid[idx].scatter(j, i, marker='s', c='white', s=50) # s=15)
+        grid[idx].scatter(j, i, marker='s', c='white', s=50)  # s=15)
 
     for idx in range(len(ijs), nr * nc):
         grid[idx].set_visible(False)
@@ -210,6 +221,7 @@ def plot_criteria_over_time(name, result, cmap=None):
     grid.cbar_axes[0].colorbar(im)
 
     return fig
+
 
 def plot_criteria_firsts(result_items, cmap=None):
     from matplotlib import pyplot as plt
@@ -224,7 +236,7 @@ def plot_criteria_firsts(result_items, cmap=None):
 
     fig = plt.figure()
     fig.suptitle("Criteria First Steps")
-    grid = ImageGrid(fig, 111, nrows_ncols=(nr,nc), axes_pad=.5,
+    grid = ImageGrid(fig, 111, nrows_ncols=(nr, nc), axes_pad=.5,
             cbar_pad=.1, cbar_location='right', cbar_mode='each')
 
     n_users, n_items = result_items[0][1][1][3].shape
@@ -251,7 +263,7 @@ def plot_criteria_firsts(result_items, cmap=None):
         grid[idx].scatter(j, i, marker='s', c='white', s=20)
         grid.cbar_axes[idx].colorbar(im)
 
-    for idx in range(len(result_items), nr*nc):
+    for idx in range(len(result_items), nr * nc):
         grid[idx].set_visible(False)
         grid.cbar_axes[idx].set_visible(False)
 
@@ -285,7 +297,8 @@ def main():
     add_bool_opt(parser, 'criteria-firsts', False)
     add_bool_opt(parser, 'initial-preds', False)
 
-    parser.add_argument('--kind', choices=['apmf','bayes','rc'], default='apmf')
+    parser.add_argument('--kind',  default='apmf',
+                        choices='apmf bayes stan rc'.split())
 
     parser.add_argument('--all-plots', default=False, action='store_true')
 
@@ -329,11 +342,11 @@ def main():
     with open(args.results_file, 'rb') as resultsfile:
         results = pickle.load(resultsfile)
 
-    # bayes doesn't save keys with a prefix
-    if args.kind == 'bayes':
+    # bayes, stan don't save keys with a prefix
+    if args.kind in {'bayes', 'stan'}:
+        pref = args.kind + '_'
         results = {
-            k if k.startswith('_') or k.startswith('bayes_') else ('bayes_' + k)
-            : v
+            k if k.startswith('_') or k.startswith(pref) else (pref + k): v
             for k, v in results.items()
         }
 
@@ -354,7 +367,6 @@ def main():
     if not args.interactive:
         import matplotlib
         matplotlib.use('Agg')
-
 
     from matplotlib import pyplot as plt
     from matplotlib import cm

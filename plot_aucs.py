@@ -7,7 +7,7 @@ import pickle
 
 import numpy as np
 
-from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, # for pickle
+from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
                           linestyle_color_marker)
 
 
@@ -19,9 +19,11 @@ def load_results(filenames):
 
 ################################################################################
 
+
 def rmse(result):
     ns, rmses, ijs, evals = zip(*result)
     return np.asarray(ns), np.asarray(rmses)
+
 
 def plot_rmses(filenames):
     import matplotlib.pyplot as plt
@@ -57,7 +59,7 @@ def plot_rmses(filenames):
     l_c_m = linestyle_color_marker(len(ns))
 
     for idx, (nice_name, vals) in enumerate(nice_results):
-        nums = ns + (idx - total/2) * offset
+        nums = ns + (idx - total / 2) * offset
 
         l, c, m = next(l_c_m)
         plt.plot(nums, np.mean(vals, axis=0),
@@ -87,17 +89,17 @@ def rmse_auc(result):
 
     return ((rmses[:-1] + rmses[1:]) * np.diff(ns)).sum() / 2
 
+
 def get_aucs(filenames):
     results = defaultdict(list)
-
     for f, r in zip(filenames, load_results(filenames)):
         for k, v in r.items():
             if not k.startswith('_'):
                 if 'results_bayes' in f:
                     k = 'bayes_' + k
                 results[k].append(rmse_auc(v))
-
     return {k: np.array(v) for k, v in results.items()}
+
 
 def plot_aucs(filenames):
     import matplotlib.pyplot as plt
@@ -115,6 +117,7 @@ def plot_aucs(filenames):
     plt.xlim(indices[0] - .5, indices[-1] + .5)
     plt.ylabel('AUC (RMSE)')
     plt.tight_layout()
+
 
 def plot_cutoff_aucs(filenames, cutoff):
     import matplotlib.pyplot as plt
@@ -134,6 +137,7 @@ def plot_cutoff_aucs(filenames, cutoff):
     plt.tight_layout()
 
 ################################################################################
+
 
 def get_num_ge_cutoff(filenames, cutoff):
     results = defaultdict(list)
@@ -156,10 +160,10 @@ def get_num_ge_cutoff(filenames, cutoff):
                 assert np.all(ns == des_ns)
 
             assert ijs[0] is None
-            poses = [(r['_ratings'][:,2] >= cutoff).sum()]
+            poses = [(r['_ratings'][:, 2] >= cutoff).sum()]
 
             for i, j in ijs[1:]:
-                poses.append(poses[-1] + (1 if real[i,j] >= cutoff else 0))
+                poses.append(poses[-1] + (1 if real[i, j] >= cutoff else 0))
 
             results[k].append(np.asarray(poses))
 
@@ -170,11 +174,13 @@ def get_num_ge_cutoff_mean(filenames, cutoff):
     results, ns = get_num_ge_cutoff(filenames, cutoff)
     return {k: np.mean(v, 0) for k, v in results.items()}, ns
 
+
 def get_num_ge_cutoff_auc(filenames, cutoff):
     results, ns = get_num_ge_cutoff(filenames, cutoff)
     return {k: np.array([((poses[:-1] + poses[1:]) * np.diff(ns)).sum() / 2
                 for poses in v])
             for k, v in results.items()}
+
 
 def plot_num_ge_cutoff(filenames, cutoff):
     import matplotlib.pyplot as plt
@@ -196,7 +202,7 @@ def plot_num_ge_cutoff(filenames, cutoff):
     l_c_m = linestyle_color_marker(len(ns))
 
     for idx, (nice_name, vals) in enumerate(nice_results):
-        nums = ns + (idx - total/2) * offset
+        nums = ns + (idx - total / 2) * offset
 
         l, c, m = next(l_c_m)
         plt.plot(nums, np.mean(vals, axis=0),
@@ -205,7 +211,6 @@ def plot_num_ge_cutoff(filenames, cutoff):
     # only show integer values for x ticks
     #xmin, xmax = plt.xlim()
     #plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
-
 
 
 ################################################################################
