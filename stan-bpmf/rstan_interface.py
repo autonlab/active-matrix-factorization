@@ -33,11 +33,12 @@ def get_model(filename, cache_filename=None, check_times=True, use_cache=True):
     '''
     Returns a stan_model for the model code in filename.
     If use_cache (by default), tries to load the compiled file from
-    cache_filename (default filename + '.model.pkl.gz') if available,
+    cache_filename (default filename + '.model.pkl[2|3].gz') if available,
     otherwise compiles it and saves into the gzipped, pickled cache file.
     '''
     if cache_filename is None and use_cache:
-        cache_filename = filename + '.model.pkl.gz'
+        cache_filename = '{}.model.pkl{}.gz'.format(
+            filename, sys.version_info[0])
 
     if use_cache and os.path.exists(cache_filename) and (not check_times or
             os.path.getmtime(cache_filename) >= os.path.getmtime(filename)):
@@ -50,7 +51,7 @@ def get_model(filename, cache_filename=None, check_times=True, use_cache=True):
     model = rstan.stan_model(file=filename)
     if use_cache:
         with gzip.open(cache_filename, 'wb') as f:
-            pickle.dump(model, f)
+            pickle.dump(model, f, protocol=2)
     return model
 
 
