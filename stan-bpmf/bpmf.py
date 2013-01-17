@@ -142,6 +142,7 @@ class BayesianPMF(object):
         if warmup is None:
             warmup = num_samps // 2
 
+        sub_rating = self.mean_rating if self.subtract_mean else 0
         data = {
             'n_users': self.num_users,
             'n_items': self.num_items,
@@ -150,7 +151,7 @@ class BayesianPMF(object):
             'n_obs': self.ratings.shape[0],
             'obs_users': self.ratings[:, 0] + 1,
             'obs_items': self.ratings[:, 1] + 1,
-            'obs_ratings': self.ratings[:, 2],
+            'obs_ratings': self.ratings[:, 2] - sub_rating,
 
             'rating_std': self.rating_std,
             'mu_0': self.mu_0,
@@ -180,7 +181,8 @@ class BayesianPMF(object):
 
     def pick_out_predictions(self, samples, which=Ellipsis):
         # TODO: better way to index with which on the non-first axis
-        return np.asarray([p[which] for p in samples['predictions']])
+        preds = np.asarray([p[which] for p in samples['predictions']])
+        return (preds + self.mean_rating) if self.subtract_mean else preds
 
     def predict(self, samples, which=Ellipsis):
         "Gives the mean reconstruction given a series of samples."
