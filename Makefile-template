@@ -1,0 +1,84 @@
+# absolute paths to results and code dirs
+CODE_BASE ?= $(HOME)/matrix-fact
+RESULTS_BASE ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+
+# use all cores by default
+PROCS ?= 0
+
+PYTHON ?= python3
+MATLAB ?= matlab
+
+IGNORE_GIT ?= interactive
+GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
+
+LATENT_D=2
+
+run%:
+	mkdir -p $@
+
+run%/data.pkl: | run%
+	exit 1
+	# generate the data somehow. some examples:
+	#
+	# random data:
+	# cd $(CODE_BASE) && $(PYTHON) generate.py \
+	#	--rows 10 --cols 10 --rank 2 \
+	#	--known-pos 10 --unknown-pos 90 --cutoff 0 \
+	#	$(RESULTS_BASE)/$@
+	#
+	# pick out 50x50 movielens data:
+	# cd $(CODE_BASE)/movielens-100k && $(PYTHON) choose_training.py \
+	#	$(RESULTS_BASE)/$@ 200
+
+# also useful args for most types: --steps, --test-set
+
+run%/results_stan.pkl: run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' -R 1 $(PYTHON) bpmf.py \
+		--notes "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 200 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		2>&1 | tee $(RESULTS_BASE)/$@.log
+
+run%/results_bayes.pkl: run%/data.pkl
+	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' -R 1 $(PYTHON) run_bayes_pmf.py \
+		--notes "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 200 --lookahead-samps 100 \
+		--procs $(PROCS) \
+		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		2>&1 | tee $(RESULTS_BASE)/$@.log
+
+run%/results_apmf.pkl: run%/data.pkl
+	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' -R 1 $(PYTHON) active_pmf.py \
+		--notes "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--refit-lookahead \
+		--procs $(PROCS) \
+		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		pred-variance exp-variance random \
+		2>&1 | tee $(RESULTS_BASE)/$@.log
+
+run%/results_mmmf.pkl: run%/data.pkl
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' -R 1 $(PYTHON) active_mmmf.py \
+		--notes "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		2>&1 | tee $(RESULTS_BASE)/$@.log
+
+run%/results_rc.pkl: run%/data.pkl
+	cd $(CODE_BASE)/ratingconcentration && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' -R 1 $(PYTHON) active_rc.py \
+		--notes "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		--delta 1.5 --pred-mean \
+		entropy random	\
+		2>&1 | tee $(RESULTS_BASE)/$@.log
