@@ -13,6 +13,13 @@ GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
 
 LATENT_D=2
 
+# TODO: smarter formulae/formats that split up results for each key, but
+#		know how to run multiple keys in parallel
+
+# NOTE: this makefile uses | dependencies everywhere to avoid reruns based
+#       on modification time of the data file, to avoid very expensive ops
+#       just in case. if you want to rerun, just delete the data files.
+
 run%:
 	mkdir -p $@
 
@@ -32,7 +39,7 @@ run%/data.pkl: | run%
 
 # also useful args for most types: --steps, --test-set
 
-run%/results_stan.pkl: run%/data.pkl
+run%/results_stan.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) bpmf.py \
 		--notes "git rev {{REV}}" \
@@ -43,7 +50,7 @@ run%/results_stan.pkl: run%/data.pkl
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
-run%/results_bayes.pkl: run%/data.pkl
+run%/results_bayes.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) run_bayes_pmf.py \
 		--notes "git rev {{REV}}" \
@@ -53,7 +60,7 @@ run%/results_bayes.pkl: run%/data.pkl
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
-run%/results_apmf.pkl: run%/data.pkl
+run%/results_apmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) active_pmf.py \
 		--notes "git rev {{REV}}" \
@@ -64,7 +71,7 @@ run%/results_apmf.pkl: run%/data.pkl
 		pred-variance exp-variance random \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
-run%/results_mmmf.pkl: run%/data.pkl
+run%/results_mmmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) active_mmmf.py \
 		--notes "git rev {{REV}}" \
@@ -73,7 +80,7 @@ run%/results_mmmf.pkl: run%/data.pkl
 		-C 1 --cutoff 3.5 \
 		2>&1 | tee $(RESULTS_BASE)/$@.log
 
-run%/results_rc.pkl: run%/data.pkl
+run%/results_rc.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/ratingconcentration && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' -R 1 $(PYTHON) active_rc.py \
 		--notes "git rev {{REV}}" \
