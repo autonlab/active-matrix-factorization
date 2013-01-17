@@ -13,6 +13,7 @@ from copy import deepcopy
 from functools import partial
 from itertools import islice, product, repeat
 import multiprocessing
+import os
 import random
 from threading import Thread
 import warnings
@@ -26,7 +27,7 @@ import six.moves as sixm
 # from pmf_cy import ProbabilisticMatrixFactorization, rmse, parse_fit_type
 
 from rstan_interface import get_model, sample
-stan_model = get_model('bpmf.stan')
+stan_model = get_model(os.path.join(os.path.dirname(__file__), 'bpmf.stan'))
 
 
 def rmse(a, b):
