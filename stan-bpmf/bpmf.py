@@ -165,6 +165,9 @@ class BPMF(object):
         if start_at_mode:
             args['init'] = self.sampled_mode
         samples = sample(stan_model, data=data, **args)
+        # TODO: would be nice to initialize step size parameters to old values
+        #       but still allow adaptation. unfortunately, stan doesn't
+        #       currently support this.
 
         if update_mode:
             i = samples['lp__'].argmax()

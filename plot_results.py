@@ -36,7 +36,7 @@ KEY_NAMES.update({'mmmf_' + k: 'MMMF: ' + f.nice_name
                   for k, f in active_mmmf.KEY_FUNCS.items()})
 KEY_NAMES.update({'bayes_' + k: 'Bayes: ' + f.nice_name
                   for k, f in bayes_pmf.KEYS.items()})
-KEY_NAMES.update({'stan_ ' + k: 'Stan: ' + f.nice_name
+KEY_NAMES.update({'stan_' + k: 'Stan: ' + f.nice_name
                   for k, f in bpmf.KEYS.items()})
 
 
@@ -274,8 +274,9 @@ def plot_criteria_firsts(result_items, cmap=None):
 ### Command-line interface
 
 def add_bool_opt(parser, name, default=False):
-    parser.add_argument('--' + name, action='store_true', default=default)
-    parser.add_argument('--no-' + name, action='store_false',
+    g = parser.add_mutually_exclusive_group()
+    g.add_argument('--' + name, action='store_true', default=default)
+    g.add_argument('--no-' + name, action='store_false',
             dest=name.replace('-', '_'))
 
 
@@ -329,7 +330,8 @@ def main():
             if fig is None:
                 from matplotlib import pyplot as fig
             fname = os.path.join(args.outdir, name)
-            fig.savefig(fname + '.' + args.filetype, bbox_inches='tight', pad_inches=.1)
+            fig.savefig(fname + '.' + args.filetype,
+                        bbox_inches='tight', pad_inches=.1)
     else:
         def save_plot(name, fig=None):
             pass
