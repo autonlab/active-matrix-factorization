@@ -27,8 +27,14 @@ import six.moves as sixm
 # from pmf_cy import ProbabilisticMatrixFactorization, rmse, parse_fit_type
 
 from rstan_interface import get_model, sample
-stan_model = get_model(os.path.join(os.path.dirname(__file__), 'bpmf.stan'))
-
+_stan_models = {}
+_dir = os.path.dirname(__file__)
+def get_stan_model(filename='bpmf.stan'):
+    try:
+        return _stan_models[filename]
+    except KeyError:
+        _stan_models[filename] = m = get_model(os.path.join(_dir, filename))
+        return m
 
 def rmse(a, b):
     return np.sqrt(((a - b) ** 2).sum() / a.size)
@@ -40,7 +46,8 @@ class BPMF(object):
                  rating_values=None,
                  discrete_expectations=True,
                  num_integration_pts=50,
-                 knowable=None):
+                 knowable=None,
+                 model_filename='bpmf.stan'):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
 
@@ -72,6 +79,7 @@ class BPMF(object):
         self.rating_values = rating_values
         self.discrete_expectations = discrete_expectations
         self.num_integration_pts = num_integration_pts
+        self.model_filename = model_filename
 
         # keep track of the highest-likelihood sample so far
         # we'll sometimes want to initialize sampling here
@@ -124,14 +132,14 @@ class BPMF(object):
 
         self.ratings = np.append(self.ratings, extra, 0)
         self.mean_rating = np.mean(self.ratings[:, 2])
-        # TODO: this can be done without a copy by .resize()...
+        # this could be done without a copy by .resize()...
 
         # keep the old sampled mode, but immediately replace it once we have
         # a new one, since the old log-likelihood is no longer valid
         self.sampled_mode_lp = -np.inf
 
     def samples(self, num_samps, warmup=None, chains=1,
-                start_at_mode=True, update_mode=True):
+                start_at_mode=True, update_mode=True, model_filename=None):
         '''
         Runs the Markav chain for num_samps samples, after warming up for
         warmup iterations beforehand (default: num_samps // 2).
@@ -164,6 +172,7 @@ class BPMF(object):
                 'eat_output': True, 'return_output': False}
         if start_at_mode:
             args['init'] = self.sampled_mode
+        stan_model = get_stan_model(model_filename or self.model_filename)
         samples = sample(stan_model, data=data, **args)
         # TODO: would be nice to initialize step size parameters to old values
         #       but still allow adaptation. unfortunately, stan doesn't
@@ -426,7 +435,8 @@ def full_test(bpmf, samples, real, key_name,
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                    discrete=True, subtract_mean=True, num_integration_pts=50,
                    num_steps=None, procs=None, threaded=False,
-                   num_samps=128, samp_args=None, test_set='all', **kwargs):
+                   num_samps=128, samp_args=None, test_set='all',
+                   model_filename='stan.bpmf', **kwargs):
     # figure out which points we know the answers to
     knowable = np.isfinite(real)
     knowable[real == 0] = 0
@@ -468,7 +478,8 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             rating_values=rating_vals,
             discrete_expectations=discrete,
             num_integration_pts=num_integration_pts,
-            knowable=query_set)
+            knowable=query_set,
+            model_filename=model_filename)
 
     pool = multiprocessing.Pool(procs) if procs is None or procs > 1 else None
 
@@ -565,6 +576,8 @@ def main():
 
     parser.add_argument('--test-set', default='all')
 
+    parser.add_argument('--model-filename', default='stan.bpmf')
+
     parser.add_argument('--load-data', required='True', metavar='FILE')
     parser.add_argument('--save-results', nargs='?', default=True, const=True,
             metavar='FILE')
@@ -625,7 +638,8 @@ def main():
                 num_samps=args.samps, lookahead_samps=args.lookahead_samps,
                 samp_args={'warmup': args.warmup},
                 lookahead_samp_args={'warmup': args.lookahead_warmup},
-                procs=args.procs, threaded=args.threaded)
+                procs=args.procs, threaded=args.threaded,
+                model_filename=args.model_filename)
     except Exception:
         import traceback
         print()

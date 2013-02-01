@@ -18,22 +18,15 @@ data {
   // feature mean covariances are beta_0 * inv wishart(nu_0, w_0)
   real<lower=0> beta_0; // usually 2
   int<lower=rank> nu_0; // deg of freedom, usually == rank
-  cov_matrix[rank] w_0; // scale matrix, usually identity
 }
 
 transformed data {
-  matrix[rank, rank] w_0_L; // Cholesky factorization of the scale matrix
-  matrix[rank, rank] w_0_L_inv;
   matrix[rank, rank] eye;
-
   for (j in 1:rank) {
     for (i in 1:rank)
       eye[i, j] <- 0.0;
     eye[j, j] <- 1.0;
   }
-
-  w_0_L <- cholesky_decompose(w_0);
-  w_0_L_inv <- mdivide_left_tri_low(w_0_L, eye);
 }
 
 parameters {
@@ -99,8 +92,8 @@ model {
   }
 
   // Find Cholesky-style factors of the covariance matrices.
-  cov_u_L <- mdivide_left_tri_low(cov_u_A, w_0_L_inv);
-  cov_v_L <- mdivide_left_tri_low(cov_v_A, w_0_L_inv);
+  cov_u_L <- mdivide_left_tri_low(cov_u_A, eye);
+  cov_v_L <- mdivide_left_tri_low(cov_v_A, eye);
 
 
   //////////////////////////////////////////////////////////////////////////////
@@ -130,3 +123,15 @@ model {
   for (n in 1:n_obs)
     obs_ratings[n] ~ normal(predictions[obs_users[n],obs_items[n]], rating_std);
 }
+
+/*
+generated quantities {
+  real training_rmse;
+  training_rmse <- 0;
+  for (i in 1:n_obs) {
+    training_rmse <- training_rmse
+      + square(predictions[obs_users[i], obs_items[i]] - obs_ratings[i]);
+  }
+  training_rmse <- sqrt(training_rmse);
+}
+*/

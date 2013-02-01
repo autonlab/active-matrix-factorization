@@ -21,24 +21,14 @@ data {
   cov_matrix[rank] w_0; // scale matrix, usually identity
 }
 
-transformed data {
-  matrix[rank,rank] eye;
-  for (j in 1:rank) {
-    for (i in 1:rank) {
-      eye[i, j] <- 0.0;
-    }
-    eye[j, j] <- 1.0;
-  }
-}
-
 parameters {
   // latent factors
   matrix[n_users, rank] U;
   matrix[n_users, rank] V;
 
   // means and covs on latent factors
-  vector[rank] mu_u_std;
-  vector[rank] mu_v_std;
+  vector[rank] mu_u;
+  vector[rank] mu_v;
   cov_matrix[rank] cov_u;
   cov_matrix[rank] cov_v;
 }
@@ -49,16 +39,6 @@ transformed parameters {
 }
 
 model {
-  // local variables to transform means from standardized to their real dists
-  vector[rank] mu_u;
-  vector[rank] mu_v;
-  matrix[rank,rank] cov_u_L;
-  matrix[rank,rank] cov_v_L;
-  cov_u_L <- cholesky_decompose(cov_u);
-  cov_v_L <- cholesky_decompose(cov_v);
-  mu_u <- mu_0 + cov_u_L * mu_u_std;
-  mu_v <- mu_0 + cov_v_L * mu_u_std;
-
   // observed data likelihood
   for (n in 1:n_obs)
     obs_ratings[n] ~ normal(predictions[obs_users[n],obs_items[n]], rating_std);
@@ -71,15 +51,20 @@ model {
     V[j]' ~ multi_normal(mu_v, cov_v);
 
   // hyperpriors on latent factor hyperparams
-  mu_u_std ~ normal(0, 1); // mu_u ~ multi_normal(mu_0, cov_u * beta_0);
-  mu_v_std ~ normal(0, 1); // mu_v ~ multi_normal(mu_0, cov_v * beta_0);
+  mu_u ~ multi_normal(mu_0, cov_u * beta_0);
+  mu_v ~ multi_normal(mu_0, cov_v * beta_0);
   cov_u ~ inv_wishart(nu_0, w_0);
   cov_v ~ inv_wishart(nu_0, w_0);
 }
 
-/* moved this to transformed parameters; figure out which is better
+/*
 generated quantities {
-    matrix[n_users, n_items] predictions;
-    predictions <- U * V';
+  real training_rmse;
+  training_rmse <- 0;
+  for (i in 1:n_obs) {
+    training_rmse <- training_rmse
+      + square(predictions[obs_users[i], obs_items[i]] - obs_ratings[i]);
+  }
+  training_rmse <- sqrt(training_rmse);
 }
 */
