@@ -28,7 +28,7 @@ import six.moves as sixm
 
 from rstan_interface import get_model, sample
 _stan_models = {}
-_dir = os.path.dirname(__file__)
+_dir = os.path.abspath(os.path.dirname(__file__))
 def get_stan_model(filename='bpmf.stan'):
     try:
         return _stan_models[filename]
@@ -436,7 +436,10 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                    discrete=True, subtract_mean=True, num_integration_pts=50,
                    num_steps=None, procs=None, threaded=False,
                    num_samps=128, samp_args=None, test_set='all',
-                   model_filename='stan.bpmf', **kwargs):
+                   model_filename='bpmf.stan', **kwargs):
+    # make sure the model is compiled and loaded beforehand
+    get_stan_model(model_filename)
+
     # figure out which points we know the answers to
     knowable = np.isfinite(real)
     knowable[real == 0] = 0
@@ -576,7 +579,7 @@ def main():
 
     parser.add_argument('--test-set', default='all')
 
-    parser.add_argument('--model-filename', default='stan.bpmf')
+    parser.add_argument('--model-filename', default='bpmf.stan')
 
     parser.add_argument('--load-data', required='True', metavar='FILE')
     parser.add_argument('--save-results', nargs='?', default=True, const=True,
