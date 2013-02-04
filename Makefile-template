@@ -48,7 +48,7 @@ run%/results_stan.pkl: | run%/data.pkl
 		--lookahead-samps 100 --lookahead-warmup 50 \
 		--procs $(PROCS) \
 		--load-data $(RESULTS_BASE)/$< --save-results $(RESULTS_BASE)/$@ \
-		2>&1 | tee $(RESULTS_BASE)/$@.log
+		2>&1 | tee >(gzip >$(RESULTS_BASE)/$@.log.gz)
 
 run%/results_bayes.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
@@ -58,7 +58,7 @@ run%/results_bayes.pkl: | run%/data.pkl
 		--samps 200 --lookahead-samps 100 \
 		--procs $(PROCS) \
 		--load-data $(RESULTS_BASE)/$< --save-results $(RESULTS_BASE)/$@ \
-		2>&1 | tee $(RESULTS_BASE)/$@.log
+		2>&1 | tee >(gzip >$(RESULTS_BASE)/$@.log.gz)
 
 run%/results_apmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
@@ -69,7 +69,7 @@ run%/results_apmf.pkl: | run%/data.pkl
 		--procs $(PROCS) \
 		--data-file $(RESULTS_BASE)/$< --save-results $(RESULTS_BASE)/$@ \
 		pred-variance exp-variance random \
-		2>&1 | tee $(RESULTS_BASE)/$@.log
+		2>&1 | tee >(gzip >$(RESULTS_BASE)/$@.log.gz)
 
 run%/results_mmmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
@@ -78,7 +78,7 @@ run%/results_mmmf.pkl: | run%/data.pkl
 		--data-file $(RESULTS_BASE)/$< --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
 		-C 1 --cutoff 3.5 \
-		2>&1 | tee $(RESULTS_BASE)/$@.log
+		2>&1 | tee >(gzip >$(RESULTS_BASE)/$@.log.gz)
 
 run%/results_rc.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/ratingconcentration && $(GIT_SCRIPT) | head -n 1 | \
@@ -88,4 +88,4 @@ run%/results_rc.pkl: | run%/data.pkl
 		--matlab $(MATLAB) \
 		--delta 1.5 --pred-mean \
 		entropy random \
-		2>&1 | tee $(RESULTS_BASE)/$@.log
+		2>&1 | tee >(gzip >$(RESULTS_BASE)/$@.log.gz)
