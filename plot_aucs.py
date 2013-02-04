@@ -4,18 +4,26 @@ from collections import defaultdict
 import itertools
 import math
 import pickle
+import re
 
 import numpy as np
 
 from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
-                          linestyle_color_marker)
+                          linestyle_color_marker, guess_kind)
 
 
 def load_results(filenames):
     for filename in filenames:
         with open(filename, 'rb') as f:
             r = pickle.load(f)
-        yield r
+        kind = guess_kind(filename)
+
+        if kind == 'apmf':
+            yield r
+        else:
+            rep = re.compile(r'^(?!(_|{}_))'.format(kind))
+            yield {rep.sub(kind + '_', k): v for k, v in r.items()}
+
 
 ################################################################################
 
@@ -37,8 +45,6 @@ def plot_rmses(filenames):
     for f, r in zip(filenames, load_results(filenames)):
         for k, v in r.items():
             if not k.startswith('_'):
-                if 'results_bayes' in f:
-                    k = 'bayes_' + k
                 ns, rmses = rmse(v)
                 if prev_ns is None:
                     prev_ns = ns
@@ -95,8 +101,6 @@ def get_aucs(filenames):
     for f, r in zip(filenames, load_results(filenames)):
         for k, v in r.items():
             if not k.startswith('_'):
-                if 'results_bayes' in f:
-                    k = 'bayes_' + k
                 results[k].append(rmse_auc(v))
     return {k: np.array(v) for k, v in results.items()}
 
@@ -123,7 +127,8 @@ def plot_cutoff_aucs(filenames, cutoff):
     import matplotlib.pyplot as plt
 
     names, aucs = zip(*sorted(
-        (KEY_NAMES[k], v) for k, v in get_num_ge_cutoff_auc(filenames, cutoff).items()))
+        (KEY_NAMES[k], v) for k, v
+         in get_num_ge_cutoff_auc(filenames, cutoff).items()))
 
     if all(a.size == 1 for a in aucs):
         plt.plot(aucs, linestyle='None', marker='o')
@@ -150,8 +155,6 @@ def get_num_ge_cutoff(filenames, cutoff):
         for k, v in r.items():
             if k.startswith('_'):
                 continue
-            if 'results_bayes' in f:
-                k = 'bayes_' + k
 
             ns, rmses, ijs, evals = zip(*v)
             if des_ns is None:

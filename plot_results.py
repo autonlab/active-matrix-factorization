@@ -5,6 +5,7 @@
 import itertools
 import math
 import os
+import re
 import sys
 import warnings
 
@@ -38,6 +39,7 @@ KEY_NAMES.update({'bayes_' + k: 'Bayes: ' + f.nice_name
                   for k, f in bayes_pmf.KEYS.items()})
 KEY_NAMES.update({'stan_' + k: 'Stan: ' + f.nice_name
                   for k, f in bpmf.KEYS.items()})
+KINDS = {'apmf', 'rc', 'mmmf', 'bayes', 'stan'}
 
 
 ################################################################################
@@ -279,6 +281,10 @@ def add_bool_opt(parser, name, default=False):
     g.add_argument('--no-' + name, action='store_false',
             dest=name.replace('-', '_'))
 
+def guess_kind(filename):
+    return next(
+        (k for k in re.findall(r'results_(.*?).pkl', filename) if k in KINDS),
+        'apmf')
 
 def main():
     import argparse
@@ -298,7 +304,7 @@ def main():
     add_bool_opt(parser, 'criteria-firsts', False)
     add_bool_opt(parser, 'initial-preds', False)
 
-    parser.add_argument('--kind',  default='apmf',
+    parser.add_argument('--kind',  default=None,
                         choices='apmf bayes stan rc'.split())
 
     parser.add_argument('--all-plots', default=False, action='store_true')
@@ -317,6 +323,9 @@ def main():
         args.criteria = True
         args.criteria_firsts = True
         args.initial_preds = True
+
+    if args.kind is None:
+        args.kind = guess_kind(args.results_file)
 
     # try to make the out directory if necessary; set up save_plot fn
     if args.outdir:
@@ -344,13 +353,11 @@ def main():
     with open(args.results_file, 'rb') as resultsfile:
         results = pickle.load(resultsfile)
 
-    # bayes, stan don't save keys with a prefix
-    if args.kind in {'bayes', 'stan'}:
-        pref = args.kind + '_'
-        results = {
-            k if k.startswith('_') or k.startswith(pref) else (pref + k): v
-            for k, v in results.items()
-        }
+    # make sure keys have the right prefix
+    if args.kind != 'apmf':
+        prefix = args.kind + '_'
+        rep = re.compile(r'^(?!(_|{}))'.format(prefix))
+        results = {rep.sub(prefix, k): v for k, v in results.items()}
 
     # check args.keys are actually in the results
     if not args.keys:
