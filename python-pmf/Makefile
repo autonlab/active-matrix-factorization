@@ -16,7 +16,8 @@ pmf_cy.c: pmf_cy.pyx pmf_cy.pxd
 	${cython} pmf_cy.pyx
 
 bayes_pmf.c: bayes_pmf.py bayes_pmf.pxd
-	${cython} bayes_pmf.py
+	${cython} -Xbinding=false bayes_pmf.py
+# https://groups.google.com/forum/?fromgroups=#!topic/cython-users/QHStfaxywC8
 
 clean:
 	rm -f {normal_exps_cy,pmf_cy,bayes_pmf}.{c,so}
