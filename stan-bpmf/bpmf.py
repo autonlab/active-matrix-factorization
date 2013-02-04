@@ -484,6 +484,8 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             knowable=query_set,
             model_filename=model_filename)
 
+    if procs <= 0:
+        procs = None
     pool = multiprocessing.Pool(procs) if procs is None or procs > 1 else None
 
     print("Getting initial MCMC samples...")
