@@ -282,9 +282,10 @@ def add_bool_opt(parser, name, default=False):
             dest=name.replace('-', '_'))
 
 def guess_kind(filename):
-    return next(
-        (k for k in re.findall(r'results_(.*?).pkl', filename) if k in KINDS),
-        'apmf')
+    kinds = re.compile(r'results_({})'.format(
+        '|'.join(re.escape(k) for k in KINDS)))
+    match = kinds.search(filename)
+    return match.group(1) if match else 'apmf'
 
 def main():
     import argparse
