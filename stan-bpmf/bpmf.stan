@@ -11,7 +11,7 @@ data {
   real obs_ratings[n_obs];
 
   // fixed hyperparameters
-  real<lower=0> rating_std; // observation noise precision, usually 2
+  real<lower=0> rating_std; // observation noise std deviation, usually 1/2
 
   vector[rank] mu_0; // mean for feature means, usually zero
 
@@ -24,6 +24,7 @@ data {
 }
 
 transformed data {
+  real one_over_beta_0;
   matrix[rank, rank] w_0_L; // Cholesky factorization of the scale matrix
   matrix[rank, rank] w_0_L_inv;
   matrix[rank, rank] eye;
@@ -36,6 +37,8 @@ transformed data {
 
   w_0_L <- cholesky_decompose(w_0);
   w_0_L_inv <- mdivide_left_tri_low(w_0_L, eye);
+
+  one_over_beta_0 <- 1 / beta_0;
 }
 
 parameters {
@@ -44,8 +47,8 @@ parameters {
   matrix[rank, n_items] V;
 
   // means on latent factors; see model sec for details
-  vector[rank] mu_u_std;
-  vector[rank] mu_v_std;
+  vector[rank] mu_u_stdized;
+  vector[rank] mu_v_stdized;
 
   // covariances on latent factors; see model sec for details
   vector<lower=0>[rank] cov_u_c;
@@ -106,15 +109,15 @@ model {
 
 
   //////////////////////////////////////////////////////////////////////////////
-  // Means for the latent factors: multi_normal(mu_0, cov_{u,v} * beta_0)
+  // Means for the latent factors: multi_normal(mu_0, cov_{u,v} / beta_0)
 
   // Sample iid normals for efficiency...
-  mu_u_std ~ normal(0, beta_0);
-  mu_v_std ~ normal(0, beta_0);
+  mu_u_stdized ~ normal(0, one_over_beta_0);
+  mu_v_stdized ~ normal(0, one_over_beta_0);
 
   // ...then transform into the desired multivariate normal
-  mu_u <- mu_0 + cov_u_L * mu_u_std;
-  mu_v <- mu_0 + cov_v_L * mu_u_std;
+  mu_u <- mu_0 + cov_u_L * mu_u_stdized;
+  mu_v <- mu_0 + cov_v_L * mu_v_stdized;
 
 
   //////////////////////////////////////////////////////////////////////////////

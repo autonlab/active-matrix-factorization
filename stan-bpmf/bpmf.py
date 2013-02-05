@@ -51,7 +51,7 @@ class BPMF(object):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
 
-        self.rating_std = 2
+        self.rating_std = 1/2
         self.mu_0 = np.zeros(latent_d)  # mean for future means
 
         # feature mean covariances are beta_0 * inv wishart(nu_0, w_0)

@@ -11,7 +11,7 @@ data {
   real obs_ratings[n_obs];
 
   // fixed hyperparameters
-  real<lower=0> rating_std; // observation noise precision, usually 2
+  real<lower=0> rating_std; // observation noise std deviation, usually 1/2
 
   vector[rank] mu_0; // mean for feature means, usually zero
 
@@ -51,8 +51,8 @@ model {
     V[j]' ~ multi_normal(mu_v, cov_v);
 
   // hyperpriors on latent factor hyperparams
-  mu_u ~ multi_normal(mu_0, cov_u * beta_0);
-  mu_v ~ multi_normal(mu_0, cov_v * beta_0);
+  mu_u ~ multi_normal(mu_0, cov_u / beta_0);
+  mu_v ~ multi_normal(mu_0, cov_v / beta_0);
   cov_u ~ inv_wishart(nu_0, w_0);
   cov_v ~ inv_wishart(nu_0, w_0);
 }
