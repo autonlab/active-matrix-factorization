@@ -14,7 +14,18 @@ from rpy2.robjects.packages import importr
 from rpy2.robjects.numpy2ri import numpy2ri
 def numpy2ri_avoiding_zerodim(x):
     if hasattr(x, 'shape') and x.shape == ():
-        x = x.dtype.type(x)
+        # cast into normal python scalar...sigh
+        kinds = {
+            'b': bool,
+            'u': int,
+            'i': int,
+            'f': float,
+            'c': complex,
+        }
+        try:
+            x = kinds[x.dtype.kind](x)
+        except KeyError:
+            pass  # just pass it along
     return numpy2ri(x)
 ro.conversion.py2ri = numpy2ri_avoiding_zerodim
 

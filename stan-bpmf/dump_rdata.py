@@ -13,10 +13,10 @@ def intersperse(delimiter, seq):
     return islice(chain.from_iterable(izip(repeat(delimiter), seq)), 1, None)
 
 def _write_vec(vec, output):
-    output.write('c(');
+    output.write('c(')
     for thing in intersperse(', ', vec):
         output.write(str(thing))
-    output.write(')');
+    output.write(')')
 
 def _write_rep(val, output):
     if np.isscalar(val) and np.isreal(val):

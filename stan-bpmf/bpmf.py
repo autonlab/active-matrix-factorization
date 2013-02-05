@@ -139,7 +139,9 @@ class BPMF(object):
         self.sampled_mode_lp = -np.inf
 
     def samples(self, num_samps, warmup=None, chains=1,
-                start_at_mode=True, update_mode=True, model_filename=None):
+                start_at_mode=True, update_mode=True, model_filename=None,
+                eat_output=True,
+                ret_args_only=False):
         '''
         Runs the Markav chain for num_samps samples, after warming up for
         warmup iterations beforehand (default: num_samps // 2).
@@ -169,10 +171,12 @@ class BPMF(object):
             'w_0': self.w_0,
         }
         args = {'chains': chains, 'iter': warmup + num_samps, 'warmup': warmup,
-                'eat_output': True, 'return_output': False}
+                'eat_output': eat_output, 'return_output': False}
         if start_at_mode:
             args['init'] = self.sampled_mode
         stan_model = get_stan_model(model_filename or self.model_filename)
+        if ret_args_only:
+            return data, args
         samples = sample(stan_model, data=data, **args)
         # TODO: would be nice to initialize step size parameters to old values
         #       but still allow adaptation. unfortunately, stan doesn't
