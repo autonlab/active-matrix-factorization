@@ -1,22 +1,31 @@
 #!/usr/bin/env python3
 
 from collections import defaultdict
+import functools
 import itertools
 import math
 import pickle
 import re
+import sys
 
 import numpy as np
 
 from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
                           linestyle_color_marker, guess_kind)
 
+warn = functools.partial(print, "WARNING:", file=sys.stderr)
 
+_warned_about = set()
 def load_results(filenames):
     for filename in filenames:
         with open(filename, 'rb') as f:
             r = pickle.load(f)
         kind = guess_kind(filename)
+
+        if all(k.startswith('_') for k in r):
+            if filename not in _warned_about:
+                warn("No data in {}".format(filename))
+            _warned_about.add(filename)
 
         if kind == 'apmf':
             yield r

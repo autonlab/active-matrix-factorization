@@ -421,7 +421,7 @@ def full_test(bpmf, samples, real, key_name,
         print("{:<40} Queried ({}, {}); {}/{} known".format(
                 key.nice_name, i, j, len(bpmf.rated), total))
 
-        if sample_in_pool:
+        if sample_in_pool and pool:
             samples, pred = pool.apply(fetch_samples, [bpmf], samp_args)
         else:
             samples, pred = fetch_samples(bpmf, **samp_args)
