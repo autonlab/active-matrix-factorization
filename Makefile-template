@@ -19,7 +19,7 @@ ifeq "$(INTERACTIVE)" "1"
 	IGNORE_GIT = interactive
 else
 	PY = $(PYTHON)
-	OUTPUT = 2>&1 | gzip > $(RESULTS_BASE)/$@.log.gz
+	OUTPUT = 2>&1 | gzip --to-stdout > $(RESULTS_BASE)/$@.log.gz
 	ifeq "$(FORCE_GIT)" "1"
 		IGNORE_GIT = force
 	else
