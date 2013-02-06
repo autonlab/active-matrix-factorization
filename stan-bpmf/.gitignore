@@ -2,8 +2,7 @@
 *.d
 *.o
 
-/bpmf
-/bpmf.cpp
-/*.stan.model.pkl?.gz
+/bpmf*
+/bpmf*.stan.model.pkl?.gz
 
 /data

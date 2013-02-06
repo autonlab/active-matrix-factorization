@@ -12,7 +12,7 @@ TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 	make -C $(STAN_HOME) $(TOP)/$@
 
 tidy:
-	rm -f *.d *.o bpmf.cpp
+	rm -f *.d *.o bpmf*.cpp
 
 clean: tidy
 	rm -f bpmf *.stan.model.pkl?.gz
