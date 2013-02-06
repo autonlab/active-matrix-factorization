@@ -259,7 +259,7 @@ def plot_criteria_firsts(result_items, cmap=default_cmap, share_cbar=False):
         im = grid[idx].matshow(vals, cmap=cmap, origin='upper', aspect='equal',
                                vmin=vmin, vmax=vmax)
 
-        grid[idx].set_title(KEY_NAMES[name], font_properties=prop)
+        grid[idx].set_title(KEY_NAMES.get(name, name), font_properties=prop)
         grid[idx].set_xticks(xticks)
         grid[idx].set_yticks(yticks)
         grid[idx].set_xticklabels([])
