@@ -39,15 +39,19 @@ KEY_NAMES.update({'bayes_' + k: 'Bayes: ' + f.nice_name
                   for k, f in bayes_pmf.KEYS.items()})
 KEY_NAMES.update({'stan_' + k: 'Stan: ' + f.nice_name
                   for k, f in bpmf.KEYS.items()})
-KINDS = {'apmf', 'rc', 'mmmf', 'bayes', 'stan'}
+KEY_NAMES.update({'stan_straightforward_' + k: 'SStan: ' + f.nice_name
+                  for k, f in bpmf.KEYS.items()})
+KINDS = {'apmf', 'rc', 'mmmf', 'bayes', 'stan', 'stan_straightforward'}
 
+
+from matplotlib import cm
+default_cmap = cm.cool
 
 ################################################################################
 ### Plotting code
 
-def plot_predictions(apmf, real):
+def plot_predictions(apmf, real, cmap=default_cmap):
     from matplotlib import pyplot as plt
-    from matplotlib import cm
 
     pred = apmf.predicted_matrix()
     a_mean, a_var = apmf.approx_pred_means_vars()
@@ -61,7 +65,7 @@ def plot_predictions(apmf, real):
     def show(mat, title, subplot, norm_=norm):
         plt.subplot(subplot)
 
-        plt.imshow(mat, norm=norm_, cmap=cm.jet, interpolation='nearest',
+        plt.imshow(mat, norm=norm_, cmap=cmap, interpolation='nearest',
                 origin='lower')
         plt.colorbar()
         plt.title(title)
@@ -75,11 +79,10 @@ def plot_predictions(apmf, real):
     show(a_std, "Normal: Std Dev", 224, plt.Normalize(0, a_std.max()))
 
 
-def plot_real(real, rated=None):
+def plot_real(real, rated=None, cmap=default_cmap):
     from matplotlib import pyplot as plt
-    from matplotlib import cm
 
-    plt.imshow(real, cmap=cm.jet, interpolation='nearest', origin='lower')
+    plt.imshow(real, cmap=cmap, interpolation='nearest', origin='lower')
     plt.colorbar()
     plt.title("True Matrix")
     if rated is not None:
@@ -155,20 +158,14 @@ def plot_num_ge_cutoff(results, cutoff, keys):
 
 
 def subplot_config(n):
-    if n <= 3:
-        return 1, n
     nc = math.ceil(math.sqrt(n))
     nr = math.ceil(n / nc)
     return nr, nc
 
 
-def plot_criteria_over_time(name, result, cmap=None):
+def plot_criteria_over_time(name, result, cmap=default_cmap):
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import ImageGrid
-
-    if cmap is None:
-        from matplotlib import cm
-        cmap = cm.jet
 
     nums, rmses, ijs, valses = zip(*result)
 
@@ -225,21 +222,30 @@ def plot_criteria_over_time(name, result, cmap=None):
     return fig
 
 
-def plot_criteria_firsts(result_items, cmap=None):
+def plot_criteria_firsts(result_items, cmap=default_cmap, share_cbar=False):
     from matplotlib import pyplot as plt
     from matplotlib.font_manager import FontProperties
     from mpl_toolkits.axes_grid1 import ImageGrid
-    if cmap is None:
-        from matplotlib import cm
-        cmap = cm.jet
 
     prop = FontProperties(size=9)
     nr, nc = subplot_config(len(result_items))
 
     fig = plt.figure()
     fig.suptitle("Criteria First Steps")
-    grid = ImageGrid(fig, 111, nrows_ncols=(nr, nc), axes_pad=.5,
-            cbar_pad=.1, cbar_location='right', cbar_mode='each')
+
+    if share_cbar:
+        vmin = np.inf
+        vmax = -np.inf
+        for name, data in result_items:
+            vals = data[1][-1]
+            vmin = min(vmin, np.nanmin(vals))
+            vmax = max(vmax, np.nanmax(vals))
+        cbar_args = dict(cbar_location='right', cbar_mode='single', cbar_pad=.5)
+    else:
+        vmin = vmax = None
+        cbar_args = dict(cbar_location='right', cbar_mode='each', cbar_pad=.1)
+
+    grid = ImageGrid(fig, 111, nrows_ncols=(nr, nc), axes_pad=.5, **cbar_args)
 
     n_users, n_items = result_items[0][1][1][3].shape
     xticks = np.linspace(-.5, n_items - .5, n_items + 1)
@@ -248,10 +254,10 @@ def plot_criteria_firsts(result_items, cmap=None):
     for idx, (name, data) in enumerate(result_items):
         assert data[0][3] is None
 
-        n, rmse, (i,j), vals = data[1]
+        n, rmse, (i, j), vals = data[1]
 
-        im = grid[idx].imshow(vals, interpolation='nearest', cmap=cmap,
-                origin='upper', aspect='equal')
+        im = grid[idx].matshow(vals, cmap=cmap, origin='upper', aspect='equal',
+                               vmin=vmin, vmax=vmax)
 
         grid[idx].set_title(KEY_NAMES[name], font_properties=prop)
         grid[idx].set_xticks(xticks)
@@ -263,7 +269,7 @@ def plot_criteria_firsts(result_items, cmap=None):
         grid[idx].grid()
 
         grid[idx].scatter(j, i, marker='s', c='white', s=20)
-        grid.cbar_axes[idx].colorbar(im)
+        grid[idx].cax.colorbar(im)
 
     for idx in range(len(result_items), nr * nc):
         grid[idx].set_visible(False)
@@ -283,9 +289,28 @@ def add_bool_opt(parser, name, default=False):
 
 def guess_kind(filename):
     kinds = re.compile(r'results_({})'.format(
-        '|'.join(re.escape(k) for k in KINDS)))
+        '|'.join(re.escape(k) for k in sorted(KINDS, key=len, reverse=True))))
     match = kinds.search(filename)
     return match.group(1) if match else 'apmf'
+
+_warned_about = set()
+def load_results(filename, kind=None):
+    r = np.load(filename)
+
+    if kind is None:
+        kind = guess_kind(filename)
+
+    if all(k.startswith('_') for k in r):
+        if filename not in _warned_about:
+            print("WARNING: No data in {}".format(filename), file=sys.stderr)
+        _warned_about.add(filename)
+
+    if kind == 'apmf':
+        return {k: v for k, v in r.items()}
+    else:
+        rep = re.compile(r'^(?!(_|{}_))'.format(kind))
+        return {rep.sub(kind + '_', k): v for k, v in r.items()}
+
 
 def main():
     import argparse
@@ -305,12 +330,11 @@ def main():
     add_bool_opt(parser, 'criteria-firsts', False)
     add_bool_opt(parser, 'initial-preds', False)
 
-    parser.add_argument('--kind',  default=None,
-                        choices='apmf bayes stan rc'.split())
+    parser.add_argument('--kind', default=None, choices=KINDS)
 
     parser.add_argument('--all-plots', default=False, action='store_true')
 
-    parser.add_argument('--cmap', default='jet')
+    parser.add_argument('--cmap', default=default_cmap, type=cm.get_cmap)
     parser.add_argument('--filetype', default='png')
     parser.add_argument('--outdir', nargs='?', const=True, default=None,
             metavar='DIR')
@@ -324,9 +348,6 @@ def main():
         args.criteria = True
         args.criteria_firsts = True
         args.initial_preds = True
-
-    if args.kind is None:
-        args.kind = guess_kind(args.results_file)
 
     # try to make the out directory if necessary; set up save_plot fn
     if args.outdir:
@@ -351,14 +372,7 @@ def main():
         args.interactive = not args.outdir
 
     # load the results
-    with open(args.results_file, 'rb') as resultsfile:
-        results = pickle.load(resultsfile)
-
-    # make sure keys have the right prefix
-    if args.kind != 'apmf':
-        prefix = args.kind + '_'
-        rep = re.compile(r'^(?!(_|{}))'.format(prefix))
-        results = {rep.sub(prefix, k): v for k, v in results.items()}
+    results = load_results(args.results_file, kind=args.kind)
 
     # check args.keys are actually in the results
     if not args.keys:
@@ -379,14 +393,12 @@ def main():
         matplotlib.use('Agg')
 
     from matplotlib import pyplot as plt
-    from matplotlib import cm
-    cmap = cm.get_cmap(args.cmap)
 
     # real data plot
     if args.real:
         print("Plotting real matrix")
         fig = plt.figure()
-        plot_real(results['_real'], results['_ratings'])
+        plot_real(results['_real'], results['_ratings'], cmap=args.cmap)
         save_plot('real', fig)
 
     # RMSE plot
@@ -411,7 +423,7 @@ def main():
             nice_name = KEY_NAMES[criterion]
             print("Plotting {}".format(nice_name))
 
-            fig = plot_criteria_over_time(nice_name, result, cmap)
+            fig = plot_criteria_over_time(nice_name, result, cmap=args.cmap)
             save_plot('{}'.format(criterion), fig)
 
     # plot of criteria first steps
@@ -421,17 +433,18 @@ def main():
                 ((k, v) for k, v in results.items() if k in args.keys),
                 key=lambda item: KEY_NAMES[item[0]])
 
-        fig = plot_criteria_firsts(items)
+        fig = plot_criteria_firsts(items, cmap=args.cmap)
         save_plot('firsts', fig)
 
     # plot of initial predictions
     if args.initial_preds:
-        if '_initial_apmf' not in results:
+        apmf = results.get('_initial_apmf', None)
+        if not apmf:
             print("Can't do initial predictions: not in the file")
         else:
             print("Plotting initial predictions")
             fig = plt.figure()
-            plot_predictions(results['_initial_apmf'], results['_real'])
+            plot_predictions(apmf, results['_real'], cmap=args.cmap)
             save_plot('initial_preds', fig)
 
     # pause to look at plots if interactive

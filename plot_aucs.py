@@ -4,37 +4,16 @@ from collections import defaultdict
 import functools
 import itertools
 import math
-import pickle
 import re
 import sys
 
 import numpy as np
 
 from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
-                          linestyle_color_marker, guess_kind)
+                          linestyle_color_marker, load_results)
 
 ################################################################################
 ### loading data
-
-warn = functools.partial(print, "WARNING:", file=sys.stderr)
-
-_warned_about = set()
-def load_results(filename):
-    with open(filename, 'rb') as f:
-        r = pickle.load(f)
-    kind = guess_kind(filename)
-
-    if all(k.startswith('_') for k in r):
-        if filename not in _warned_about:
-            warn("No data in {}".format(filename))
-        _warned_about.add(filename)
-
-    if kind == 'apmf':
-        return r
-    else:
-        rep = re.compile(r'^(?!(_|{}_))'.format(kind))
-        return {rep.sub(kind + '_', k): v for k, v in r.items()}
-
 
 def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                          do_cutoffs=None, do_cutoff_aucs=None):
