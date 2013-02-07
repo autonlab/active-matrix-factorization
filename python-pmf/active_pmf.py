@@ -118,7 +118,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         # rating values
         if rating_values is not None:
             rating_values = set(map(float, rating_values))
-            if not rating_values.issuperset(self.ratings[:,2]):
+            if not rating_values.issuperset(self.ratings[:, 2]):
                 raise ValueError("got ratings not in rating_values")
 
         self.rating_values = rating_values
@@ -134,7 +134,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         d = self.latent_d
 
         self.approx_dim = k = (n + m) * d
-        self.num_params = k + k * (k+1) / 2 # means and covariances
+        self.num_params = k + k * (k + 1) / 2  # means and covariances
 
         # indices into the normal approx for the users / items arrays
         # e.g. mean[u[k,i]] corresponds to the mean for U_{ki}
@@ -143,8 +143,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         # training options for the normal approximation
         self.normal_learning_rate = 1e-4
-        self.min_eig = 1e-5 # minimum eigenvalue to be considered positive-def
-
+        self.min_eig = 1e-5  # minimum eigenvalue to be considered positive-def
 
     def __copy__(self):
         # need to copy fields from super
@@ -185,7 +184,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             self._rating_values = None
             self._rating_bounds = None
 
-
     ############################################################################
     ### Gradient descent to find the normal approximation
 
@@ -224,10 +222,10 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
                 # - 2 R_ij E[U_i^T V_j]
                 - 2 * rating *
-                    (mean[u[:,i]] * mean[v[:,j]] + cov[u[:,i], v[:,j]]).sum()
+                   (mean[u[:, i]] * mean[v[:, j]] + cov[u[:, i], v[:, j]]).sum()
 
                 for i, j, rating in self.ratings)
-            + (self.ratings[:,2] ** 2).sum() # sum (R_ij^2)
+            + (self.ratings[:, 2] ** 2).sum()  # sum (R_ij^2)
         ) / (2 * self.sigma_sq)
 
         # regularization terms
@@ -241,7 +239,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         return div
 
-
     def fit_normal(self):
         '''
         Fit the multivariate normal over the elements of U and V that
@@ -250,7 +247,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         '''
         for kl in self.fit_normal_kls():
             pass
-
 
     def fit_normal_kls(self):
         '''
@@ -290,8 +286,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                     if lr < 1e-10:
                         converged = True
                         break
-
-
 
     ############################################################################
     ### Helpers to get various things based on the current approximation
@@ -350,8 +344,8 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         ijs = list(itertools.product(range(n), range(m)))
 
         for idx1, (i, j) in enumerate(ijs):
-            u_i = self.u[:,i]
-            v_j = self.v[:,j]
+            u_i = self.u[:, i]
+            v_j = self.v[:, j]
 
             # variance of U_i . V_j
             pred_covs[idx1, idx1] = (
@@ -376,13 +370,13 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                         cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
 
                 # sum_k E[Uki Uka Vkj Vkb]
-                if i == a: # j != b
+                if i == a:  # j != b
                     for k in range(D):
                         cv += a2bc(u_i[k], v_j[k], v_b[k])
-                elif j == b: # i != a
+                elif j == b:  # i != a
                     for k in range(D):
                         cv += a2bc(v_j[k], u_i[k], u_a[k])
-                else: # i != a, j != b
+                else:  # i != a, j != b
                     for k in range(D):
                         cv += qexp(u_i[k], v_j[k], u_a[k], v_b[k])
 
@@ -398,13 +392,12 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     def approx_pred_mean_var(self, i, j):
         mean = self.mean
         cov = self.cov
-        us = self.u[:,i]
-        vs = self.v[:,j]
+        us = self.u[:, i]
+        vs = self.v[:, j]
 
         mn = (mean[us] * mean[vs] + cov[us, vs]).sum()
         var = exp_dotprod_sq(self.u, self.v, mean, cov, i, j) - mn**2
         return mn, var
-
 
     ############################################################################
     ### Various criteria to use to pick query points
@@ -425,7 +418,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         The MAP estimate of R_ij.
         '''
         i, j = ij
-        return np.dot(self.users[i,:], self.items[j,:])
+        return np.dot(self.users[i, :], self.items[j, :])
 
     def _prob_ge_cutoff_settings(name):
         def wrapper(f):
@@ -454,7 +447,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     @_prob_ge_cutoff_settings("Prob >= .5")
     def prob_ge_half(self, ij):
         return self._prob_ge_cutoff(ij, .5)
-
 
     def _onestep_ge_cutoff_settings(name):
         def wrapper(f):
@@ -497,7 +489,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
     def onestep_ge_half_approx(self, ij):
         return self._onestep_ge_cutoff(ij, .5, False)
 
-
     def _last_step_lookahead_helper(self, cutoff, v):
         # TODO: support passing in pool of items to pick from?
         # TODO: only calculate necessary means/vars, not all
@@ -507,7 +498,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         mean, var = self.approx_pred_means_vars()
         return utility + max(stats.norm.sf(cutoff, loc=mean[ij], scale=var[ij])
                              for ij in self.unrated)
-
 
     @do_normal_fit(True)
     @spawn_processes(False)
@@ -566,7 +556,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         return self._exp_with_rij(ij, ActivePMF._approx_entropy,
                 use_map=False)
 
-
     def _pred_entropy_bound(self):
         '''
         Upper bound on the entropy of the predicted matrix, up to an additive
@@ -578,7 +567,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
             if s == -1 and logdet < -50:
                 # numerical error, pretend it's basically 0
                 # TODO: track these in a way that's not as slow as printing
-                return -1000 # XXX if we did det, could be 0 here
+                return -1000  # XXX if we did det, could be 0 here
             else:
                 m = "prediction cov has det with sign {}, log {}"
                 raise ValueError(m.format(s, logdet))
@@ -666,7 +655,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         # which distribution for R_ij are we using?
         if use_map:
-            mean = np.dot(self.users[i,:], self.items[j,:])
+            mean = np.dot(self.users[i, :], self.items[j, :])
             var = self.sigma_sq
         else:
             # TODO: this isn't actually right (using the normal distribution
@@ -714,7 +703,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         print("\t{:>20}({},{}) {}: {: 10.2f}".format(name, i, j, s, est))
         return est
 
-
     ############################################################################
     ### Methods to actually pick a query point in active learning
 
@@ -748,7 +736,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
         vals = self._get_key_vals(pool, key, procs, worker_pool)
         return chooser(zip(pool, vals), key=operator.itemgetter(1))[0]
 
-
     def _get_key_vals(self, pool, key, procs, worker_pool):
         # TODO: use np.save instead of pickle to transfer data
         # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
@@ -781,7 +768,6 @@ class ActivePMF(ProbabilisticMatrixFactorization):
                 worker_pool.close()
                 worker_pool.join()
                 return vals
-
 
     def get_key_evals(self, pool=None, key=None, procs=None, worker_pool=None):
         '''
@@ -830,7 +816,6 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
     print("RMSE: {:.5}".format(rmse))
     yield len(apmf.rated), rmse, None, None
 
-
     while apmf.unrated:
         print()
         #print '=' * 80
@@ -849,12 +834,12 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
 
         print("Training PMF")
         for ll in apmf.fit_lls():
-            pass # print "\tLL: %g" % ll
+            pass  # print "\tLL: %g" % ll
 
         if fit_normal:
             print("Fitting normal")
             for kl in apmf.fit_normal_kls():
-                pass # print "\tKL: %g" % kl
+                pass  # print "\tKL: %g" % kl
                 assert kl > -1e5
 
             print("Mean diff of means: %g; mean cov %g" % (
@@ -862,7 +847,7 @@ def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
 
         rmse = apmf.rmse(real)
         print("RMSE: {:.5}".format(rmse))
-        yield len(apmf.rated), rmse, (i,j), vals
+        yield len(apmf.rated), rmse, (i, j), vals
 
 
 def _in_between_work(apmf, i, j, realval, total, fit_normal,
@@ -905,13 +890,12 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
             i, j = picker_key.chooser(apmf.unrated, key=vals.__getitem__)
 
         apmf = worker_pool.apply(_in_between_work,
-                (apmf, i, j, real[i,j], total,
+                (apmf, i, j, real[i, j], total,
                  fit_normal, fit_sigmas, name))
 
         rmse = apmf.rmse(real)
         print("{:<40} RMSE {}: {:.5}".format(picker_key.nice_name, n, rmse))
-        yield len(apmf.rated), rmse, (i,j), vals
-
+        yield len(apmf.rated), rmse, (i, j), vals
 
 
 KEY_FUNCS = {
@@ -939,7 +923,6 @@ KEY_FUNCS = {
 }
 
 
-
 def make_fake_data(noise=.25, num_users=10, num_items=10,
                    mask_type=0, data_type='float', rank=5,
                    u_mean=0, u_std=2, v_mean=0, v_std=2):
@@ -956,7 +939,7 @@ def make_fake_data(noise=.25, num_users=10, num_items=10,
         vals = None
     elif data_type == 'int':
         real = np.round(real).astype(int)
-        vals = None # TODO: support integrating over all integers?
+        vals = None  # TODO: support integrating over all integers?
     elif data_type == 'int-bounds':
         real = np.round(real).astype(int)
         minval = real.min()
@@ -996,7 +979,7 @@ def get_ratings(real, mask_type=0):
                 # then all rows and columns have two entries, except first has 1
                 n = num_users
                 mask[-1, 1] = 1
-                mask[range(1,n-1), range(2,n)] = 1
+                mask[range(1, n - 1), range(2, n)] = 1
 
         elif mask_type == 'diag-block':
             if num_users != num_items:
@@ -1192,7 +1175,6 @@ def main():
             raise ValueError("--type must be integer or one of {}".format(
                 ', '.join(sorted(types))))
 
-
     # check that args.keys are valid
     for k in args.keys:
         if k not in key_names:
@@ -1202,7 +1184,6 @@ def main():
 
     if not args.keys:
         args.keys = sorted(key_names)
-
 
     # make directories to save results if necessary
     if args.save_results is True:
@@ -1237,7 +1218,6 @@ def main():
         knowable[real == 0] = 0
         knowable = zip(*knowable.nonzero())
 
-
     # get results
     try:
         results = compare(args.keys,
@@ -1266,7 +1246,6 @@ def main():
         pdb.post_mortem()
 
         sys.exit(1)
-
 
     # save the results file
     if args.save_results:
