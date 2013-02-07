@@ -16,10 +16,11 @@ from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
 ### loading data
 
 def load_data(filenames, do_rmse=False, do_rmse_auc=False,
-                         do_cutoffs=None, do_cutoff_aucs=None):
+                         do_cutoffs=None, do_cutoff_aucs=None,
+                         ret_rmse_traces=False, ret_cutoff_traces=False):
     desired_ns = None
 
-    want_rmses = do_rmse or do_rmse_auc
+    want_rmses = do_rmse or do_rmse_auc or ret_rmse_traces
     if want_rmses:
         rmse_traces = defaultdict(list)
 
@@ -29,7 +30,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
     if do_cutoff_aucs:
         cutoff_vals.update(do_cutoff_aucs)
 
-    if cutoff_vals:
+    if cutoff_vals or ret_cutoff_traces:
         cutoff_traces = defaultdict(functools.partial(defaultdict, list))
 
     if not want_rmses and not cutoff_vals:  # not asked to do anything!
@@ -86,7 +87,15 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             for cutoff, c_vals in cutoff_traces.items()
         }
 
-    return results
+    if not ret_rmse_traces and not ret_cutoff_traces:
+        return results
+    else:
+        ret = [results]
+        if ret_rmse_traces:
+            ret.append(rmse_traces)
+        if ret_cutoff_traces:
+            ret.append(cutoff_traces)
+        return ret
 
 
 ################################################################################
