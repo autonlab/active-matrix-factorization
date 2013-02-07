@@ -17,7 +17,8 @@ from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
 
 def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                          do_cutoffs=None, do_cutoff_aucs=None,
-                         ret_rmse_traces=False, ret_cutoff_traces=False):
+                         ret_rmse_traces=False, ret_cutoff_traces=False,
+                         rmse_over_random=False):
     desired_ns = None
 
     want_rmses = do_rmse or do_rmse_auc or ret_rmse_traces
@@ -41,18 +42,26 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             real = r['_real']
             ratings = r['_ratings']
 
+        if want_rmses and rmse_over_random:
+            random = [(k, v) for k, v in r.items() if k.endswith('random')]
+            assert len(random) == 1
+            random_rmse = np.asarray([r[1] for r in random[0][1]])
+
         for k, v in r.items():
             if k.startswith('_'):
                 continue
 
             ns, rmses, ijs, evals = zip(*v)
             ns = np.asarray(ns)
+            rmses = np.asarray(rmses)
             if desired_ns is not None:
                 assert np.all(ns == desired_ns)
             else:
                 desired_ns = ns
 
             if want_rmses:
+                if rmse_over_random:
+                    rmses -= random_rmse
                 rmse_traces[k].append(rmses)
 
             if cutoff_vals:
@@ -92,9 +101,9 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
     else:
         ret = [results]
         if ret_rmse_traces:
-            ret.append(rmse_traces)
+            ret.append({k: np.asarray(v) for k, v in rmse_traces.items()})
         if ret_cutoff_traces:
-            ret.append(cutoff_traces)
+            ret.append({k: np.asarray(v) for k, v in cutoff_traces.items()})
         return ret
 
 
@@ -142,6 +151,8 @@ def plot_lines(ns, data, ylabel=None):
     #xmin, xmax = plt.xlim()
     #plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
+    plt.tight_layout()
+
 
 def plot_aucs(aucs, ylabel=None):
     import matplotlib.pyplot as plt
@@ -156,6 +167,10 @@ def plot_aucs(aucs, ylabel=None):
         except ImportError:
             plt.boxplot(aucs)
         else:
+            # jiggle anything that's all exactly one value, to avoid singularity
+            aucs = [grp if len(set(grp)) > 1
+                        else list(grp) + [grp[0] + .01]
+                    for grp in aucs]
             beanplot(aucs, ax=plt.gca(), plot_opts={'cutoff': True})
         indices = np.arange(len(names)) + 1
     plt.xticks(indices, names, rotation=90)
@@ -168,22 +183,49 @@ def plot_aucs(aucs, ylabel=None):
 
 def main():
     import argparse
+
+    # helper for boolean flags
+    # based on http://stackoverflow.com/a/9236426/344821
+    class ActionNoYes(argparse.Action):
+        def __init__(self, opt_name, off_name=None, dest=None,
+                     default=True, required=False, help=None):
+
+            if off_name is None:
+                off_name = 'no-' + opt_name
+            self.off_name = '--' + off_name
+
+            if dest is None:
+                dest = opt_name.replace('-', '_')
+
+            super(ActionNoYes, self).__init__(
+                    ['--' + opt_name, '--' + off_name],
+                    dest, nargs=0, const=None,
+                    default=default, required=required, help=help)
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            setattr(namespace, self.dest, option_string != self.off_name)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('files', nargs='+')
 
     g = parser.add_mutually_exclusive_group()
-    g.add_argument('--rmses', action='store_true', default=False)
-    g.add_argument('--no-rmses', action='store_false', dest='rmses')
+    g.add_argument('--over-random', action='store_true', default=False)
+    g.add_argument('--absolute', action='store_false', dest='over_random')
 
-    g = parser.add_mutually_exclusive_group()
-    g.add_argument('--auc', action='store_true', default=True)
-    g.add_argument('--no-auc', action='store_false', dest='auc')
-
-    parser.add_argument('--ge-cutoff', nargs='+', type=float)
-    parser.add_argument('--ge-cutoff-auc', nargs='+', type=float)
+    parser.add_argument('--key-regexes', '--keys', nargs='*', metavar='RE',
+                        default=[re.compile('.*')], type=re.compile)
+    parser.add_argument('--key-exclude-regexes', '--skip-keys', nargs='*',
+                        default=[], type=re.compile, metavar='RE')
 
     parser.add_argument('--legend', default='outside',
                         choices={'outside', 'inside'})
+
+    g = parser.add_argument_group('Plot Types')
+    g._add_action(ActionNoYes('rmses', default=False))
+    g._add_action(ActionNoYes('rmse-fboxplots', default=False))
+    g._add_action(ActionNoYes('auc', default=True))
+    g.add_argument('--ge-cutoff', nargs='+', type=float)
+    g.add_argument('--ge-cutoff-auc', nargs='+', type=float)
 
     #parser.add_argument('--save')
     args = parser.parse_args()
@@ -194,30 +236,54 @@ def main():
 
     import matplotlib.pyplot as plt
 
-    data = load_data(args.files,
+    res = load_data(args.files,
         do_rmse=args.rmses, do_rmse_auc=args.auc,
-        do_cutoffs=args.ge_cutoff, do_cutoff_aucs=args.ge_cutoff_auc)
+        do_cutoffs=args.ge_cutoff, do_cutoff_aucs=args.ge_cutoff_auc,
+        rmse_over_random=args.over_random,
+        ret_rmse_traces=args.rmse_fboxplots)
+    if args.rmse_fboxplots:
+        data, rmse_traces = res
+    else:
+        data = res
     ns = data['ns']
+
+    #key_res = [re.compile(r) for r in args.key_regexes]
+    #key_bads = [re.compile(r) for r in args.key_exclude_regexes]
+    def filter_keys(d):
+        return {k: v for k, v in d.items()
+                if any(r.search(k) for r in args.key_regexes)
+                and not any(r.search(k) for r in args.key_exclude_regexes)}
+
+    rmse_name = 'RMSE over random' if args.over_random else 'RMSE'
 
     if args.rmses:
         plt.figure()
-        plot_lines(ns, data['rmse'], 'RMSE')
+        plot_lines(ns, filter_keys(data['rmse']), rmse_name)
         show_legend(args.legend)
+
+    if args.rmse_fboxplots:
+        from statsmodels.graphics.functional import fboxplot
+        for name, trace in filter_keys(rmse_traces).items():
+            fboxplot(trace, xdata=ns)
+            plt.title(KEY_NAMES.get(name, name))
+            plt.xlabel("# of rated elements")
+            plt.ylabel(rmse_name)
 
     if args.auc:
         plt.figure()
-        plot_aucs(data['rmse_auc'], 'AUC (RMSE)')
+        plot_aucs(filter_keys(data['rmse_auc']), 'AUC ({})'.format(rmse_name))
 
     if args.ge_cutoff:
         for cutoff in args.ge_cutoff:
             plt.figure()
-            plot_lines(ns, data['cutoffs'][cutoff], '# >= {}'.format(cutoff))
+            plot_lines(ns, filter_keys(data['cutoffs'][cutoff]),
+                       '# >= {}'.format(cutoff))
             show_legend(args.legend)
 
     if args.ge_cutoff_auc:
         for cutoff in args.ge_cutoff_auc:
             plt.figure()
-            plot_aucs(data['cutoff_aucs'][cutoff],
+            plot_aucs(filter_keys(data['cutoff_aucs'][cutoff]),
                       'AUC (# >= {})'.format(cutoff))
 
     plt.show()
