@@ -32,7 +32,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
     if cutoff_vals:
         cutoff_traces = defaultdict(functools.partial(defaultdict, list))
 
-    if not cutoff_vals and not results:  # not asked to do anything!
+    if not want_rmses and not cutoff_vals:  # not asked to do anything!
         return {}
 
     for r in map(load_results, filenames):
