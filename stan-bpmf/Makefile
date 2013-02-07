@@ -1,6 +1,6 @@
 .PHONY: tidy clean
 
-STAN_HOME ?= $(HOME)/misc/stan-src-1.1.0
+STAN_HOME ?= $(HOME)/misc/stan-src-1.1.1
 TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 %.stan.model.pkl2.gz: %.stan
