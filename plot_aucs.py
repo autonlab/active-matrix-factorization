@@ -17,7 +17,8 @@ from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF,  # for pickle
 
 def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                          do_cutoffs=None, do_cutoff_aucs=None,
-                         ret_rmse_traces=False, ret_cutoff_traces=False):
+                         ret_rmse_traces=False, ret_cutoff_traces=False,
+                         rmse_over_random=False):
     desired_ns = None
 
     want_rmses = do_rmse or do_rmse_auc or ret_rmse_traces
@@ -41,18 +42,26 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             real = r['_real']
             ratings = r['_ratings']
 
+        if want_rmses and rmse_over_random:
+            random = [(k, v) for k, v in r.items() if k.endswith('random')]
+            assert len(random) == 1
+            random_rmse = np.asarray([r[1] for r in random[0][1]])
+
         for k, v in r.items():
             if k.startswith('_'):
                 continue
 
             ns, rmses, ijs, evals = zip(*v)
             ns = np.asarray(ns)
+            rmses = np.asarray(rmses)
             if desired_ns is not None:
                 assert np.all(ns == desired_ns)
             else:
                 desired_ns = ns
 
             if want_rmses:
+                if rmse_over_random:
+                    rmses -= random_rmse
                 rmse_traces[k].append(rmses)
 
             if cutoff_vals:
@@ -142,6 +151,8 @@ def plot_lines(ns, data, ylabel=None):
     #xmin, xmax = plt.xlim()
     #plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
+    plt.tight_layout()
+
 
 def plot_aucs(aucs, ylabel=None):
     import matplotlib.pyplot as plt
@@ -156,6 +167,10 @@ def plot_aucs(aucs, ylabel=None):
         except ImportError:
             plt.boxplot(aucs)
         else:
+            # jiggle anything that's all exactly one value, to avoid singularity
+            aucs = [grp if len(set(grp)) > 1
+                        else list(grp) + [grp[0] + .01]
+                    for grp in aucs]
             beanplot(aucs, ax=plt.gca(), plot_opts={'cutoff': True})
         indices = np.arange(len(names)) + 1
     plt.xticks(indices, names, rotation=90)
@@ -170,6 +185,15 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('files', nargs='+')
+
+    g = parser.add_mutually_exclusive_group()
+    g.add_argument('--over-random', action='store_true', default=False)
+    g.add_argument('--absolute', action='store_false', dest='over_random')
+
+    parser.add_argument('--key-regexes', '--keys', nargs='*',
+                        default=[re.compile('.*')], type=re.compile)
+    parser.add_argument('--key-exclude-regexes', '--skip-keys', nargs='*',
+                        default=[], type=re.compile)
 
     g = parser.add_mutually_exclusive_group()
     g.add_argument('--rmses', action='store_true', default=False)
@@ -196,28 +220,39 @@ def main():
 
     data = load_data(args.files,
         do_rmse=args.rmses, do_rmse_auc=args.auc,
-        do_cutoffs=args.ge_cutoff, do_cutoff_aucs=args.ge_cutoff_auc)
-    ns = data['ns']
+        do_cutoffs=args.ge_cutoff, do_cutoff_aucs=args.ge_cutoff_auc,
+        rmse_over_random=args.over_random)
+    ns = data.pop('ns')
+
+    #key_res = [re.compile(r) for r in args.key_regexes]
+    #key_bads = [re.compile(r) for r in args.key_exclude_regexes]
+    def filter_keys(d):
+        return {k: v for k, v in d.items()
+                if any(r.search(k) for r in args.key_regexes)
+                and not any(r.search(k) for r in args.key_exclude_regexes)}
+
+    rmse_name = 'RMSE over random' if args.over_random else 'RMSE'
 
     if args.rmses:
         plt.figure()
-        plot_lines(ns, data['rmse'], 'RMSE')
+        plot_lines(ns, filter_keys(data['rmse']), rmse_name)
         show_legend(args.legend)
 
     if args.auc:
         plt.figure()
-        plot_aucs(data['rmse_auc'], 'AUC (RMSE)')
+        plot_aucs(filter_keys(data['rmse_auc']), 'AUC ({})'.format(rmse_name))
 
     if args.ge_cutoff:
         for cutoff in args.ge_cutoff:
             plt.figure()
-            plot_lines(ns, data['cutoffs'][cutoff], '# >= {}'.format(cutoff))
+            plot_lines(ns, filter_keys(data['cutoffs'][cutoff]),
+                       '# >= {}'.format(cutoff))
             show_legend(args.legend)
 
     if args.ge_cutoff_auc:
         for cutoff in args.ge_cutoff_auc:
             plt.figure()
-            plot_aucs(data['cutoff_aucs'][cutoff],
+            plot_aucs(filter_keys(data['cutoff_aucs'][cutoff]),
                       'AUC (# >= {})'.format(cutoff))
 
     plt.show()
