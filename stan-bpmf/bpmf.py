@@ -23,9 +23,7 @@ from scipy import stats
 import six
 import six.moves as sixm
 
-# XXX this import isn't in this folder...
-# from pmf_cy import ProbabilisticMatrixFactorization, rmse, parse_fit_type
-
+# helper to cache loading of Stan models
 from rstan_interface import get_model, sample
 _stan_models = {}
 _dir = os.path.abspath(os.path.dirname(__file__))
@@ -220,7 +218,7 @@ class BPMF(object):
                      num_samps=30, warmup=15, **sample_args):
         '''
         Gives the total expected variance in our predicted R matrix if we knew
-        Rij for each ij in which, using samples to represent our distribution
+        Rij for each ij in "which", using samples to represent our distribution
         for Rij: \sum E[Var[R_ij]].
 
         Parallelizes the evaluation over pool if passed (highly recommended,
@@ -235,14 +233,8 @@ class BPMF(object):
         # ...there's gotta be an easier way, right?
         n = self.num_users
         m = self.num_items
-        all_indices = np.empty((n, m, 2), dtype=int)
-        for i in sixm.xrange(n):
-            all_indices[i, :, 0] = i
-        for j in sixm.xrange(m):
-            all_indices[:, j, 1] = j
-        indices = all_indices[which]
-        i_indices = indices[..., 0]
-        j_indices = indices[..., 1]
+        i_indices = np.repeat(np.arange(n).reshape(n, 1), m, axis=1)[which]
+        j_indices = np.repeat(np.arange(m).reshape(1, m), n, axis=0)[which]
 
         # get samples of R_ij for each ij in which
         vals = self.pick_out_predictions(samples, which)
@@ -317,7 +309,8 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
     if discrete:
         # TODO: trapezoidal approximation? simpsons?
         # TODO: don't calculate for points with very low probability?
-        evals = np.array([calculate_fn(v) for v in bpmf.rating_values])
+        evals = np.array([calculate_fn(v) if p else 0
+                          for p, v in sixm.zip(params, bpmf.rating_values)])
         est = (evals * params).sum()
         s = "summed"
     else:
@@ -596,6 +589,7 @@ def main():
     parser.add_argument('--note', action='append',
         help="Doesn't do anything, just there to save any notes you'd like "
              "in the results file.")
+    parser._add_action(ActionNoYes('pdb-on-error', default=True))
 
     parser.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
@@ -650,11 +644,17 @@ def main():
                 procs=args.procs, threaded=args.threaded,
                 model_filename=args.model_filename)
     except Exception:
+        if not args.pdb_on_error:
+            raise
+
         import traceback
         print()
         traceback.print_exc()
 
-        import pdb
+        try:
+            import ipdb as pdb
+        except ImportError:
+            import pdb
         print()
         pdb.post_mortem()
 
