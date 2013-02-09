@@ -37,6 +37,81 @@ def get_stan_model(filename='bpmf.stan'):
 def rmse(a, b):
     return np.sqrt(((a - b) ** 2).sum() / a.size)
 
+DEFAULT_MLE_EPS = 1e-3
+def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
+                      overwrite_samples=False, verbose=False,
+                      max_steps=None):
+    '''
+    Gets maximum likelihood estimates of the parameters of a matrix-normal
+    distribution, i.e. the mean, U, and V such that the samples are most likely
+    to have come from  N(mean, kronecker(V, U)).
+
+     using the alternating algorithm of
+        Pierre Dutilleul. The mle algorithm for the matrix normal distribution.
+        Journal of Statistical Computation and Simulation,
+        1999 vol. 64 (2) pp. 105-123.
+        http://www.tandfonline.com/doi/abs/10.1080/00949659908811970
+
+    The covariance parameters are only unique up to their Kronecker product.
+
+    eps: stopping criterion for the Frobenius norm of the change in the
+         covariance factors.
+
+    overwrite_samples: if true, centers the passed samples in-place.
+    '''
+    r, n, p = samples.shape  # r samples of n x p matrices
+    rp = r * p
+    rn = r * n
+    if r <= max(n / p, p / n):
+        warnings.warn("Too few samples; MLE doesn't exist, may not converge.")
+
+    mean = np.mean(samples, axis=0)
+    if overwrite_samples:
+        samples -= mean
+    else:
+        samples = samples - mean
+
+    old_v = old_u = np.inf
+
+    # starting condition: V = I_p
+    v = np.eye(p)
+
+    # U <- \sum x V^-1 x^T
+    u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+
+    frob = partial(np.linalg.norm, ord='fro')
+    step = 0
+
+    while frob(v - old_v) > eps_u or frob(u - old_u) > eps_v:
+        step += 1
+        if verbose >= 2:
+            print("\tstep {}: u diff {}, v diff {}".format(
+                step, frob(u - old_u), frob(v - old_v)))
+
+        if max_steps and step > max_steps:
+            msg = "matrix_normal_mle hit iteration limit ({})".format(max_steps)
+            warnings.warn(msg)
+            break
+
+        old_u = u
+        old_v = v
+
+        # XXX shouldn't call inverse, should use solve...
+        # ...but how to do that without a python loop?
+        # http://stackoverflow.com/q/14783386/344821
+
+        # V <- \sum x^T U^-1 x
+        v = np.einsum('aji,jk,akl->il', samples, np.linalg.inv(u) / rn, samples)
+
+        # U <- \sum x V^-1 x^T
+        u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+
+    if verbose:
+        print("\tmatrix_normal_mle took {} steps".format(step))
+
+    return mean, u, v
+
+################################################################################
 
 class BPMF(object):
     def __init__(self, rating_tuples, latent_d,
@@ -214,6 +289,28 @@ class BPMF(object):
         '''
         return self.pred_variance(samples, which=which).sum()
 
+    def entropy_est(self, samples, which=Ellipsis, eps=DEFAULT_MLE_EPS,
+                    additive_constant=False):
+        '''
+        Estimates the entropy of the samples by assuming that the prediction
+        matrix is distributed according to a matrix-normal distribution.
+
+        Doesn't bother with the additive constant by default.
+
+        NOTE XXX: *ignores* the which argument!
+        '''
+        # TODO: can we center the samples here?
+        _, u, v = matrix_normal_mle(self.pick_out_predictions(samples),
+                                    eps_u=eps, eps_v=eps, verbose=True)
+
+        sign_det_u, logdet_u = np.linalg.slogdet(u)
+        sign_det_v, logdet_v = np.linalg.slogdet(v)
+        entropy = self.num_items * logdet_u + self.num_users * logdet_v
+
+        if additive_constant:
+            entropy += (1 + np.log(2 * np.pi)) * self.num_items * self.num_users
+        return entropy / 2
+
     def exp_variance(self, samples, which=Ellipsis, pool=None,
                      num_samps=30, warmup=15, **sample_args):
         '''
@@ -225,6 +322,20 @@ class BPMF(object):
         since this is sloooow).
         '''
         return self._distribute(_exp_variance_helper,
+                samples=samples, which=which, pool=pool,
+                num_samps=num_samps, warmup=warmup, **sample_args)
+
+    def exp_entropy_est(self, samples, which=Ellipsis, pool=None,
+                        num_samps=30, warmup=15, **sample_args):
+        '''
+        Gives the expected entropy in our predicted R matrix if we knew
+        Rij for each ij in "which", using samples to represent our distribution
+        for Rij: \sum E[Var[R_ij]].
+
+        Parallelizes the evaluation over pool if passed (highly recommended,
+        since this is sloooow).
+        '''
+        return self._distribute(_exp_entropy_est_helper,
                 samples=samples, which=which, pool=pool,
                 num_samps=num_samps, warmup=warmup, **sample_args)
 
@@ -339,6 +450,10 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
 def _exp_variance_helper(args, **sample_args):
     return _integrate_lookahead(BPMF.total_variance, *args, **sample_args)
 
+def _exp_entropy_est_helper(args, **sample_args):
+    return _integrate_lookahead(BPMF.entropy_est, *args, **sample_args)
+
+
 ################################################################################
 
 # The various evaluation functions we consider
@@ -348,6 +463,7 @@ KEYS = {
     'pred-variance': Key("Var[R_ij]", 'pred_variance', True, False, ()),
 
     'exp-variance': Key("E[Var[R]]", 'exp_variance', False, True, ()),
+    'exp-entropy-est': Key("E[H[R]]", 'exp_entropy_est', False, True, ()),
 
     'pred': Key("Pred", 'predict', True, False, ()),
     'prob-ge-3.5': Key("Prob >= 3.5", 'prob_ge_cutoff', True, False, (3.5,)),
