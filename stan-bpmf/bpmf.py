@@ -309,7 +309,7 @@ class BPMF(object):
         '''
         # TODO: can we center the samples here?
         _, u, v = matrix_normal_mle(self.pick_out_predictions(samples),
-                                    eps_u=eps, eps_v=eps, verbose=True)
+                                    eps_u=eps, eps_v=eps)
 
         sign_det_u, logdet_u = np.linalg.slogdet(u)
         sign_det_v, logdet_v = np.linalg.slogdet(v)
