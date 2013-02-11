@@ -20,6 +20,7 @@ import warnings
 
 import numpy as np
 from scipy import stats
+import scipy.linalg
 import six
 import six.moves as sixm
 
@@ -77,7 +78,8 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
     v = np.eye(p)
 
     # U <- \sum x V^-1 x^T
-    u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+    # u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+    u = sum(np.dot(x, x.T) for x in samples)
 
     frob = partial(np.linalg.norm, ord='fro')
     step = 0
@@ -96,15 +98,21 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
         old_u = u
         old_v = v
 
-        # XXX shouldn't call inverse, should use solve...
-        # ...but how to do that without a python loop?
+        # Doing this with a python loop because len(samples) isn't too large,
+        # but the size of the matrices could be.
         # http://stackoverflow.com/q/14783386/344821
 
-        # V <- \sum x^T U^-1 x
-        v = np.einsum('aji,jk,akl->il', samples, np.linalg.inv(u) / rn, samples)
+        u_cho = scipy.linalg.cho_factor(u)
+        v = sum(np.dot(x.T, scipy.linalg.cho_solve(u_cho, x)) for x in samples)
 
-        # U <- \sum x V^-1 x^T
-        u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+        v_cho = scipy.linalg.cho_factor(v)
+        u = sum(np.dot(x, scipy.linalg.cho_solve(v_cho, x.T)) for x in samples)
+
+        # No python loop here, but uses an explicit inverse....
+        # # V <- \sum x^T U^-1 x
+        # v = np.einsum('aji,jk,akl->il', samples, np.linalg.inv(u) / rn, samples)
+        # # U <- \sum x V^-1 x^T
+        # u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
 
     if verbose:
         print("\tmatrix_normal_mle took {} steps".format(step))
