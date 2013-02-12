@@ -147,11 +147,11 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
             v_cho = scipy.linalg.cho_factor(v)
         u = sum(np.dot(x, scipy.linalg.cho_solve(v_cho, x.T)) for x in samples)
 
-        # No python loop here, but uses an explicit inverse....
-        # # V <- \sum x^T U^-1 x
-        # v = np.einsum('aji,jk,akl->il', samples, np.linalg.inv(u) / rn, samples)
-        # # U <- \sum x V^-1 x^T
-        # u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+    # No python loop here, but uses an explicit inverse....
+    # # V <- \sum x^T U^-1 x
+    # v = np.einsum('aji,jk,akl->il', samples, np.linalg.inv(u) / rn, samples)
+    # # U <- \sum x V^-1 x^T
+    # u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
 
     if verbose:
         print("\tmatrix_normal_mle took {} steps".format(step))
@@ -619,37 +619,38 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     pickable = knowable.copy()
     pickable[ratings[:, 0].astype(int), ratings[:, 1].astype(int)] = 0
 
-    # figure out test set
-    try:
-        test_set = float(test_set)
-    except ValueError:
-        if test_set != 'all':
-            warnings.warn("dunno what to do with test_set {}".format(test_set))
-            test_set = 'all'
-
     # TODO: support specifying querying on a subset of available things,
     #       other than just complement of the test_set
     if test_set == 'all':
         test_on = knowable
         query_on = pickable
-    elif np.isscalar(test_set):
-        if test_set % 1 == 0 and test_set != 1:
-            avail_pts = list(sixm.zip(*pickable.nonzero()))
-            picked_indices = random.sample(avail_pts, int(test_set))
-            picker = np.zeros(pickable.shape, bool)
-            picker[tuple(np.transpose(picked_indices))] = 1
-        elif 0 < test_set <= 1:
-            picker = np.random.binomial(1, test_set, size=pickable.shape)
+
+    elif np.isscalar(test_set) and np.asarray(test_set).dtype.kind in "fiu":
+        if 0 < test_set <= 1:
+            test_set = int(np.round(test_set * pickable.size))
+        elif test_set == np.round(test_set):
+            test_set = int(test_set)
         else:
             raise TypeError("can't interpret test_set {!r}".format(test_set))
+
+        avail_pts = list(sixm.zip(*pickable.nonzero()))
+        picked_indices = random.sample(avail_pts, test_set)
+        picker = np.zeros(pickable.shape, bool)
+        picker[tuple(np.transpose(picked_indices))] = 1
+
         test_on = picker * pickable
         query_on = (1 - picker) * pickable
+
     else:
         if hasattr(test_set, 'shape') and test_set.shape == knowable.shape:
             picker = test_set.astype(bool)
         else:
             picker = np.zeros(knowable.shape, dtype=bool)
-            picker[test_set] = True
+            try:
+                picker[test_set] = True
+            except IndexError:
+                msg = "can't interpret test_set {!r}".format(test_set)
+                raise TypeError(msg)
         test_on = picker * knowable
         query_on = ~picker * pickable
 
@@ -831,7 +832,13 @@ def main():
     if args.test_set_from_file and test_on:
         test_set = test_on
     else:
-        test_set = args.test_set
+        try:
+            test_set = int(args.test_set)
+        except ValueError:
+            try:
+                test_set = float(args.test_set)
+            except ValueError:
+                test_set = args.test_set
 
     if args.discrete is None:
         args.discrete = rating_vals is not None
