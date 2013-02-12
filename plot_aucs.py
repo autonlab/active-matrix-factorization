@@ -175,6 +175,7 @@ def plot_aucs(aucs, ylabel=None):
         indices = np.arange(len(names)) + 1
     plt.xticks(indices, names, rotation=90)
     plt.xlim(indices[0] - .5, indices[-1] + .5)
+    plt.hlines(0, *plt.xlim(), color='k')
     plt.ylabel(ylabel)
     plt.tight_layout()
 
@@ -265,6 +266,7 @@ def main():
         from statsmodels.graphics.functional import fboxplot
         for name, trace in filter_keys(rmse_traces).items():
             fboxplot(trace, xdata=ns)
+            plt.hlines(0, *plt.xlim(), color='k')
             plt.title(KEY_NAMES.get(name, name))
             plt.xlabel("# of rated elements")
             plt.ylabel(rmse_name)
