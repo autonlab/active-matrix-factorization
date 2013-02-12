@@ -678,7 +678,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     pool = multiprocessing.Pool(procs) if procs is None or procs > 1 else None
 
     print("Getting initial MCMC samples...")
-    samples = bpmf_init.samples(num_samps=num_samps, **samp_args)
+    samples = bpmf_init.samples(num_samps=num_samps, eat_output=False, **samp_args)
 
     init_rmse = bpmf_init.bayes_rmse(samples, real, test_on)
     print("Initial RMSE: {}".format(init_rmse))
