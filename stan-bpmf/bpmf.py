@@ -38,6 +38,22 @@ def get_stan_model(filename='bpmf.stan'):
 def rmse(a, b):
     return np.sqrt(((a - b) ** 2).sum() / a.size)
 
+def project_psd(mat, min_eig=0):
+    '''
+    Project a real symmetric matrix to PSD by discarding any negative
+    eigenvalues from its spectrum. Passing min_eig > 0 lets you similarly make
+    it positive-definite, though this may not technically be a projection...?
+
+    Symmetrizes the matrix before projecting.
+    '''
+    #TODO: better way to project to strictly positive definite?
+    mat = (mat + mat.T) / 2
+    vals, vecs = np.linalg.eigh(mat)
+    if vals.min() < min_eig:
+        mat = np.dot(vecs, np.dot(np.diag(np.maximum(vals, min_eig)), vecs.T))
+        mat = (mat + mat.T) / 2
+    return mat
+
 DEFAULT_MLE_EPS = 1e-3
 def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
                       overwrite_samples=False, verbose=False,
@@ -102,10 +118,18 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
         # but the size of the matrices could be.
         # http://stackoverflow.com/q/14783386/344821
 
-        u_cho = scipy.linalg.cho_factor(u)
+        try:
+            u_cho = scipy.linalg.cho_factor(u)
+        except np.linalg.LinAlgError:
+            u = project_psd(u, min_eig=1e-10)
+            u_cho = scipy.linalg.cho_factor(u)
         v = sum(np.dot(x.T, scipy.linalg.cho_solve(u_cho, x)) for x in samples)
 
-        v_cho = scipy.linalg.cho_factor(v)
+        try:
+            v_cho = scipy.linalg.cho_factor(v)
+        except np.linalg.LinAlgError:
+            v = project_psd(v, min_eig=1e-10)
+            v_cho = scipy.linalg.cho_factor(v)
         u = sum(np.dot(x, scipy.linalg.cho_solve(v_cho, x.T)) for x in samples)
 
         # No python loop here, but uses an explicit inverse....
