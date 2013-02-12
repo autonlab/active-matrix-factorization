@@ -829,7 +829,7 @@ def main():
         rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
         test_on = data['_test_on'] if '_test_on' in data else None
 
-    if args.test_set_from_file and test_on:
+    if args.test_set_from_file and (test_on is not None):
         test_set = test_on
     else:
         try:
