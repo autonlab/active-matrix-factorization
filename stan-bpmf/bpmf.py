@@ -627,25 +627,42 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             warnings.warn("dunno what to do with test_set {}".format(test_set))
             test_set = 'all'
 
+    # TODO: support specifying querying on a subset of available things,
+    #       other than just complement of the test_set
     if test_set == 'all':
         test_on = knowable
         query_on = pickable
-    else:
+    elif np.isscalar(test_set):
         if test_set % 1 == 0 and test_set != 1:
             avail_pts = list(sixm.zip(*pickable.nonzero()))
             picked_indices = random.sample(avail_pts, int(test_set))
             picker = np.zeros(pickable.shape, bool)
             picker[tuple(np.transpose(picked_indices))] = 1
-        else:
+        elif 0 < test_set <= 1:
             picker = np.random.binomial(1, test_set, size=pickable.shape)
+        else:
+            raise TypeError("can't interpret test_set {!r}".format(test_set))
         test_on = picker * pickable
         query_on = (1 - picker) * pickable
+    else:
+        if hasattr(test_set, 'shape') and test_set.shape == knowable.shape:
+            picker = test_set.astype(bool)
+        else:
+            picker = np.zeros(knowable.shape, dtype=bool)
+            picker[test_set] = True
+        test_on = picker * knowable
+        query_on = ~picker * pickable
 
     query_set = set(sixm.zip(*query_on.nonzero()))
 
     print("{} points known, {} to query, testing on {}, {} knowable, {} total"
             .format(ratings.shape[0], query_on.sum(), test_on.sum(),
                     knowable.sum(), real.size))
+    test_query = np.sum(test_on & query_on)
+    if test_query:
+        print("test, query set have {} elements in common".format(test_query))
+    else:
+        print("test and query sets are distinct")
 
     bpmf_init = BPMF(ratings, latent_d,
             subtract_mean=subtract_mean,
@@ -671,6 +688,8 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
         '_ratings': ratings,
         '_rating_vals': rating_vals,
         '_initial_bpmf': deepcopy(bpmf_init),
+        '_test_on': test_on,
+        '_query_on': query_on,
     }
 
     # continue with each key for the fit
@@ -756,7 +775,10 @@ def main():
     parser._add_action(ActionNoYes('threaded', 'unthreaded', default=True))
     parser.add_argument('--procs', '-P', type=int, default=None)
 
-    parser.add_argument('--test-set', default='all')
+    parser._add_action(ActionNoYes('test-set-from-file', default=True))
+    parser.add_argument('--test-set', default="all",
+        help="'all', an integer, or a real 0 < x <= 1. If --test-set-from-file "
+             "this is overridden by an in-file test set, if present.")
 
     parser.add_argument('--model-filename', default='bpmf.stan')
 
@@ -804,6 +826,12 @@ def main():
         real = data['_real']
         ratings = data['_ratings']
         rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
+        test_on = data['_test_on'] if '_test_on' in data else None
+
+    if args.test_set_from_file and test_on:
+        test_set = test_on
+    else:
+        test_set = args.test_set
 
     if args.discrete is None:
         args.discrete = rating_vals is not None
@@ -814,7 +842,7 @@ def main():
                 key_names=args.keys,
                 latent_d=args.latent_d,
                 real=real, ratings=ratings, rating_vals=rating_vals,
-                test_set=args.test_set, num_steps=args.steps,
+                test_set=test_set, num_steps=args.steps,
                 subtract_mean=args.subtract_mean,
                 discrete=args.discrete,
                 num_integration_pts=args.num_integration_pts,
