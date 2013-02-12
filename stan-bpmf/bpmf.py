@@ -20,12 +20,11 @@ import warnings
 
 import numpy as np
 from scipy import stats
+import scipy.linalg
 import six
 import six.moves as sixm
 
-# XXX this import isn't in this folder...
-# from pmf_cy import ProbabilisticMatrixFactorization, rmse, parse_fit_type
-
+# helper to cache loading of Stan models
 from rstan_interface import get_model, sample
 _stan_models = {}
 _dir = os.path.abspath(os.path.dirname(__file__))
@@ -39,6 +38,112 @@ def get_stan_model(filename='bpmf.stan'):
 def rmse(a, b):
     return np.sqrt(((a - b) ** 2).sum() / a.size)
 
+def project_psd(mat, min_eig=0):
+    '''
+    Project a real symmetric matrix to PSD by discarding any negative
+    eigenvalues from its spectrum. Passing min_eig > 0 lets you similarly make
+    it positive-definite, though this may not technically be a projection...?
+
+    Symmetrizes the matrix before projecting.
+    '''
+    #TODO: better way to project to strictly positive definite?
+    mat = (mat + mat.T) / 2
+    vals, vecs = np.linalg.eigh(mat)
+    if vals.min() < min_eig:
+        mat = np.dot(vecs, np.dot(np.diag(np.maximum(vals, min_eig)), vecs.T))
+        mat = (mat + mat.T) / 2
+    return mat
+
+DEFAULT_MLE_EPS = 1e-3
+def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
+                      overwrite_samples=False, verbose=False,
+                      max_steps=None):
+    '''
+    Gets maximum likelihood estimates of the parameters of a matrix-normal
+    distribution, i.e. the mean, U, and V such that the samples are most likely
+    to have come from  N(mean, kronecker(V, U)).
+
+     using the alternating algorithm of
+        Pierre Dutilleul. The mle algorithm for the matrix normal distribution.
+        Journal of Statistical Computation and Simulation,
+        1999 vol. 64 (2) pp. 105-123.
+        http://www.tandfonline.com/doi/abs/10.1080/00949659908811970
+
+    The covariance parameters are only unique up to their Kronecker product.
+
+    eps: stopping criterion for the Frobenius norm of the change in the
+         covariance factors.
+
+    overwrite_samples: if true, centers the passed samples in-place.
+    '''
+    r, n, p = samples.shape  # r samples of n x p matrices
+    rp = r * p
+    rn = r * n
+    if r <= max(n / p, p / n):
+        warnings.warn("Too few samples; MLE doesn't exist, may not converge.")
+
+    mean = np.mean(samples, axis=0)
+    if overwrite_samples:
+        samples -= mean
+    else:
+        samples = samples - mean
+
+    old_v = old_u = np.inf
+
+    # starting condition: V = I_p
+    v = np.eye(p)
+
+    # U <- \sum x V^-1 x^T
+    # u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+    u = sum(np.dot(x, x.T) for x in samples)
+
+    frob = partial(np.linalg.norm, ord='fro')
+    step = 0
+
+    while frob(v - old_v) > eps_u or frob(u - old_u) > eps_v:
+        step += 1
+        if verbose >= 2:
+            print("\tstep {}: u diff {}, v diff {}".format(
+                step, frob(u - old_u), frob(v - old_v)))
+
+        if max_steps and step > max_steps:
+            msg = "matrix_normal_mle hit iteration limit ({})".format(max_steps)
+            warnings.warn(msg)
+            break
+
+        old_u = u
+        old_v = v
+
+        # Doing this with a python loop because len(samples) isn't too large,
+        # but the size of the matrices could be.
+        # http://stackoverflow.com/q/14783386/344821
+
+        try:
+            u_cho = scipy.linalg.cho_factor(u)
+        except np.linalg.LinAlgError:
+            u = project_psd(u, min_eig=1e-10)
+            u_cho = scipy.linalg.cho_factor(u)
+        v = sum(np.dot(x.T, scipy.linalg.cho_solve(u_cho, x)) for x in samples)
+
+        try:
+            v_cho = scipy.linalg.cho_factor(v)
+        except np.linalg.LinAlgError:
+            v = project_psd(v, min_eig=1e-10)
+            v_cho = scipy.linalg.cho_factor(v)
+        u = sum(np.dot(x, scipy.linalg.cho_solve(v_cho, x.T)) for x in samples)
+
+        # No python loop here, but uses an explicit inverse....
+        # # V <- \sum x^T U^-1 x
+        # v = np.einsum('aji,jk,akl->il', samples, np.linalg.inv(u) / rn, samples)
+        # # U <- \sum x V^-1 x^T
+        # u = np.einsum('aij,jk,alk->il', samples, np.linalg.inv(v) / rp, samples)
+
+    if verbose:
+        print("\tmatrix_normal_mle took {} steps".format(step))
+
+    return mean, u, v
+
+################################################################################
 
 class BPMF(object):
     def __init__(self, rating_tuples, latent_d,
@@ -216,11 +321,34 @@ class BPMF(object):
         '''
         return self.pred_variance(samples, which=which).sum()
 
+    def entropy_est(self, samples, which=Ellipsis, eps=DEFAULT_MLE_EPS,
+                    additive_constant=False):
+        '''
+        Estimates the entropy of the samples by assuming that the prediction
+        matrix is distributed according to a matrix-normal distribution.
+
+        Doesn't bother with the additive constant by default.
+
+        NOTE XXX: *ignores* the which argument!
+        '''
+        # TODO: can we center the samples in-place here?
+        _, u, v = matrix_normal_mle(self.pick_out_predictions(samples),
+                                    eps_u=eps, eps_v=eps,
+                                    max_steps=1000)
+
+        sign_det_u, logdet_u = np.linalg.slogdet(u)
+        sign_det_v, logdet_v = np.linalg.slogdet(v)
+        entropy = self.num_items * logdet_u + self.num_users * logdet_v
+
+        if additive_constant:
+            entropy += (1 + np.log(2 * np.pi)) * self.num_items * self.num_users
+        return entropy / 2
+
     def exp_variance(self, samples, which=Ellipsis, pool=None,
                      num_samps=30, warmup=15, **sample_args):
         '''
         Gives the total expected variance in our predicted R matrix if we knew
-        Rij for each ij in which, using samples to represent our distribution
+        Rij for each ij in "which", using samples to represent our distribution
         for Rij: \sum E[Var[R_ij]].
 
         Parallelizes the evaluation over pool if passed (highly recommended,
@@ -230,19 +358,27 @@ class BPMF(object):
                 samples=samples, which=which, pool=pool,
                 num_samps=num_samps, warmup=warmup, **sample_args)
 
+    def exp_entropy_est(self, samples, which=Ellipsis, pool=None,
+                        num_samps=30, warmup=15, **sample_args):
+        '''
+        Gives the expected entropy in our predicted R matrix if we knew
+        Rij for each ij in "which", using samples to represent our distribution
+        for Rij: \sum E[Var[R_ij]].
+
+        Parallelizes the evaluation over pool if passed (highly recommended,
+        since this is sloooow).
+        '''
+        return self._distribute(_exp_entropy_est_helper,
+                samples=samples, which=which, pool=pool,
+                num_samps=num_samps, warmup=warmup, **sample_args)
+
     def _distribute(self, fn, samples, which, pool, **sample_args):
         # figure out the indices of our selection
         # ...there's gotta be an easier way, right?
         n = self.num_users
         m = self.num_items
-        all_indices = np.empty((n, m, 2), dtype=int)
-        for i in sixm.xrange(n):
-            all_indices[i, :, 0] = i
-        for j in sixm.xrange(m):
-            all_indices[:, j, 1] = j
-        indices = all_indices[which]
-        i_indices = indices[..., 0]
-        j_indices = indices[..., 1]
+        i_indices = np.repeat(np.arange(n).reshape(n, 1), m, axis=1)[which]
+        j_indices = np.repeat(np.arange(m).reshape(1, m), n, axis=0)[which]
 
         # get samples of R_ij for each ij in which
         vals = self.pick_out_predictions(samples, which)
@@ -317,7 +453,8 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
     if discrete:
         # TODO: trapezoidal approximation? simpsons?
         # TODO: don't calculate for points with very low probability?
-        evals = np.array([calculate_fn(v) for v in bpmf.rating_values])
+        evals = np.array([calculate_fn(v) if p else 0
+                          for p, v in sixm.zip(params, bpmf.rating_values)])
         est = (evals * params).sum()
         s = "summed"
     else:
@@ -344,7 +481,21 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
 
 
 def _exp_variance_helper(args, **sample_args):
-    return _integrate_lookahead(BPMF.total_variance, *args, **sample_args)
+    try:
+        return _integrate_lookahead(BPMF.total_variance, *args, **sample_args)
+    except:
+        import traceback
+        traceback.print_exc()
+        raise
+
+def _exp_entropy_est_helper(args, **sample_args):
+    try:
+        return _integrate_lookahead(BPMF.entropy_est, *args, **sample_args)
+    except:
+        import traceback
+        traceback.print_exc()
+        raise
+
 
 ################################################################################
 
@@ -355,6 +506,7 @@ KEYS = {
     'pred-variance': Key("Var[R_ij]", 'pred_variance', True, False, ()),
 
     'exp-variance': Key("E[Var[R]]", 'exp_variance', False, True, ()),
+    'exp-entropy-est': Key("E[H[R]]", 'exp_entropy_est', False, True, ()),
 
     'pred': Key("Pred", 'predict', True, False, ()),
     'prob-ge-3.5': Key("Prob >= 3.5", 'prob_ge_cutoff', True, False, (3.5,)),
@@ -508,11 +660,17 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
 
     # continue with each key for the fit
     def eval_key(key_name):
-        res = full_test(
+        try:
+            res = full_test(
                 deepcopy(bpmf_init), samples, real, key_name,
                 num_samps=num_samps, samp_args=samp_args,
                 pool=pool, sample_in_pool=threaded, test_on=test_on, **kwargs)
-        results[key_name] = list(islice(res, num_steps))
+            results[key_name] = list(islice(res, num_steps))
+        except BaseException as e:
+            import traceback
+            traceback.print_exc()
+            import os
+            os._exit(-1)  # go boom
 
     # TODO: no concurrent access to R. be careful here...
     if threaded:
@@ -596,6 +754,7 @@ def main():
     parser.add_argument('--note', action='append',
         help="Doesn't do anything, just there to save any notes you'd like "
              "in the results file.")
+    parser._add_action(ActionNoYes('pdb-on-error', default=True))
 
     parser.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
@@ -650,11 +809,17 @@ def main():
                 procs=args.procs, threaded=args.threaded,
                 model_filename=args.model_filename)
     except Exception:
+        if not args.pdb_on_error:
+            raise
+
         import traceback
         print()
         traceback.print_exc()
 
-        import pdb
+        try:
+            import ipdb as pdb
+        except ImportError:
+            import pdb
         print()
         pdb.post_mortem()
 

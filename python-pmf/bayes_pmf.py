@@ -4,6 +4,9 @@ Implementation of Bayesian PMF (via Gibbs sampling).
 
 Based on Matlab code by Ruslan Salakhutdinov:
 http://www.mit.edu/~rsalakhu/BPMF.html
+
+NOTE: this should be considered depracated;
+      the HMC-based sampler runs much faster and seems to sample better
 '''
 
 from __future__ import print_function # silly cython
