@@ -17,6 +17,7 @@ import os
 import random
 from threading import Thread
 import warnings
+import weakref
 
 import numpy as np
 from scipy import stats
@@ -35,24 +36,38 @@ def get_stan_model(filename='bpmf.stan'):
         _stan_models[filename] = m = get_model(os.path.join(_dir, filename))
         return m
 
+
 def rmse(a, b):
     return np.sqrt(((a - b) ** 2).sum() / a.size)
 
-def project_psd(mat, min_eig=0):
+
+def project_psd(mat, min_eig=0, destroy=False):
     '''
     Project a real symmetric matrix to PSD by discarding any negative
     eigenvalues from its spectrum. Passing min_eig > 0 lets you similarly make
     it positive-definite, though this may not technically be a projection...?
 
     Symmetrizes the matrix before projecting.
+
+    If destroy is True, turns the passed-in matrix into gibberish. If the
+    matrix is very large, passing in a weakref.proxy to it will use the least
+    amount of memory.
     '''
-    #TODO: better way to project to strictly positive definite?
-    mat = (mat + mat.T) / 2
-    vals, vecs = np.linalg.eigh(mat)
+    if not destroy:
+        mat = mat.copy()
+    mat += mat.T
+    mat /= 2
+
+    # TODO: be smart and only get negative eigs?
+    vals, vecs = scipy.linalg.eigh(mat)
     if vals.min() < min_eig:
+        del mat
         mat = np.dot(vecs, np.dot(np.diag(np.maximum(vals, min_eig)), vecs.T))
-        mat = (mat + mat.T) / 2
+        del vals, vecs
+        mat += mat.T
+        mat /= 2
     return mat
+
 
 DEFAULT_MLE_EPS = 1e-3
 def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
@@ -121,14 +136,14 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
         try:
             u_cho = scipy.linalg.cho_factor(u)
         except np.linalg.LinAlgError:
-            u = project_psd(u, min_eig=1e-10)
+            u = project_psd(weakref.proxy(u), min_eig=1e-10, destroy=True)
             u_cho = scipy.linalg.cho_factor(u)
         v = sum(np.dot(x.T, scipy.linalg.cho_solve(u_cho, x)) for x in samples)
 
         try:
             v_cho = scipy.linalg.cho_factor(v)
         except np.linalg.LinAlgError:
-            v = project_psd(v, min_eig=1e-10)
+            v = project_psd(weakref.proxy(v), min_eig=1e-10, destroy=True)
             v_cho = scipy.linalg.cho_factor(v)
         u = sum(np.dot(x, scipy.linalg.cho_solve(v_cho, x.T)) for x in samples)
 
