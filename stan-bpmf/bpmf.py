@@ -456,10 +456,20 @@ def _integrate_lookahead(fn, bpmf, i, j, discrete, params, **sample_args):
 
 
 def _exp_variance_helper(args, **sample_args):
-    return _integrate_lookahead(BPMF.total_variance, *args, **sample_args)
+    try:
+        return _integrate_lookahead(BPMF.total_variance, *args, **sample_args)
+    except:
+        import traceback
+        traceback.print_exc()
+        raise
 
 def _exp_entropy_est_helper(args, **sample_args):
-    return _integrate_lookahead(BPMF.entropy_est, *args, **sample_args)
+    try:
+        return _integrate_lookahead(BPMF.entropy_est, *args, **sample_args)
+    except:
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 ################################################################################
@@ -625,11 +635,17 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
 
     # continue with each key for the fit
     def eval_key(key_name):
-        res = full_test(
+        try:
+            res = full_test(
                 deepcopy(bpmf_init), samples, real, key_name,
                 num_samps=num_samps, samp_args=samp_args,
                 pool=pool, sample_in_pool=threaded, test_on=test_on, **kwargs)
-        results[key_name] = list(islice(res, num_steps))
+            results[key_name] = list(islice(res, num_steps))
+        except BaseException as e:
+            import traceback
+            traceback.print_exc()
+            import os
+            os._exit(-1)  # go boom
 
     # TODO: no concurrent access to R. be careful here...
     if threaded:
