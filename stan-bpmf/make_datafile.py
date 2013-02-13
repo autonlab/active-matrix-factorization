@@ -49,6 +49,8 @@ def main():
     parser.add_argument('--n-users', default=None, type=int)
     parser.add_argument('--n-items', default=None, type=int)
 
+    parser.add_argument('--subtract-mean', action='store_true', default=False)
+
     parser.add_argument('--output-format', default='numpy',
         choices=['rdata', 'matlab', 'numpy'])
 
@@ -57,7 +59,11 @@ def main():
     args = parser.parse_args()
 
     infile = np.load(args.infile)
-    data = make_vars(infile['_ratings'], rank=args.rank,
+    ratings = infile['_ratings']
+    if args.subtract_mean:
+        ratings[:, 2] -= np.mean(ratings[:, 2])
+
+    data = make_vars(ratings, rank=args.rank,
                      n_users=args.n_users, n_items=args.n_items)
 
     if args.output_format == 'rdata':
