@@ -318,7 +318,11 @@ class BPMF(object):
 
     def pick_out_predictions(self, samples, which=Ellipsis):
         # TODO: better way to index with which on the non-first axis
-        preds = np.asarray([p[which] for p in samples['predictions']])
+        if 'predictions' in samples:
+            all_preds = samples['predictions']
+        else:
+            all_preds = np.einsum('aij,akj->aik', samps['U'], samps['V'])
+        preds = np.asarray([p[which] for p in all_preds])
         return (preds + self.mean_rating) if self.subtract_mean else preds
 
     def predict(self, samples, which=Ellipsis):

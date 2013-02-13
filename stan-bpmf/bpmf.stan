@@ -48,8 +48,8 @@ transformed data {
 
 parameters {
   // latent factors
-  matrix[rank, n_users] U; // column-major, so store individual users together
-  matrix[rank, n_items] V;
+  vector[rank] U[n_users];
+  vector[rank] V[n_items];
 
   // means on latent factors; see model sec for details
   vector[rank] mu_u_stdized;
@@ -60,11 +60,6 @@ parameters {
   vector[(rank * (rank - 1)) / 2] cov_u_z;
   vector<lower=0>[rank] cov_v_c;
   vector[(rank * (rank - 1)) / 2] cov_v_z;
-}
-
-transformed parameters {
-  matrix[n_users, n_items] predictions;
-  predictions <- U' * V;
 }
 
 model {
@@ -127,26 +122,16 @@ model {
   // The prior on the latent factors we just went to so much trouble to build
 
   for (i in 1:n_users)
-    col(U, i) ~ multi_normal_cholesky(mu_u, cov_u_L);
+    U[i] ~ multi_normal_cholesky(mu_u, cov_u_L);
   for (j in 1:n_items)
-    col(V, j) ~ multi_normal_cholesky(mu_v, cov_v_L);
+    V[j] ~ multi_normal_cholesky(mu_v, cov_v_L);
 
 
   //////////////////////////////////////////////////////////////////////////////
   // The part that actually uses the data!
   // Assumed to be normal around the predictions by the latent factors.
-  for (n in 1:n_obs)
-    obs_ratings[n] ~ normal(predictions[obs_users[n],obs_items[n]], rating_std);
-}
-
-/*
-generated quantities {
-  real training_rmse;
-  training_rmse <- 0;
-  for (i in 1:n_obs) {
-    training_rmse <- training_rmse
-      + square(predictions[obs_users[i], obs_items[i]] - obs_ratings[i]);
+  for (n in 1:n_obs) {
+    obs_ratings[n] ~ normal(dot_product(U[obs_users[n]], V[obs_items[n]]),
+                            rating_std);
   }
-  training_rmse <- sqrt(training_rmse);
 }
-*/
