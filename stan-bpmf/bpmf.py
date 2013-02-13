@@ -8,7 +8,7 @@ Implementation of Bayesian PMF with Hamiltonian MCMC/NUTS (through Stan).
 
 from __future__ import print_function, division
 
-from collections import defaultdict, namedtuple
+from collections import namedtuple
 from copy import deepcopy
 from functools import partial
 from itertools import islice, product, repeat
@@ -92,8 +92,8 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
     overwrite_samples: if true, centers the passed samples in-place.
     '''
     r, n, p = samples.shape  # r samples of n x p matrices
-    rp = r * p
-    rn = r * n
+    # rp = r * p
+    # rn = r * n
     if r <= max(n / p, p / n):
         warnings.warn("Too few samples; MLE doesn't exist, may not converge.")
 
@@ -305,7 +305,8 @@ class BPMF(object):
         if update_mode:
             i = samples['lp__'].argmax()
             if samples['lp__'][i] > self.sampled_mode_lp:
-                self.sampled_mode = {k: v[i] for k, v in six.iteritems(samples)}
+                self.sampled_mode = dict(
+                    (k, v[i]) for k, v in six.iteritems(samples))
                 self.sampled_mode_lp = samples['lp__'][i]
         return samples
 
@@ -321,7 +322,7 @@ class BPMF(object):
         if 'predictions' in samples:
             all_preds = samples['predictions']
         else:
-            all_preds = np.einsum('aij,akj->aik', samps['U'], samps['V'])
+            all_preds = np.einsum('aij,akj->aik', samples['U'], samples['V'])
         preds = np.asarray([p[which] for p in all_preds])
         return (preds + self.mean_rating) if self.subtract_mean else preds
 
@@ -705,7 +706,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                 num_samps=num_samps, samp_args=samp_args,
                 pool=pool, sample_in_pool=threaded, test_on=test_on, **kwargs)
             results[key_name] = list(islice(res, num_steps))
-        except BaseException as e:
+        except BaseException:
             import traceback
             traceback.print_exc()
             import os
