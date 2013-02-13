@@ -22,6 +22,7 @@ data {
 
 transformed data {
   real one_over_beta_0;
+  vector[rank] nu_0_minus_i;
   matrix[rank, rank] eye;
 
   for (j in 1:rank) {
@@ -31,6 +32,10 @@ transformed data {
   }
 
   one_over_beta_0 <- 1 / beta_0;
+
+  for (i in 1:rank) {
+    nu_0_minus_i[i] <- nu_0 - i + 1;
+  }
 }
 
 parameters {
@@ -72,10 +77,8 @@ model {
   // The elements of a lower-triangular decomposition of a matrix distributed
   // as wishart(nu_0, I). See section 13.1 of the Stan manual for details
   // (the "multivariate reparameterizations" section).
-  for (i in 1:rank) {
-    cov_u_c[i] ~ chi_square(nu_0 - i + 1); // diagonals are chi-squared
-    cov_v_c[i] ~ chi_square(nu_0 - i + 1);
-  }
+  cov_u_c ~ chi_square(nu_0_minus_i); // diagonals are chi-squared
+  cov_v_c ~ chi_square(nu_0_minus_i);
   cov_u_z ~ normal(0, 1); // lower triangle is standard normal
   cov_v_z ~ normal(0, 1);
 
