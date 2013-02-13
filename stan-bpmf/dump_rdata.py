@@ -62,8 +62,13 @@ def main():
             return v.reshape(-1)
         return val
 
+    try:
+        input_data = loadmat(args.input)
+    except IOError:
+        input_data = np.load(args.input)
+
     data = {k: _handle(v)
-            for k, v in iteritems(loadmat(args.input))
+            for k, v in iteritems(input_data)
             if not k.startswith('__')}
 
     with open(args.output, 'w') as f:

@@ -25,6 +25,7 @@ data {
 
 transformed data {
   real one_over_beta_0;
+  vector[rank] nu_0_minus_i;
   matrix[rank, rank] w_0_L; // Cholesky factorization of the scale matrix
   matrix[rank, rank] w_0_L_inv;
   matrix[rank, rank] eye;
@@ -39,12 +40,16 @@ transformed data {
   w_0_L_inv <- mdivide_left_tri_low(w_0_L, eye);
 
   one_over_beta_0 <- 1 / beta_0;
+
+  for (i in 1:rank) {
+    nu_0_minus_i[i] <- nu_0 - i + 1;
+  }
 }
 
 parameters {
   // latent factors
-  matrix[rank, n_users] U; // column-major, so store individual users together
-  matrix[rank, n_items] V;
+  vector[rank] U[n_users];
+  vector[rank] V[n_items];
 
   // means on latent factors; see model sec for details
   vector[rank] mu_u_stdized;
@@ -55,11 +60,6 @@ parameters {
   vector[(rank * (rank - 1)) / 2] cov_u_z;
   vector<lower=0>[rank] cov_v_c;
   vector[(rank * (rank - 1)) / 2] cov_v_z;
-}
-
-transformed parameters {
-  matrix[n_users, n_items] predictions;
-  predictions <- U' * V;
 }
 
 model {
@@ -80,10 +80,8 @@ model {
   // The elements of a lower-triangular decomposition of a matrix distributed
   // as wishart(nu_0, I). See section 13.1 of the Stan manual for details
   // (the "multivariate reparameterizations" section).
-  for (i in 1:rank) {
-    cov_u_c[i] ~ chi_square(nu_0 - i + 1); // diagonals are chi-squared
-    cov_v_c[i] ~ chi_square(nu_0 - i + 1);
-  }
+  cov_u_c ~ chi_square(nu_0_minus_i); // diagonals are chi-squared
+  cov_v_c ~ chi_square(nu_0_minus_i);
   cov_u_z ~ normal(0, 1); // lower triangle is standard normal
   cov_v_z ~ normal(0, 1);
 
@@ -124,26 +122,16 @@ model {
   // The prior on the latent factors we just went to so much trouble to build
 
   for (i in 1:n_users)
-    col(U, i) ~ multi_normal_cholesky(mu_u, cov_u_L);
+    U[i] ~ multi_normal_cholesky(mu_u, cov_u_L);
   for (j in 1:n_items)
-    col(V, j) ~ multi_normal_cholesky(mu_v, cov_v_L);
+    V[j] ~ multi_normal_cholesky(mu_v, cov_v_L);
 
 
   //////////////////////////////////////////////////////////////////////////////
   // The part that actually uses the data!
   // Assumed to be normal around the predictions by the latent factors.
-  for (n in 1:n_obs)
-    obs_ratings[n] ~ normal(predictions[obs_users[n],obs_items[n]], rating_std);
-}
-
-/*
-generated quantities {
-  real training_rmse;
-  training_rmse <- 0;
-  for (i in 1:n_obs) {
-    training_rmse <- training_rmse
-      + square(predictions[obs_users[i], obs_items[i]] - obs_ratings[i]);
+  for (n in 1:n_obs) {
+    obs_ratings[n] ~ normal(dot_product(U[obs_users[n]], V[obs_items[n]]),
+                            rating_std);
   }
-  training_rmse <- sqrt(training_rmse);
 }
-*/
