@@ -136,14 +136,14 @@ def matrix_normal_mle(samples, eps_u=DEFAULT_MLE_EPS, eps_v=DEFAULT_MLE_EPS,
         try:
             u_cho = scipy.linalg.cho_factor(u)
         except np.linalg.LinAlgError:
-            u = project_psd(weakref.proxy(u), min_eig=1e-10, destroy=True)
+            u = project_psd(weakref.proxy(u), min_eig=1e-6, destroy=True)
             u_cho = scipy.linalg.cho_factor(u)
         v = sum(np.dot(x.T, scipy.linalg.cho_solve(u_cho, x)) for x in samples)
 
         try:
             v_cho = scipy.linalg.cho_factor(v)
         except np.linalg.LinAlgError:
-            v = project_psd(weakref.proxy(v), min_eig=1e-10, destroy=True)
+            v = project_psd(weakref.proxy(v), min_eig=1e-6, destroy=True)
             v_cho = scipy.linalg.cho_factor(v)
         u = sum(np.dot(x, scipy.linalg.cho_solve(v_cho, x.T)) for x in samples)
 
