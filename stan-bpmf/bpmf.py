@@ -302,6 +302,10 @@ class BPMF(object):
         #       but still allow adaptation. unfortunately, stan doesn't
         #       currently support this.
 
+        if 'predictions' not in samples:
+            samples['predictions'] = np.einsum('aij,akj->aik',
+                                               samples['U'], samples['V'])
+
         if update_mode:
             i = samples['lp__'].argmax()
             if samples['lp__'][i] > self.sampled_mode_lp:
@@ -319,11 +323,10 @@ class BPMF(object):
 
     def pick_out_predictions(self, samples, which=Ellipsis):
         # TODO: better way to index with which on the non-first axis
-        if 'predictions' in samples:
-            all_preds = samples['predictions']
+        if which == Ellipsis:
+            preds = samples['predictions']
         else:
-            all_preds = np.einsum('aij,akj->aik', samples['U'], samples['V'])
-        preds = np.asarray([p[which] for p in all_preds])
+            preds = np.asarray([p[which] for p in samples['predictions']])
         return (preds + self.mean_rating) if self.subtract_mean else preds
 
     def predict(self, samples, which=Ellipsis):
