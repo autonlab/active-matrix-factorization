@@ -263,7 +263,7 @@ class BPMF(object):
                 eat_output=True,
                 ret_args_only=False):
         '''
-        Runs the Markav chain for num_samps samples, after warming up for
+        Runs the Markov chain for num_samps samples, after warming up for
         warmup iterations beforehand (default: num_samps // 2).
 
         Returns a dictionary with keys the name of the param, values
