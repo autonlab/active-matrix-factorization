@@ -44,10 +44,45 @@ def pick_ratings(knowable, num_to_pick):
     return known
 
 
+def pick_ratings_drugbank(real, num_to_pick):
+    knowable = np.isfinite(real)
+    assert knowable.sum() > num_to_pick
+
+    pos = knowable & (real > 0)
+    neg = knowable & (real <= 0)
+
+    n_drugs, n_targets = knowable.shape
+    known = np.zeros(knowable.shape, bool)
+
+    # choose a positive for each drug
+    for i in range(n_drugs):
+        j = random.choice(list(pos[i, :].nonzero()[0]))
+        known[i, j] = 1
+        knowable[i, j] = 0
+
+    # choose a negative for any empty targets
+    for j in np.logical_not(known.sum(axis=0)).nonzero()[0]:
+        i = random.choice(list(neg[:, j].nonzero()[0]))
+        known[i, j] = 1
+        knowable[i, j] = 0
+
+    assert known.sum() < num_to_pick
+
+    # choose the rest as random negatives
+    knowable_negatives = list(neg.ravel().nonzero()[0])
+    num_to_pick -= known.sum()
+    picked = random.sample(knowable_negatives, num_to_pick)
+    known.flat[picked] = 1
+
+    return known
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('file')
     parser.add_argument('outfile')
+
+    parser.add_argument('--drugbank', action='store_true')
 
     initial = parser.add_argument_group('Initially known set options',
         "Chooses this many elements to be initially known, in such a way "
@@ -83,7 +118,12 @@ def main():
             real = np.load(f)
     except IOError:
         real = np.load(args.file)
-    knowable = np.isfinite(real) & (real > 0)
+
+    if args.drugbank:
+        real = real.astype(np.int8)
+        real[real == 0] = -1
+
+    knowable = np.isfinite(real) & (real != 0)
 
     if args.n_pick:
         num_to_pick = args.n_pick
@@ -91,7 +131,11 @@ def main():
         num_to_pick = int(np.round(real.size * args.pick_dataset_frac))
     else:
         num_to_pick = int(np.round(knowable.sum() * args.pick_known_frac))
-    known = pick_ratings(knowable, num_to_pick)
+
+    if args.drugbank:
+        known = pick_ratings_drugbank(real, num_to_pick)
+    else:
+        known = pick_ratings(knowable, num_to_pick)
     testable = knowable & ~known
 
     num_test = None
@@ -118,7 +162,11 @@ def main():
 
     # make the ratings matrix, rating_vals
     ratings = make_ratings(real, known)
-    rating_vals = tuple(sorted(set(real.flat) - set((0, np.nan))))
+
+    # avoid repeat nans in set: http://stackoverflow.com/a/14846245/344821
+    rating_set = set(real[~np.isnan(real)])
+    rating_set.discard(0)
+    rating_vals = tuple(sorted(rating_set))
 
     dct = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
     if test_on is not None:
