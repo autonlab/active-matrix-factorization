@@ -46,8 +46,7 @@ def pick_ratings(knowable, num_to_pick):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--file', '-f', default='50x50_rowscols.npy',
-        help="A numpy ratings matrix; default %(default)s.")
+    parser.add_argument('file')
     parser.add_argument('outfile')
 
     initial = parser.add_argument_group('Initially known set options',
