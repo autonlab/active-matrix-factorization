@@ -43,9 +43,9 @@ run%:
 
 run%/data.npz: | run%
 	cd $(CODE_BASE) && $(PYTHON) choose_training.py \
-		--file movielens-100k/ratings_matrix.npy.gz \
 		--pick-known-frac 0.05 \
 		--test-at-random --test-known-frac 0.05 \
+		movielens-100k/ratings_matrix.npy.gz \
 		$(RESULTS_BASE)/$@
 
 run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
