@@ -51,7 +51,11 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             if k.startswith('_'):
                 continue
 
-            ns, rmses, ijs, evals = zip(*v)
+            if len(v[0]) == 4:
+                ns, rmses, ijs, evals = zip(*v)
+            else:
+                ns, rmses, ijs, evals, preds = zip(*v)
+
             ns = np.asarray(ns)
             rmses = np.asarray(rmses)
             if desired_ns is not None:

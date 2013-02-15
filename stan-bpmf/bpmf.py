@@ -577,13 +577,13 @@ def full_test(bpmf, samples, real, key_name,
 
     real_test = real[test_on]
 
-    init_pred_on_test = bpmf.predict(samples, which=test_on)
+    init_pred = bpmf.predict(samples)
     if binary_acc:
         assert np.all(np.abs(real[test_on])) == 1
-        init_err = binary_misclassification(init_pred_on_test, real_test)
+        init_err = binary_misclassification(init_pred[test_on], real_test)
     else:
-        init_err = rmse(init_pred_on_test, real_test)
-    yield (len(bpmf.rated), init_err, None, None)
+        init_err = rmse(init_pred[test_on], real_test)
+    yield (len(bpmf.rated), init_err, None, None, init_pred)
 
     status = partial(print, "{:<40}".format(key.nice_name))
 
@@ -623,7 +623,7 @@ def full_test(bpmf, samples, real, key_name,
         else:
             err = rmse(pred[test_on], real[test_on])
             status("RMSE {}: {:.5}".format(len(bpmf.rated), err))
-        yield len(bpmf.rated), err, (i, j), vals
+        yield len(bpmf.rated), err, (i, j), vals, pred
 
 
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
