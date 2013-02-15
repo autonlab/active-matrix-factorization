@@ -707,7 +707,7 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     pool = multiprocessing.Pool(procs) if procs is None or procs > 1 else None
 
     print("Getting initial MCMC samples...")
-    samples = bpmf_init.samples(num_samps=num_samps, eat_output=False, **samp_args)
+    samples = bpmf_init.samples(num_samps=num_samps, **samp_args)
 
     init_pred_on_test = bpmf_init.predict(samples, which=test_on)
     if binary_acc:
