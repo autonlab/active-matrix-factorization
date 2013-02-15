@@ -1,0 +1,163 @@
+# absolute paths to results and code dirs
+CODE_BASE ?= $(HOME)/matrix-fact
+RESULTS_BASE ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+
+INTERACTIVE ?= 1
+FORCE_GIT ?= 0
+
+# use all cores by default
+PROCS ?= 0
+
+PYTHON ?= python3
+MATLAB ?= matlab
+
+IGNORE_GIT ?= interactive
+
+ifeq "$(INTERACTIVE)" "1"
+	PY = $(PYTHON) -u
+	OUTPUT = 2>&1 | tee /dev/tty | gzip --to-stdout > $(RESULTS_BASE)/$@.log.gz
+	IGNORE_GIT = interactive
+else
+	PY = $(PYTHON)
+	OUTPUT = 2>&1 | gzip --to-stdout > $(RESULTS_BASE)/$@.log.gz
+	ifeq "$(FORCE_GIT)" "1"
+		IGNORE_GIT = force
+	else
+		IGNORE_GIT = abort
+	endif
+endif
+GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
+
+
+# TODO: smarter formulae/formats that split up results for each key, but
+#		know how to run multiple keys in parallel
+
+# NOTE: this makefile uses | dependencies everywhere to avoid reruns based
+#       on modification time of the data file, to avoid very expensive ops
+#       just in case. if you want to rerun, just delete the data files.
+
+LATENT_D=2
+
+run%:
+	mkdir -p $@
+
+run%/data.pkl: | run%
+	# generate random data:
+	cd $(CODE_BASE) && $(PY) generate.py \
+		--rows 10 --cols 10 --rank 2 \
+		--known-pos 10 --unknown-pos 90 --cutoff 0 \
+		$(RESULTS_BASE)/$@
+
+# also useful args for most types: --steps, --test-set
+
+run%/results_stan.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 200 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		$(OUTPUT)
+
+run%/results_stan_s400_nolookahead.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 400 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		random pred-variance pred prob-ge-3.5 \
+		$(OUTPUT)
+
+run%/results_stan_s10000_nolookahead.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 10000 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		random pred-variance pred prob-ge-3.5 \
+		$(OUTPUT)
+
+run%/results_stan_s10000_nolookahead_b.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 10000 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		random pred-variance pred prob-ge-3.5 \
+		$(OUTPUT)
+
+run%/results_stan_straightforward.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--model-filename bpmf_straightforward.stan \
+		--samps 200 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		$(OUTPUT)
+
+run%/results_stan_straightforward_s400_nolookahead.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--model-filename bpmf_straightforward.stan \
+		--samps 400 --warmup 200 \
+		--lookahead-samps 100 --lookahead-warmup 50 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		random pred-variance pred prob-ge-3.5 \
+		$(OUTPUT)
+
+run%/results_bayes.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) run_bayes_pmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--samps 200 --lookahead-samps 100 \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		$(OUTPUT)
+
+run%/results_apmf.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_pmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--refit-lookahead \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		pred-variance exp-variance random \
+		$(OUTPUT)
+
+run%/results_mmmf.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		$(OUTPUT)
+
+run%/results_rc.pkl: | run%/data.pkl
+	cd $(CODE_BASE)/ratingconcentration && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_rc.py \
+		--notes "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		--delta 1.5 --pred-mean \
+		entropy random \
+		$(OUTPUT)

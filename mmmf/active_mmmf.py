@@ -6,17 +6,12 @@ import os
 import random
 import shutil
 import string
+import sys
 import subprocess
 from tempfile import mkdtemp
 
 import numpy as np
 import scipy.io
-
-# for pickle
-import sys
-sys.path.append('../python-pmf')
-from active_pmf import ActivePMF
-from bayes_pmf import BayesianPMF
 
 KeyFunc = namedtuple('KeyFunc', "nice_name code")
 
@@ -39,12 +34,12 @@ known = known == 1;
 selectors = {{ {selectors} }};
 C = double(C);
 
-results = evaluate_active(Y, selectors, steps, known, queryable, C);
+results = evaluate_active(Y, selectors, steps, known, queryable, C, test_on);
 
 save {outfile} results
 '''
 
-def compare(keys, data_matrix, known, queryable=None, steps=-1, C=1,
+def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=1,
             mat_cmd='matlab', return_tempdir=False, cutoff=None):
     # TODO: switch to fMMMF to not throw out partial solutions
 
@@ -53,7 +48,7 @@ def compare(keys, data_matrix, known, queryable=None, steps=-1, C=1,
     #     data_matrix += .01
     #     assert 0 not in data_matrix
 
-    if set(data_matrix.flat) != {-1, 0, 1}:
+    if not set(data_matrix.flat).issubset([-1, 0, 1]):
         if cutoff is None:
             raise ValueError("we only handle binary matrices here, bud")
         new_data_matrix = np.zeros_like(data_matrix)
@@ -75,6 +70,7 @@ def compare(keys, data_matrix, known, queryable=None, steps=-1, C=1,
         'Y': data_matrix,
         'known': known,
         'queryable': queryable,
+        'test_on': test_on,
         'steps': steps,
         'C': C,
     }
@@ -109,25 +105,28 @@ def compare(keys, data_matrix, known, queryable=None, steps=-1, C=1,
     else:
         return results
 
+def _handle_array(array):
+    if hasattr(array, 'todense'):
+        array = array.todense()
+    if array.size:
+        array = array.astype(float)
+        array[array == 0] = np.nan
+    else:
+        array = None
+    return array
+
 def results_from_mat(mat_results, keys):
     results = {}
     for k, v in zip(keys, mat_results.flat):
-        results[k] = res = []
-        for num, rmse, ij, evals in v:
-            if hasattr(evals, 'todense'):
-                evals = evals.todense()
-            if evals.size:
-                evals = evals.astype(float)
-                evals[evals == 0] = np.nan
-            else:
-                evals = None
-
-            res.append([
-                num[0,0],
-                rmse[0,0],
-                (ij[0,0]-1, ij[0,1]-1) if ij.size else None,
-                evals,
-            ])
+        results[k] = [
+            [num[0, 0],
+             rmse[0, 0],
+             (ij[0, 0] - 1, ij[0, 1] - 1) if ij.size else None,
+             _handle_array(evals),
+             _handle_array(pred),
+            ]
+            for num, rmse, ij, evals, pred in v
+        ]
     return results
 
 
@@ -180,14 +179,16 @@ def main():
     # get sparse matrix of known elements
     known = np.zeros(real.shape, dtype=bool)
     ratings = orig['_ratings']
-    known[ratings[:,0].astype(int), ratings[:,1].astype(int)] = 1
+    known[ratings[:, 0].astype(int), ratings[:, 1].astype(int)] = 1
+
+    test_on = orig.get('_test_on', None)
 
     queryable = real != 0
 
     # get new results
     results = compare(keys=list(args.keys),
                       data_matrix=real, cutoff=args.cutoff,
-                      known=known, queryable=queryable,
+                      known=known, queryable=queryable, test_on=test_on,
                       steps=args.steps, C=args.C,
                       mat_cmd=args.matlab,
                       return_tempdir=not args.delete_tempdir)

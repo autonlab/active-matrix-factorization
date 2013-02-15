@@ -8,12 +8,13 @@ Implementation of Bayesian PMF with Hamiltonian MCMC/NUTS (through Stan).
 
 from __future__ import print_function, division
 
-from collections import namedtuple
+from collections import namedtuple, Counter
 from copy import deepcopy
 from functools import partial
 from itertools import islice, product, repeat
 import multiprocessing
 import os
+from pprint import pformat
 import random
 from threading import Thread
 import warnings
@@ -38,7 +39,13 @@ def get_stan_model(filename='bpmf.stan'):
 
 
 def rmse(a, b):
-    return np.sqrt(((a - b) ** 2).sum() / a.size)
+    diff = a - b
+    diff **= 2
+    return np.sqrt(np.mean(diff))
+
+
+def binary_misclassification(a, b):
+    return np.mean(np.sign(a) != b)
 
 
 def project_psd(mat, min_eig=0, destroy=False):
@@ -263,7 +270,7 @@ class BPMF(object):
                 eat_output=True,
                 ret_args_only=False):
         '''
-        Runs the Markav chain for num_samps samples, after warming up for
+        Runs the Markov chain for num_samps samples, after warming up for
         warmup iterations beforehand (default: num_samps // 2).
 
         Returns a dictionary with keys the name of the param, values
@@ -302,6 +309,10 @@ class BPMF(object):
         #       but still allow adaptation. unfortunately, stan doesn't
         #       currently support this.
 
+        if 'predictions' not in samples:
+            samples['predictions'] = np.einsum('aij,akj->aik',
+                                               samples['U'], samples['V'])
+
         if update_mode:
             i = samples['lp__'].argmax()
             if samples['lp__'][i] > self.sampled_mode_lp:
@@ -319,11 +330,10 @@ class BPMF(object):
 
     def pick_out_predictions(self, samples, which=Ellipsis):
         # TODO: better way to index with which on the non-first axis
-        if 'predictions' in samples:
-            all_preds = samples['predictions']
+        if not hasattr(which, 'shape') and which == Ellipsis:
+            preds = samples['predictions']
         else:
-            all_preds = np.einsum('aij,akj->aik', samples['U'], samples['V'])
-        preds = np.asarray([p[which] for p in all_preds])
+            preds = np.asarray([p[which] for p in samples['predictions']])
         return (preds + self.mean_rating) if self.subtract_mean else preds
 
     def predict(self, samples, which=Ellipsis):
@@ -452,10 +462,6 @@ class BPMF(object):
         shape = np.empty((self.num_users, self.num_items))[which].shape
         return np.random.rand(*shape)
 
-    def bayes_rmse(self, samples, true_r, which=Ellipsis):
-        "The RMSE of predictions compared to true values."
-        return rmse(self.predict(samples, which), true_r[which])
-
 
 # stupid functions to work around multiprocessing.Pool/pickle silliness
 
@@ -549,7 +555,8 @@ def fetch_samples(bpmf, num_samps, **kwargs):
 def full_test(bpmf, samples, real, key_name,
               num_samps=128, samp_args=None,
               lookahead_samps=128, lookahead_samp_args=None,
-              pool=None, sample_in_pool=False, test_on=Ellipsis):
+              pool=None, sample_in_pool=False, test_on=Ellipsis,
+              binary_acc=False):
     '''
     Evaluates the chosen selection criterion (key_name) on the data (real),
     starting with an initial instance of BPMF and some samples from it.
@@ -568,12 +575,20 @@ def full_test(bpmf, samples, real, key_name,
     lookahead_samp_args = (lookahead_samp_args or {}).copy()
     lookahead_samp_args['num_samps'] = lookahead_samps
 
-    init_rmse = bpmf.bayes_rmse(samples, real, which=test_on)
-    yield (len(bpmf.rated), init_rmse, None, None)
+    real_test = real[test_on]
+
+    init_pred = bpmf.predict(samples)
+    if binary_acc:
+        assert np.all(np.abs(real[test_on])) == 1
+        init_err = binary_misclassification(init_pred[test_on], real_test)
+    else:
+        init_err = rmse(init_pred[test_on], real_test)
+    yield (len(bpmf.rated), init_err, None, None, init_pred)
+
+    status = partial(print, "{:<40}".format(key.nice_name))
 
     while bpmf.unrated:
-        print("{:<40} Picking query point {}...".format(
-            key.nice_name, len(bpmf.rated) + 1))
+        status("Picking query point {}...".format(len(bpmf.rated) + 1))
 
         if len(bpmf.unrated) == 1:
             vals = None
@@ -594,25 +609,29 @@ def full_test(bpmf, samples, real, key_name,
             vals = bpmf.matrix_results(evals, which)
 
         bpmf.add_rating(i, j, real[i, j])
-        print("{:<40} Queried ({}, {}); {}/{} known".format(
-                key.nice_name, i, j, len(bpmf.rated), total))
+        status("Queried ({}, {}); {}/{} known".format(
+                i, j, len(bpmf.rated), total))
 
         if sample_in_pool and pool:
             samples, pred = pool.apply(fetch_samples, [bpmf], samp_args)
         else:
             samples, pred = fetch_samples(bpmf, **samp_args)
 
-        err = rmse(pred[test_on], real[test_on])
-        print("{:<40} RMSE {}: {:.5}".format(
-            key.nice_name, len(bpmf.rated), err))
-        yield len(bpmf.rated), err, (i, j), vals
+        if binary_acc:
+            err = binary_misclassification(pred[test_on], real_test)
+            status("Error rate {}: {:.3%}".format(len(bpmf.rated), err))
+        else:
+            err = rmse(pred[test_on], real[test_on])
+            status("RMSE {}: {:.5}".format(len(bpmf.rated), err))
+        yield len(bpmf.rated), err, (i, j), vals, pred
 
 
 def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
                    discrete=True, subtract_mean=True, num_integration_pts=50,
                    num_steps=None, procs=None, threaded=False,
                    num_samps=128, samp_args=None, test_set='all',
-                   model_filename='bpmf.stan', **kwargs):
+                   model_filename='bpmf.stan',
+                   binary_acc=False, **kwargs):
     # make sure the model is compiled and loaded beforehand
     get_stan_model(model_filename)
 
@@ -669,6 +688,11 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
         print("test, query set have {} elements in common".format(test_query))
     else:
         print("test and query sets are distinct")
+    if rating_vals is not None:
+        for s, thing in [("test", test_on), ("query", query_on)]:
+            counts = Counter(real[thing].flat)
+            counts.update(dict((k, 0) for k in rating_vals))
+            print("{} set distribution: {}".format(s, pformat(dict(counts))))
 
     bpmf_init = BPMF(ratings, latent_d,
             subtract_mean=subtract_mean,
@@ -685,8 +709,14 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
     print("Getting initial MCMC samples...")
     samples = bpmf_init.samples(num_samps=num_samps, eat_output=False, **samp_args)
 
-    init_rmse = bpmf_init.bayes_rmse(samples, real, test_on)
-    print("Initial RMSE: {}".format(init_rmse))
+    init_pred_on_test = bpmf_init.predict(samples, which=test_on)
+    if binary_acc:
+        assert np.all(np.abs(real[test_on])) == 1
+        init_err = binary_misclassification(init_pred_on_test, real[test_on])
+        print("Initial error rate: {:.3%}".format(init_err))
+    else:
+        init_err = rmse(init_pred_on_test, real[test_on])
+        print("Initial RMSE: {}".format(init_err))
     print()
 
     results = {
@@ -704,7 +734,9 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
             res = full_test(
                 deepcopy(bpmf_init), samples, real, key_name,
                 num_samps=num_samps, samp_args=samp_args,
-                pool=pool, sample_in_pool=threaded, test_on=test_on, **kwargs)
+                pool=pool, sample_in_pool=threaded,
+                test_on=test_on, binary_acc=binary_acc,
+                **kwargs)
             results[key_name] = list(islice(res, num_steps))
         except BaseException:
             import traceback
@@ -769,6 +801,8 @@ def main():
 
     parser._add_action(ActionNoYes('discrete', default=None))
     parser.add_argument('--num-integration-pts', type=int, default=50)
+
+    parser._add_action(ActionNoYes('binary-acc', default=False))
 
     parser._add_action(ActionNoYes('subtract-mean', default=True))
 
@@ -862,7 +896,8 @@ def main():
                 samp_args={'warmup': args.warmup},
                 lookahead_samp_args={'warmup': args.lookahead_warmup},
                 procs=args.procs, threaded=args.threaded,
-                model_filename=args.model_filename)
+                model_filename=args.model_filename,
+                binary_acc=args.binary_acc)
     except Exception:
         if not args.pdb_on_error:
             raise

@@ -119,7 +119,10 @@ def _plot_lines(results, fn, ylabel):
                     for k, v in results.items() if not k.startswith('_'))
 
     for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
-        nums, rmses, ijs, vals = zip(*result)
+        if len(result[0]) == 4:
+            nums, rmses, ijs, vals = zip(*result)
+        else:
+            nums, rmses, ijs, vals, preds = zip(*result)
         vals = fn(nums, rmses, ijs, vals, results)
         nums = np.array(nums, copy=False) + (idx - total / 2) * offset
 
@@ -167,7 +170,10 @@ def plot_criteria_over_time(name, result, cmap=default_cmap):
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import ImageGrid
 
-    nums, rmses, ijs, valses = zip(*result)
+    if len(result[0]) == 4:
+        nums, rmses, ijs, valses = zip(*result)
+    else:
+        nums, rmses, ijs, valses, preds = zip(*result)
 
     assert ijs[0] is None
     assert valses[0] is None
