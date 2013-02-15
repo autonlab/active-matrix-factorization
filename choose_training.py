@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+from __future__ import division
 
 import argparse
+import ast
 import gzip
 import random
 
@@ -107,6 +109,7 @@ def main():
     g.add_argument('--test-one-per-row-col', action='store_true', default=False)
     g.add_argument('--test-at-random', action='store_true', default=True)
     g.add_argument('--test-equal-classes', action='store_true', default=False)
+    g.add_argument('--test-class-ratios', type=ast.literal_eval, default=None)
 
     g = test.add_mutually_exclusive_group()
     g.add_argument('--n-test', type=int, metavar='N')
@@ -132,6 +135,15 @@ def main():
         real[real == 0] = -1
 
     knowable = np.isfinite(real) & (real != 0)
+
+    if real.dtype.kind in 'iu' or \
+            np.all(real[knowable] == np.round(real[knowable])):
+        # avoid repeat nans in set: http://stackoverflow.com/a/14846245/344821
+        rating_set = set(real[~np.isnan(real)])
+        rating_set.discard(0)
+        rating_vals = tuple(sorted(rating_set))
+    else:
+        rating_vals = None
 
     if args.n_pick:
         num_to_pick = args.n_pick
@@ -160,14 +172,25 @@ def main():
     if num_test:
         assert num_test < testable.sum()
 
-        if args.test_equal_classes:
-            assert np.all(real[knowable] == np.round(real[knowable]))
+        if args.test_class_ratios or args.test_equal_classes:
+            assert rating_vals is not None
+
             labels = list(set(real[knowable].flat))
             n_labels = len(labels)
 
-            n_per_label = np.ones(n_labels, dtype=int) * (num_test // n_labels)
-            i = random.sample(sixm.xrange(n_labels), num_test % n_labels)
-            n_per_label[i] += 1
+            if args.test_equal_classes:
+                ratios = np.ones(n_labels) / n_labels
+            else:
+                ratios = np.array([args.test_class_ratios[k] for k in labels])
+                total = ratios.sum()
+                assert .97 <= total <= 1.03, "total ratio was {}".format(total)
+                ratios /= total
+
+            n_per_label = np.round(ratios * num_test).astype(int)
+            diff = num_test - n_per_label.sum()
+            i = random.sample(sixm.xrange(n_labels), abs(diff))
+            n_per_label[i] += np.sign(diff)
+            assert n_per_label.sum() == num_test
 
             test_on = np.zeros(testable.shape, bool)
             for label, num in sixm.zip(labels, n_per_label):
@@ -183,12 +206,9 @@ def main():
     # make the ratings matrix, rating_vals
     ratings = make_ratings(real, known)
 
-    # avoid repeat nans in set: http://stackoverflow.com/a/14846245/344821
-    rating_set = set(real[~np.isnan(real)])
-    rating_set.discard(0)
-    rating_vals = tuple(sorted(rating_set))
-
-    dct = {'_real': real, '_ratings': ratings, '_rating_vals': rating_vals}
+    dct = {'_real': real, '_ratings': ratings}
+    if rating_vals is not None:
+        dct['_rating_vals'] = rating_vals
     if test_on is not None:
         dct['_test_on'] = test_on
 
