@@ -10,7 +10,7 @@ PROCS ?= 0
 PYTHON ?= python3
 MATLAB ?= matlab
 
-OUTPUT = 2>&1 > $(RESULTS_BASE)/$@.log
+OUTPUT = 2>&1 | tee $(RESULTS_BASE)/$@.log
 ifeq "$(INTERACTIVE)" "1"
 	PY = $(PYTHON) -u
 	IGNORE_GIT ?= interactive
