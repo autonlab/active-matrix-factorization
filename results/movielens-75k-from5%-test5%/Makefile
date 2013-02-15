@@ -3,7 +3,6 @@ CODE_BASE ?= $(HOME)/matrix-fact
 RESULTS_BASE ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 INTERACTIVE ?= 1
-FORCE_GIT ?= 0
 
 # use all cores by default
 PROCS ?= 0
@@ -11,20 +10,13 @@ PROCS ?= 0
 PYTHON ?= python3
 MATLAB ?= matlab
 
-IGNORE_GIT ?= interactive
-
+OUTPUT = 2>&1 > $(RESULTS_BASE)/$@.log
 ifeq "$(INTERACTIVE)" "1"
 	PY = $(PYTHON) -u
-	OUTPUT = 2>&1 | tee /dev/tty | gzip > $(RESULTS_BASE)/$@.log.gz
-	IGNORE_GIT = interactive
+	IGNORE_GIT ?= interactive
 else
 	PY = $(PYTHON)
-	OUTPUT = 2>&1 | gzip --to-stdout > $(RESULTS_BASE)/$@.log.gz
-	ifeq "$(FORCE_GIT)" "1"
-		IGNORE_GIT = force
-	else
-		IGNORE_GIT = abort
-	endif
+	IGNORE_GIT ?= abort
 endif
 GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
 
