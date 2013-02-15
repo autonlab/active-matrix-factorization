@@ -6,17 +6,12 @@ import os
 import random
 import shutil
 import string
+import sys
 import subprocess
 from tempfile import mkdtemp
 
 import numpy as np
 import scipy.io
-
-# for pickle
-import sys
-sys.path.append('../python-pmf')
-from active_pmf import ActivePMF
-from bayes_pmf import BayesianPMF
 
 KeyFunc = namedtuple('KeyFunc', "nice_name code")
 
@@ -53,7 +48,7 @@ def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=
     #     data_matrix += .01
     #     assert 0 not in data_matrix
 
-    if set(data_matrix.flat) != {-1, 0, 1}:
+    if not set(data_matrix.flat).issubset([-1, 0, 1]):
         if cutoff is None:
             raise ValueError("we only handle binary matrices here, bud")
         new_data_matrix = np.zeros_like(data_matrix)
@@ -111,7 +106,7 @@ def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=
         return results
 
 def _handle_array(array):
-    if hasattr(evals, 'todense'):
+    if hasattr(array, 'todense'):
         array = array.todense()
     if array.size:
         array = array.astype(float)
@@ -130,7 +125,7 @@ def results_from_mat(mat_results, keys):
              _handle_array(evals),
              _handle_array(pred),
             ]
-            for num, rmse, ij, evals, pred in v:
+            for num, rmse, ij, evals, pred in v
         ]
     return results
 
@@ -186,7 +181,7 @@ def main():
     ratings = orig['_ratings']
     known[ratings[:, 0].astype(int), ratings[:, 1].astype(int)] = 1
 
-    test_on = orig['_test_on'] if '_test_on' in orig else None
+    test_on = orig.get('_test_on', None)
 
     queryable = real != 0
 
