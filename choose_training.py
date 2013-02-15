@@ -77,6 +77,12 @@ def pick_ratings_drugbank(real, num_to_pick):
     return known
 
 
+def sample_from_ary(available, target, num):
+    avail_pts = list(sixm.zip(*available.nonzero()))
+    picked = random.sample(avail_pts, num)
+    target[tuple(np.transpose(picked))] = 1
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('file')
@@ -96,10 +102,12 @@ def main():
     test = parser.add_argument_group('Test set options',
         "Chooses this many elements for a test set. Default: doesn't pick one. "
         "Does not overlap with the initially-known set.")
+
     g = test.add_mutually_exclusive_group()
     g.add_argument('--test-one-per-row-col', action='store_true', default=False)
-    g.add_argument('--test-at-random', action='store_false',
-                   dest='test_one_per_row_col')
+    g.add_argument('--test-at-random', action='store_true', default=True)
+    g.add_argument('--test-equal-classes', action='store_true', default=False)
+
     g = test.add_mutually_exclusive_group()
     g.add_argument('--n-test', type=int, metavar='N')
     g.add_argument('--test-dataset-frac', type=float, metavar='FRAC',
@@ -152,13 +160,25 @@ def main():
     if num_test:
         assert num_test < testable.sum()
 
-        if args.test_one_per_row_col:
-            test_on = pick_ratings(testable, num_test)
-        else:
-            avail_pts = list(sixm.zip(*testable.nonzero()))
-            picked_indices = random.sample(avail_pts, num_test)
+        if args.test_equal_classes:
+            assert np.all(real[knowable] == np.round(real[knowable]))
+            labels = list(set(real[knowable].flat))
+            n_labels = len(labels)
+
+            n_per_label = np.ones(n_labels, dtype=int) * (num_test // n_labels)
+            i = random.sample(sixm.xrange(n_labels), num_test % n_labels)
+            n_per_label[i] += 1
+
             test_on = np.zeros(testable.shape, bool)
-            test_on[tuple(np.transpose(picked_indices))] = 1
+            for label, num in sixm.zip(labels, n_per_label):
+                sample_from_ary((real == label) & testable, test_on, num)
+
+        elif args.test_one_per_row_col:
+            test_on = pick_ratings(testable, num_test)
+
+        else:
+            test_on = np.zeros(testable.shape, bool)
+            sample_from_ary(testable, test_on, num_test)
 
     # make the ratings matrix, rating_vals
     ratings = make_ratings(real, known)
