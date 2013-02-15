@@ -40,7 +40,7 @@ else
 end
 
 function [err] = get_misclass(X)
-    err = mean(Y(test_on) != sign(X))
+    err = mean(Y(test_on) ~= sign(X))
 end
 
 % initial fit
