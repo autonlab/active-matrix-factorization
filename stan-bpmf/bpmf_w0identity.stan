@@ -122,8 +122,11 @@ model {
   //////////////////////////////////////////////////////////////////////////////
   // The part that actually uses the data!
   // Assumed to be normal around the predictions by the latent factors.
-  for (n in 1:n_obs) {
-    obs_ratings[n] ~ normal(dot_product(U[obs_users[n]], V[obs_items[n]]),
-                            rating_std);
+  {
+    vector[n_obs] obs_means;
+    for (n in 1:n_obs) {
+      obs_means[n] <- dot_product(U[obs_users[n]], V[obs_items[n]]);
+    }
+    obs_ratings ~ normal(obs_means, rating_std);
   }
 }
