@@ -66,7 +66,7 @@ run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
 		--procs $(PROCS) \
 		--binary-acc \
 		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
-		random pred-variance pred prob-ge-.5 \
+		random pred-variance pred prob-ge-0 \
 		$(OUTPUT)
 
 run%/results_mmmf.pkl: | run%/data.npz
@@ -75,5 +75,5 @@ run%/results_mmmf.pkl: | run%/data.npz
 		--note "git rev {{REV}}" \
 		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
-		-C 1 --cutoff 3.5 \
+		-C 1 \
 		$(OUTPUT)

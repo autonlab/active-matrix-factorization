@@ -1,19 +1,18 @@
-function [all_results] = evaluate_active(Y, selectors, steps, known, queryable, C)
+function [all_results] = evaluate_active(...
+    Y, selectors, steps, known, queryable, C, test_on)
 % INPUTS:
 %   Y: a -1/0/1 label matrix, where 0 means unknown
 %   selectors: a cell array of function handles to use for prediciton
 %   steps: the number of steps of prediction to run (-1 to go until end)
 %   known: the initially known elements of the matrix
-%   queryable: the elements that are allowed to be queried (default Y ~= 0)
+%   queryable: the elements that are allowed to be queried (default: Y ~= 0)
 %   C: slack variable in MMMF (default 1 XXX)
+%   test_on: the elements to test on (default: Y ~= 0 & ~known)
 %
 % OUTPUTS:
 %   all_results: a cell array with one entry per selector, containing
-%                cell arrays of num_known, rmse, pick [i,j], evaluations array
-
-function [rmse] = get_rmse(X)
-    rmse = sqrt(sum((Y(Y ~= 0) - X(Y ~= 0)).^2) / numel(X))
-end
+%       cell arrays of num_known, misclassification rate, pick [i,j],
+%                      evaluations array, predictions
 
 if ~iscell(selectors); selectors = {selectors}; end
 if nargin < 3; steps = -1; end
@@ -34,6 +33,16 @@ queryable(known) = false;
 Ytr_init = double(zeros(size(Y)));
 Ytr_init(known) = Y(known);
 
+if nargin < 7
+    test_on = (Y ~= 0) & (~known);
+else
+    test_on = logical(test_on);
+end
+
+function [err] = get_misclass(X)
+    err = mean(Y(test_on) != sign(X))
+end
+
 % initial fit
 [x_init, xu_init, xv_init] = solveD(Ytr_init, 'a', C);
 
@@ -48,8 +57,8 @@ for selector_i = 1 : length(selectors)
     num_known = num_known_init;
     can_query = queryable;
 
-    results = cell(1, 4);
-    results(1,:) = {num_known, get_rmse(sign(x)), [], []};
+    results = cell(1, 5);
+    results(1,:) = {num_known, get_misclass(x), [], [], x};
 
     stepnum = 2;
     while (steps == -1 || stepnum <= steps) && nnz(can_query) > 0
@@ -68,7 +77,7 @@ for selector_i = 1 : length(selectors)
         num_known = num_known + 1;
 
         % save results
-        results(stepnum, :) = {num_known, get_rmse(sign(x)), [i,j], evals};
+        results(stepnum, :) = {num_known, get_misclass(x), [i,j], evals, x};
         stepnum = stepnum + 1;
     end
 
