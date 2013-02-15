@@ -741,8 +741,14 @@ def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
         except BaseException:
             import traceback
             traceback.print_exc()
-            import os
-            os._exit(-1)  # go boom
+            if pool is not None:
+                pool.terminate()
+            try:
+                from _thread import interrupt_main
+            except ImportError:
+                from thread import interrupt_main
+            interrupt_main()
+            raise
 
     # TODO: no concurrent access to R. be careful here...
     if threaded:
