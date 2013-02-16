@@ -50,8 +50,8 @@ class MainProgram(bpmf.MainProgram):
         parser = super(MainProgram, self).get_parser()
         g = parser.add_argument_group('New Items setup')
         g.add_argument('--initial-fit-file', default=None)
-        g.add_argument('--initial-fit-samps', default=200)
-        g.add_argument('--initial-fit-warmup', default=200)
+        g.add_argument('--initial-fit-samps', default=200, type=int)
+        g.add_argument('--initial-fit-warmup', default=200, type=int)
         g.add_argument('--initial-fit-only', action='store_true', default=False)
         return parser
 
