@@ -20,7 +20,7 @@ data {
   int<lower=rank> nu_0; // deg of freedom, usually == rank
   cov_matrix[rank] w_0; // scale matrix, usually identity
   // NOTE: could save some matrix ops by not including w_0 if it's the identity;
-  //   bpmf_reparam_w0ident.stan does this. probably only helps at high ranks
+  //   bpmf_w0identity.stan does this
 }
 
 transformed data {

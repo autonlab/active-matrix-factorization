@@ -16,9 +16,15 @@ import multiprocessing
 import os
 from pprint import pformat
 import random
+import sys
 from threading import Thread
 import warnings
 import weakref
+
+try:
+    from _thread import interrupt_main
+except ImportError:
+    from thread import interrupt_main
 
 import numpy as np
 from scipy import stats
@@ -174,7 +180,7 @@ class BPMF(object):
                  discrete_expectations=True,
                  num_integration_pts=50,
                  knowable=None,
-                 model_filename='bpmf.stan'):
+                 model_filename='bpmf_w0identity.stan'):
         self.latent_d = latent_d
         self.subtract_mean = subtract_mean
 
@@ -206,7 +212,7 @@ class BPMF(object):
         self.rating_values = rating_values
         self.discrete_expectations = discrete_expectations
         self.num_integration_pts = num_integration_pts
-        self.model_filename = model_filename
+        self.model_filename = model_filename or 'bpmf_w0identity.stan'
 
         # keep track of the highest-likelihood sample so far
         # we'll sometimes want to initialize sampling here
@@ -265,6 +271,30 @@ class BPMF(object):
         # a new one, since the old log-likelihood is no longer valid
         self.sampled_mode_lp = -np.inf
 
+    def _data_for_sampling(self):
+        ratings = self.ratings[:, 2]
+        if self.subtract_mean:
+            ratings = ratings - self.mean_rating
+        return {
+            'n_users': self.num_users,
+            'n_items': self.num_items,
+            'rank': self.latent_d,
+
+            'n_obs': self.ratings.shape[0],
+            'obs_users': self.ratings[:, 0] + 1,
+            'obs_items': self.ratings[:, 1] + 1,
+            'obs_ratings': ratings,
+
+            'rating_std': self.rating_std,
+            'mu_0': self.mu_0,
+            'beta_0': self.beta_0,
+            'nu_0': self.nu_0,
+            'w_0': self.w_0,
+        }
+
+    def _fill_predictions(self, samps):
+        samps['predictions'] = np.einsum('aij,akj->aik', samps['U'], samps['V'])
+
     def samples(self, num_samps, warmup=None, chains=1,
                 start_at_mode=True, update_mode=True, model_filename=None,
                 eat_output=True,
@@ -280,38 +310,23 @@ class BPMF(object):
         if warmup is None:
             warmup = num_samps // 2
 
-        sub_rating = self.mean_rating if self.subtract_mean else 0
-        data = {
-            'n_users': self.num_users,
-            'n_items': self.num_items,
-            'rank': self.latent_d,
-
-            'n_obs': self.ratings.shape[0],
-            'obs_users': self.ratings[:, 0] + 1,
-            'obs_items': self.ratings[:, 1] + 1,
-            'obs_ratings': self.ratings[:, 2] - sub_rating,
-
-            'rating_std': self.rating_std,
-            'mu_0': self.mu_0,
-            'beta_0': self.beta_0,
-            'nu_0': self.nu_0,
-            'w_0': self.w_0,
-        }
+        data = self._data_for_sampling()
         args = {'chains': chains, 'iter': warmup + num_samps, 'warmup': warmup,
                 'eat_output': eat_output, 'return_output': False}
         if start_at_mode:
             args['init'] = self.sampled_mode
-        stan_model = get_stan_model(model_filename or self.model_filename)
+
         if ret_args_only:
             return data, args
+
+        stan_model = get_stan_model(model_filename or self.model_filename)
         samples = sample(stan_model, data=data, **args)
         # TODO: would be nice to initialize step size parameters to old values
         #       but still allow adaptation. unfortunately, stan doesn't
         #       currently support this.
 
         if 'predictions' not in samples:
-            samples['predictions'] = np.einsum('aij,akj->aik',
-                                               samples['U'], samples['V'])
+            self._fill_predictions(samples)
 
         if update_mode:
             i = samples['lp__'].argmax()
@@ -626,309 +641,320 @@ def full_test(bpmf, samples, real, key_name,
         yield len(bpmf.rated), err, (i, j), vals, pred
 
 
-def compare_active(key_names, latent_d, real, ratings, rating_vals=None,
-                   discrete=True, subtract_mean=True, num_integration_pts=50,
-                   num_steps=None, procs=None, threaded=False,
-                   num_samps=128, samp_args=None, test_set='all',
-                   model_filename='bpmf.stan',
-                   binary_acc=False, **kwargs):
-    # make sure the model is compiled and loaded beforehand
-    get_stan_model(model_filename)
 
-    # figure out which points we know the answers to
-    knowable = np.isfinite(real)
-    knowable[real == 0] = 0
 
-    # ... and which points we can query
-    pickable = knowable.copy()
-    pickable[ratings[:, 0].astype(int), ratings[:, 1].astype(int)] = 0
+class MainProgram(object):
+    def get_parser(self):
+        import argparse
 
-    # TODO: support specifying querying on a subset of available things,
-    #       other than just complement of the test_set
-    if test_set == 'all':
-        test_on = knowable
-        query_on = pickable
+        # helper for boolean flags
+        # based on http://stackoverflow.com/a/9236426/344821
+        class ActionNoYes(argparse.Action):
+            def __init__(self, opt_name, off_name=None, dest=None,
+                         default=True, required=False, help=None):
 
-    elif np.isscalar(test_set) and np.asarray(test_set).dtype.kind in "fiu":
-        if 0 < test_set <= 1:
-            test_set = int(np.round(test_set * pickable.size))
-        elif test_set == np.round(test_set):
-            test_set = int(test_set)
+                if off_name is None:
+                    off_name = 'no-' + opt_name
+                self.off_name = '--' + off_name
+
+                if dest is None:
+                    dest = opt_name.replace('-', '_')
+
+                super(ActionNoYes, self).__init__(
+                        ['--' + opt_name, '--' + off_name],
+                        dest, nargs=0, const=None,
+                        default=default, required=required, help=help)
+
+            def __call__(self, parser, namespace, values, option_string=None):
+                setattr(namespace, self.dest, option_string != self.off_name)
+
+        # set up arguments
+        parser = argparse.ArgumentParser()
+
+        parser.add_argument('--latent-d', '-D', type=int, default=5)
+        parser.add_argument('--steps', '-s', type=int, default=None)
+
+        parser._add_action(ActionNoYes('discrete', default=None))
+        parser.add_argument('--num-integration-pts', type=int, default=50)
+
+        parser._add_action(ActionNoYes('binary-acc', default=False))
+
+        parser._add_action(ActionNoYes('subtract-mean', default=True))
+
+        parser.add_argument('--samps', '-S', type=int, default=100)
+        parser.add_argument('--warmup', type=int, default=50)
+
+        parser.add_argument('--lookahead-samps', type=int, default=100)
+        parser.add_argument('--lookahead-warmup', type=int, default=50)
+
+        parser._add_action(ActionNoYes('threaded', 'unthreaded', default=True))
+        parser.add_argument('--procs', '-P', type=int, default=None)
+
+        parser._add_action(ActionNoYes('test-set-from-file', default=True))
+        parser.add_argument('--test-set', default="all",
+            help="'all', an integer, or a real 0 < x <= 1. "
+                 "If --test-set-from-file this is overridden by any "
+                 "in-file test sets.")
+
+        parser.add_argument('--model-filename', default=None)
+
+        parser.add_argument('--load-data', required='True', metavar='FILE')
+        parser.add_argument('--save-results', nargs='?', default=True,
+                const=True, metavar='FILE')
+        parser.add_argument('--no-save-results',
+                action='store_false', dest='save_results')
+
+        parser.add_argument('--note', action='append',
+            help="Doesn't do anything, just there to save any notes you'd like "
+                 "in the results file.")
+        parser._add_action(ActionNoYes('pdb-on-error', default=True))
+
+        parser.add_argument('keys', nargs='*',
+                help="Choices: {}.".format(', '.join(sorted(KEYS.keys()))))
+        return parser
+
+    def parse_args(self):
+        import os
+        parser = self.get_parser()
+        args = parser.parse_args()
+
+        # check that args.keys are valid
+        key_names = KEYS.keys()
+        for k in args.keys:
+            if k not in key_names:
+                parser.error("Invalid key name %s; options are %s.\n" % (
+                    k, ', '.join(sorted(key_names))))
+
+        if not args.keys:
+            args.keys = sorted(key_names)
+
+        # make directories to save results if necessary
+        if args.save_results is True:
+            args.save_results = 'results.pkl'
+        elif args.save_results:
+            dirname = os.path.dirname(args.save_results)
+            if dirname and not os.path.exists(dirname):
+                os.makedirs(dirname)
+
+        return args
+
+    def load_data(self, args):
+        # load data
+        with open(args.load_data, 'rb') as f:
+            data = np.load(f)
+
+            real = data['_real']
+            ratings = data['_ratings']
+            rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
+            test_on = data['_test_on'] if '_test_on' in data else None
+
+        if args.test_set_from_file and (test_on is not None):
+            test_set = test_on
         else:
-            raise TypeError("can't interpret test_set {!r}".format(test_set))
-
-        avail_pts = list(sixm.zip(*pickable.nonzero()))
-        picked_indices = random.sample(avail_pts, test_set)
-        picker = np.zeros(pickable.shape, bool)
-        picker[tuple(np.transpose(picked_indices))] = 1
-
-        test_on = picker * pickable
-        query_on = (1 - picker) * pickable
-
-    else:
-        if hasattr(test_set, 'shape') and test_set.shape == knowable.shape:
-            picker = test_set.astype(bool)
-        else:
-            picker = np.zeros(knowable.shape, dtype=bool)
             try:
-                picker[test_set] = True
-            except IndexError:
+                test_set = int(args.test_set)
+            except ValueError:
+                try:
+                    test_set = float(args.test_set)
+                except ValueError:
+                    test_set = args.test_set
+
+        if args.discrete is None:
+            args.discrete = rating_vals is not None
+
+        Data = namedtuple("Data", "real ratings rating_vals test_set")
+        return Data(real, ratings, rating_vals, test_set)
+
+    def initialize_bpmf(self, args, data, query_set):
+        return BPMF(data.ratings, args.latent_d,
+                subtract_mean=args.subtract_mean,
+                rating_values=data.rating_vals,
+                discrete_expectations=args.discrete,
+                num_integration_pts=args.num_integration_pts,
+                knowable=query_set,
+                model_filename=args.model_filename)
+
+    def pick_query_test_sets(self, data):
+        real = data.real
+        ratings = data.ratings
+        test_set = data.test_set
+        rating_vals = data.rating_vals
+
+        # figure out which points we know the answers to
+        knowable = np.isfinite(real)
+        knowable[real == 0] = 0
+
+        # ... and which points we can query
+        pickable = knowable.copy()
+        pickable[ratings[:, 0].astype(int), ratings[:, 1].astype(int)] = 0
+
+        # TODO: support specifying querying on a subset of available things,
+        #       other than just complement of the test_set
+        if test_set == 'all':
+            test_on = knowable
+            query_on = pickable
+
+        elif np.isscalar(test_set) and np.asarray(test_set).dtype.kind in "fiu":
+            if 0 < test_set <= 1:
+                test_set = int(np.round(test_set * pickable.size))
+            elif test_set == np.round(test_set):
+                test_set = int(test_set)
+            else:
                 msg = "can't interpret test_set {!r}".format(test_set)
                 raise TypeError(msg)
-        test_on = picker * knowable
-        query_on = ~picker * pickable
 
-    query_set = set(sixm.zip(*query_on.nonzero()))
+            avail_pts = list(sixm.zip(*pickable.nonzero()))
+            picked_indices = random.sample(avail_pts, test_set)
+            picker = np.zeros(pickable.shape, bool)
+            picker[tuple(np.transpose(picked_indices))] = 1
 
-    print("{} points known, {} to query, testing on {}, {} knowable, {} total"
-            .format(ratings.shape[0], query_on.sum(), test_on.sum(),
-                    knowable.sum(), real.size))
-    test_query = np.sum(test_on & query_on)
-    if test_query:
-        print("test, query set have {} elements in common".format(test_query))
-    else:
-        print("test and query sets are distinct")
-    if rating_vals is not None:
-        for s, thing in [("test", test_on), ("query", query_on)]:
-            counts = Counter(real[thing].flat)
-            counts.update(dict((k, 0) for k in rating_vals))
-            print("{} set distribution: {}".format(s, pformat(dict(counts))))
+            test_on = picker * pickable
+            query_on = (1 - picker) * pickable
 
-    bpmf_init = BPMF(ratings, latent_d,
-            subtract_mean=subtract_mean,
-            rating_values=rating_vals,
-            discrete_expectations=discrete,
-            num_integration_pts=num_integration_pts,
-            knowable=query_set,
-            model_filename=model_filename)
+        else:
+            if hasattr(test_set, 'shape') and test_set.shape == knowable.shape:
+                picker = test_set.astype(bool)
+            else:
+                picker = np.zeros(knowable.shape, dtype=bool)
+                try:
+                    picker[test_set] = True
+                except IndexError:
+                    msg = "can't interpret test_set {!r}".format(test_set)
+                    raise TypeError(msg)
+            test_on = picker * knowable
+            query_on = ~picker * pickable
 
-    if procs <= 0:
-        procs = None
-    pool = multiprocessing.Pool(procs) if procs is None or procs > 1 else None
+        print("{} users, {} items".format(*real.shape))
+        print("{} points known, querying {}, testing {}, {} knowable, {} total"
+                .format(ratings.shape[0], query_on.sum(), test_on.sum(),
+                        knowable.sum(), real.size))
 
-    print("Getting initial MCMC samples...")
-    samples = bpmf_init.samples(num_samps=num_samps, **samp_args)
+        test_query = np.sum(test_on & query_on)
+        if test_query:
+            print("test, query set have {} common elements".format(test_query))
+        else:
+            print("test and query sets are distinct")
 
-    init_pred_on_test = bpmf_init.predict(samples, which=test_on)
-    if binary_acc:
-        assert np.all(np.abs(real[test_on])) == 1
-        init_err = binary_misclassification(init_pred_on_test, real[test_on])
-        print("Initial error rate: {:.3%}".format(init_err))
-    else:
-        init_err = rmse(init_pred_on_test, real[test_on])
-        print("Initial RMSE: {}".format(init_err))
-    print()
+        if rating_vals is not None:
+            for s, thing in [("test", test_on), ("query", query_on)]:
+                counts = Counter(real[thing].flat)
+                counts.update(dict((k, 0) for k in rating_vals))
+                print("{} set distribution: {}"
+                        .format(s, pformat(dict(counts))))
 
-    results = {
-        '_real': real,
-        '_ratings': ratings,
-        '_rating_vals': rating_vals,
-        '_initial_bpmf': deepcopy(bpmf_init),
-        '_test_on': test_on,
-        '_query_on': query_on,
-    }
+        return query_on, test_on
 
-    # continue with each key for the fit
-    def eval_key(key_name):
+    def do_work(self, args, data):
+        real = data.real
+        ratings = data.ratings
+        rating_vals = data.rating_vals
+        query_on, test_on = self.pick_query_test_sets(data)
+        query_set = set(sixm.zip(*query_on.nonzero()))
+
+        bpmf_init = self.initialize_bpmf(args, data, query_set)
+
+        if not args.procs:
+            pool = multiprocessing.Pool()
+        elif args.procs == 1:
+            pool = None
+        else:
+            pool = multiprocessing.Pool(args.procs)
+
+        samp_args = {'warmup': args.warmup}
+
+        print("Getting initial MCMC samples...")
+        samples = bpmf_init.samples(num_samps=args.samps, **samp_args)
+
+        init_pred_on_test = bpmf_init.predict(samples, which=test_on)
+        if args.binary_acc:
+            assert np.all(np.abs(real[test_on])) == 1
+            init_err = binary_misclassification(init_pred_on_test, real[test_on])
+            print("Initial error rate: {:.3%}".format(init_err))
+        else:
+            init_err = rmse(init_pred_on_test, real[test_on])
+            print("Initial RMSE: {}".format(init_err))
+        print()
+
+        results = {
+            '_real': real,
+            '_ratings': ratings,
+            '_rating_vals': rating_vals,
+            '_initial_bpmf': deepcopy(bpmf_init),
+            '_test_on': test_on,
+            '_query_on': query_on,
+        }
+
+        # continue with each key for the fit
+        def eval_key(key_name):
+            try:
+                res = full_test(
+                    deepcopy(bpmf_init), samples, real, key_name,
+                    pool=pool, sample_in_pool=args.threaded,
+                    test_on=test_on, binary_acc=args.binary_acc,
+                    num_samps=args.samps, samp_args=samp_args,
+                    lookahead_samps=args.lookahead_samps,
+                    lookahead_samp_args={'warmup': args.lookahead_warmup})
+                results[key_name] = list(islice(res, args.steps))
+                # TODO: save results / some state along the way
+            except BaseException:
+                import traceback
+                traceback.print_exc()
+                if pool is not None:
+                    pool.terminate()
+                if args.threaded:
+                    interrupt_main()
+                raise
+
+        # TODO: no concurrent access to R. be careful here...
+        if args.threaded:
+            threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
+                       for key_name in args.keys]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        else:
+            for key_name in args.keys:
+                eval_key(key_name)
+
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+        return results
+
+    def main(self):
+        import pickle
+
         try:
-            res = full_test(
-                deepcopy(bpmf_init), samples, real, key_name,
-                num_samps=num_samps, samp_args=samp_args,
-                pool=pool, sample_in_pool=threaded,
-                test_on=test_on, binary_acc=binary_acc,
-                **kwargs)
-            results[key_name] = list(islice(res, num_steps))
-        except BaseException:
+            args = self.parse_args()
+            the_data = self.load_data(args)
+            results = self.do_work(args, the_data)
+        except Exception:
+            if not args.pdb_on_error:
+                raise
+
             import traceback
             traceback.print_exc()
-            if pool is not None:
-                pool.terminate()
+
             try:
-                from _thread import interrupt_main
+                import ipdb as pdb
             except ImportError:
-                from thread import interrupt_main
-            interrupt_main()
-            raise
+                import pdb
+            print()
+            pdb.post_mortem(sys.exc_info()[2])
 
-    # TODO: no concurrent access to R. be careful here...
-    if threaded:
-        threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
-                   for key_name in key_names]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-
-    else:
-        for key_name in key_names:
-            eval_key(key_name)
-
-    if pool is not None:
-        pool.close()
-        pool.join()
-
-    return results
-
-
-def main():
-    import argparse
-    import os
-    import pickle
-    import sys
-
-    # helper for boolean flags
-    # based on http://stackoverflow.com/a/9236426/344821
-    class ActionNoYes(argparse.Action):
-        def __init__(self, opt_name, off_name=None, dest=None,
-                     default=True, required=False, help=None):
-
-            if off_name is None:
-                off_name = 'no-' + opt_name
-            self.off_name = '--' + off_name
-
-            if dest is None:
-                dest = opt_name.replace('-', '_')
-
-            super(ActionNoYes, self).__init__(
-                    ['--' + opt_name, '--' + off_name],
-                    dest, nargs=0, const=None,
-                    default=default, required=required, help=help)
-
-        def __call__(self, parser, namespace, values, option_string=None):
-            setattr(namespace, self.dest, option_string != self.off_name)
-
-    key_names = KEYS.keys()
-
-    # set up arguments
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--latent-d', '-D', type=int, default=5)
-    parser.add_argument('--steps', '-s', type=int, default=None)
-
-    parser._add_action(ActionNoYes('discrete', default=None))
-    parser.add_argument('--num-integration-pts', type=int, default=50)
-
-    parser._add_action(ActionNoYes('binary-acc', default=False))
-
-    parser._add_action(ActionNoYes('subtract-mean', default=True))
-
-    parser.add_argument('--samps', '-S', type=int, default=100)
-    parser.add_argument('--warmup', type=int, default=50)
-
-    parser.add_argument('--lookahead-samps', type=int, default=100)
-    parser.add_argument('--lookahead-warmup', type=int, default=50)
-
-    parser._add_action(ActionNoYes('threaded', 'unthreaded', default=True))
-    parser.add_argument('--procs', '-P', type=int, default=None)
-
-    parser._add_action(ActionNoYes('test-set-from-file', default=True))
-    parser.add_argument('--test-set', default="all",
-        help="'all', an integer, or a real 0 < x <= 1. If --test-set-from-file "
-             "this is overridden by an in-file test set, if present.")
-
-    parser.add_argument('--model-filename', default='bpmf.stan')
-
-    parser.add_argument('--load-data', required='True', metavar='FILE')
-    parser.add_argument('--save-results', nargs='?', default=True, const=True,
-            metavar='FILE')
-    parser.add_argument('--no-save-results',
-            action='store_false', dest='save_results')
-
-    parser.add_argument('--note', action='append',
-        help="Doesn't do anything, just there to save any notes you'd like "
-             "in the results file.")
-    parser._add_action(ActionNoYes('pdb-on-error', default=True))
-
-    parser.add_argument('keys', nargs='*',
-            help="Choices: {}.".format(', '.join(sorted(key_names))))
-
-    args = parser.parse_args()
-
-    # check that args.keys are valid
-    for k in args.keys:
-        if k not in key_names:
-            sys.stderr.write("Invalid key name %s; options are %s.\n" % (
-                k, ', '.join(sorted(key_names))))
             sys.exit(1)
 
-    if not args.keys:
-        args.keys = sorted(key_names)
+        # save the results file
+        if args.save_results:
+            print("\nsaving results in '{}'".format(args.save_results))
 
-    # make directories to save results if necessary
-    if args.save_results is True:
-        args.save_results = 'results.pkl'
-    elif args.save_results:
-        dirname = os.path.dirname(args.save_results)
-        if dirname and not os.path.exists(dirname):
-            os.makedirs(dirname)
+            results['_args'] = args
 
-    # load data
-    with open(args.load_data, 'rb') as f:
-        data = np.load(f)
-
-        if isinstance(data, np.ndarray):
-            data = {'_real': data}
-
-        real = data['_real']
-        ratings = data['_ratings']
-        rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
-        test_on = data['_test_on'] if '_test_on' in data else None
-
-    if args.test_set_from_file and (test_on is not None):
-        test_set = test_on
-    else:
-        try:
-            test_set = int(args.test_set)
-        except ValueError:
-            try:
-                test_set = float(args.test_set)
-            except ValueError:
-                test_set = args.test_set
-
-    if args.discrete is None:
-        args.discrete = rating_vals is not None
-
-    # do the comparison
-    try:
-        results = compare_active(
-                key_names=args.keys,
-                latent_d=args.latent_d,
-                real=real, ratings=ratings, rating_vals=rating_vals,
-                test_set=test_set, num_steps=args.steps,
-                subtract_mean=args.subtract_mean,
-                discrete=args.discrete,
-                num_integration_pts=args.num_integration_pts,
-                num_samps=args.samps, lookahead_samps=args.lookahead_samps,
-                samp_args={'warmup': args.warmup},
-                lookahead_samp_args={'warmup': args.lookahead_warmup},
-                procs=args.procs, threaded=args.threaded,
-                model_filename=args.model_filename,
-                binary_acc=args.binary_acc)
-    except Exception:
-        if not args.pdb_on_error:
-            raise
-
-        import traceback
-        print()
-        traceback.print_exc()
-
-        try:
-            import ipdb as pdb
-        except ImportError:
-            import pdb
-        print()
-        pdb.post_mortem()
-
-        sys.exit(1)
-
-    # save the results file
-    if args.save_results:
-        print("\nsaving results in '{}'".format(args.save_results))
-
-        results['_args'] = args
-
-        with open(args.save_results, 'wb') as f:
-            pickle.dump(results, f, protocol=2)
+            with open(args.save_results, 'wb') as f:
+                pickle.dump(results, f, protocol=2)
 
 if __name__ == '__main__':
-    main()
+    MainProgram().main()
