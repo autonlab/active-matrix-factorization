@@ -18,7 +18,8 @@ def make_ratings(real, known):
 
 
 def pick_ratings(knowable, num_to_pick):
-    assert knowable.sum() > num_to_pick
+    if num_to_pick is not None:
+        assert knowable.sum() > num_to_pick
     knowable = knowable.copy()
 
     known = np.zeros(knowable.shape, bool)
@@ -34,6 +35,9 @@ def pick_ratings(knowable, num_to_pick):
         j = random.choice(list(knowable[i, :].nonzero()[0]))
         known[i, j] = 1
         knowable[i, j] = 0
+
+    if num_to_pick is None:
+        return known
 
     assert known.sum() < num_to_pick
 
@@ -88,7 +92,9 @@ def sample_from_ary(available, target, num):
 def pick(args, real):
     knowable = np.isfinite(real) & (real != 0)
 
-    if args.n_pick:
+    if args.pick_no_extras:
+        num_to_pick = None
+    elif args.n_pick:
         num_to_pick = args.n_pick
     elif args.pick_dataset_frac:
         num_to_pick = int(np.round(real.size * args.pick_dataset_frac))
@@ -158,6 +164,7 @@ def main():
     parser.add_argument('--drugbank', action='store_true')
 
     new = parser.add_argument_group('New item options')
+    new.add_argument('--know-all-old', action='store_true', default=False)
     g = new.add_mutually_exclusive_group()
     g.add_argument('--n-new-item', type=int, metavar='N')
     g.add_argument('--new-item-frac', type=float, metavar='FRAC')
@@ -167,6 +174,7 @@ def main():
         "that each row and column is picked at least once. Default: "
         "chooses 5% of known ratings.")
     g = initial.add_mutually_exclusive_group()
+    g.add_argument('--pick-no-extras', action='store_true')
     g.add_argument('--n-pick', type=int, metavar='N')
     g.add_argument('--pick-dataset-frac', type=float, metavar='FRAC')
     g.add_argument('--pick-known-frac', type=float, metavar='FRAC', default=0.05)
@@ -230,7 +238,10 @@ def main():
         is_new[random.sample(sixm.xrange(real.shape[1]), n_new)] = True
         dct['_is_new_item'] = is_new
 
-        known_old = pick(args, real[:, ~is_new])
+        if args.know_all_old:
+            known_old = knowable[:, ~is_new]
+        else:
+            known_old = pick(args, real[:, ~is_new])
         known_new = pick(args, real[:, is_new])
 
         known = np.zeros(real.shape, dtype=bool)
