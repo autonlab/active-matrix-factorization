@@ -23,6 +23,7 @@ from bayes_pmf import BayesianPMF
 sys.path.append(os.path.join(_dirname, 'stan-bpmf'))
 import bpmf
 from bpmf import BPMF
+from bpmf_newitems import NewItemsBPMF
 
 sys.path.append(os.path.join(_dirname, 'ratingconcentration'))
 import active_rc
