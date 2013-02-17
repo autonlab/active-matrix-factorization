@@ -28,7 +28,7 @@ GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
 #       on modification time of the data file, to avoid very expensive ops
 #       just in case. if you want to rerun, just delete the data files.
 
-LATENT_D=20
+LATENT_D=15
 
 .SECONDARY:
 
@@ -39,7 +39,7 @@ run%/data.npz: | run%
 	cd $(CODE_BASE) && $(PYTHON) choose_training.py \
 		--pick-known-frac 0.05 \
 		--test-at-random --test-known-frac 0.05 \
-		movielens-100k/ratings_matrix.npy.gz \
+		movielens-100k/half_ratings_70.npy.gz \
 		$(RESULTS_BASE)/$@
 
 run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
