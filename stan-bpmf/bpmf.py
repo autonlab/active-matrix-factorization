@@ -746,9 +746,9 @@ class MainProgram(object):
 
             real = data['_real']
             ratings = data['_ratings']
-            rating_vals = get(data, '_rating_vals')
-            test_on = get(data, '_test_on')
-            is_new_item = get(data, '_is_new_item')
+            rating_vals = get('_rating_vals')
+            test_on = get('_test_on')
+            is_new_item = get('_is_new_item')
 
         if args.test_set_from_file and (test_on is not None):
             test_set = test_on
