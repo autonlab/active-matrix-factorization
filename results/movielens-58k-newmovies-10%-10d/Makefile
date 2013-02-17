@@ -58,8 +58,6 @@ run%/data.npz.initfit_s200w200.npz: | run%/data.npz
 		--load-data $(RESULTS_BASE)/$|
 		$(OUTPUT)
 
-# TODO: run full lookahead from initial fit, but only query on new items
-
 run%/results_stan_newitems_nolookahead_s200w100_200steps.pkl: run%/data.npz.initfit_s200w200.npz | run%/data.npz
 	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) bpmf_newitems.py \
@@ -77,6 +75,24 @@ run%/results_stan_newitems_nolookahead_s200w100_200steps.pkl: run%/data.npz.init
 		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
 		-- random pred-variance pred prob-ge-3.5 \
 		$(OUTPUT)
+
+
+run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) bpmf.py \
+		--note "git rev {{REV}}" \
+		$(PDB_ERR) \
+		--latent-d $(LATENT_D) --discrete --subtract-mean \
+		--model-filename bpmf_newitems_w0identity.stan \
+		--samps 200 --warmup 100 \
+		--steps 200 \
+		--test-set-from-file --test-set crash-if-none-in-file \
+		--query-new-only \
+		--procs $(PROCS) \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		-- random pred-variance pred prob-ge-3.5 \
+		$(OUTPUT)
+
 
 run%/results_mmmf.pkl: | run%/data.npz
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
