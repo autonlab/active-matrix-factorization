@@ -641,8 +641,6 @@ def full_test(bpmf, samples, real, key_name,
         yield len(bpmf.rated), err, (i, j), vals, pred
 
 
-
-
 class MainProgram(object):
     def get_parser(self):
         import argparse
@@ -696,6 +694,8 @@ class MainProgram(object):
                  "If --test-set-from-file this is overridden by any "
                  "in-file test sets.")
 
+        parser._add_action(ActionNoYes('query-new-only', default=False))
+
         parser.add_argument('--model-filename', default=None)
 
         parser.add_argument('--load-data', required='True', metavar='FILE')
@@ -742,11 +742,13 @@ class MainProgram(object):
         # load data
         with open(args.load_data, 'rb') as f:
             data = np.load(f)
+            get = lambda k: data[k] if k in data else None
 
             real = data['_real']
             ratings = data['_ratings']
-            rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
-            test_on = data['_test_on'] if '_test_on' in data else None
+            rating_vals = get(data, '_rating_vals')
+            test_on = get(data, '_test_on')
+            is_new_item = get(data, '_is_new_item')
 
         if args.test_set_from_file and (test_on is not None):
             test_set = test_on
@@ -762,8 +764,8 @@ class MainProgram(object):
         if args.discrete is None:
             args.discrete = rating_vals is not None
 
-        Data = namedtuple("Data", "real ratings rating_vals test_set")
-        return Data(real, ratings, rating_vals, test_set)
+        Data = namedtuple("Data", "real ratings rating_vals test_set is_new_item")
+        return Data(real, ratings, rating_vals, test_set, is_new_item)
 
     def initialize_bpmf(self, args, data, query_set):
         return BPMF(data.ratings, args.latent_d,
@@ -774,7 +776,7 @@ class MainProgram(object):
                 knowable=query_set,
                 model_filename=args.model_filename)
 
-    def pick_query_test_sets(self, data):
+    def pick_query_test_sets(self, args, data):
         real = data.real
         ratings = data.ratings
         test_set = data.test_set
@@ -824,6 +826,10 @@ class MainProgram(object):
             test_on = picker * knowable
             query_on = ~picker * pickable
 
+        if args.query_new_only:
+            assert data.is_new_item is not None
+            query_on[:, ~data.is_new_item] = False
+
         print("{} users, {} items".format(*real.shape))
         print("{} points known, querying {}, testing {}, {} knowable, {} total"
                 .format(ratings.shape[0], query_on.sum(), test_on.sum(),
@@ -848,7 +854,7 @@ class MainProgram(object):
         real = data.real
         ratings = data.ratings
         rating_vals = data.rating_vals
-        query_on, test_on = self.pick_query_test_sets(data)
+        query_on, test_on = self.pick_query_test_sets(args, data)
         query_set = set(sixm.zip(*query_on.nonzero()))
 
         bpmf_init = self.initialize_bpmf(args, data, query_set)
