@@ -30,6 +30,8 @@ GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
 
 LATENT_D=15
 
+.SECONDARY:
+
 run%:
 	mkdir -p $@
 
