@@ -34,7 +34,8 @@ known = known == 1;
 selectors = {{ {selectors} }};
 C = double(C);
 
-results = evaluate_active(Y, selectors, steps, known, queryable, C, test_on);
+results = evaluate_active(...
+    Y, selectors, steps, known, queryable, C, test_on, '{outfile}');
 
 save {outfile} results
 '''
@@ -146,7 +147,7 @@ def main():
     parser.add_argument('--steps', '-s', type=int, default=-1)
     parser.add_argument('--data-file', '-D', required=True)
     parser.add_argument('--matlab', '-m', default='matlab')
-    parser.add_argument('--delete-tempdir', action='store_true', default=True)
+    parser.add_argument('--delete-tempdir', action='store_true', default=False)
     parser.add_argument('--no-delete-tempdir',
             action='store_false', dest='delete_tempdir')
 
