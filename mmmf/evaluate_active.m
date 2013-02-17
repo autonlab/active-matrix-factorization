@@ -1,5 +1,5 @@
 function [all_results] = evaluate_active(...
-    Y, selectors, steps, known, queryable, C, test_on)
+    Y, selectors, steps, known, queryable, C, test_on, outfile)
 % INPUTS:
 %   Y: a -1/0/1 label matrix, where 0 means unknown
 %   selectors: a cell array of function handles to use for prediciton
@@ -19,6 +19,7 @@ if nargin < 3; steps = -1; end
 if nargin < 4; known = eye(size(Y)); end
 if nargin < 5; queryable = (Y ~= 0); end
 if nargin < 6; C = 1; end
+if nargin < 7; save_partial = false; else; save_partial = true; end
 
 addpath(genpath('yalmip'))
 addpath('~/share/csdp/matlab')
@@ -79,6 +80,9 @@ for selector_i = 1 : length(selectors)
         % save results
         results(stepnum, :) = {num_known, get_misclass(x), [i,j], evals, x};
         stepnum = stepnum + 1;
+        if save_partial
+            save outfile results;
+        end
     end
 
     all_results{selector_i} = results;
