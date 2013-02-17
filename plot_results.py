@@ -4,6 +4,7 @@
 
 import itertools
 import math
+from operator import itemgetter
 import os
 import re
 import sys
@@ -47,6 +48,39 @@ KINDS = {'apmf', 'rc', 'mmmf', 'bayes', 'stan', 'stan_straightforward'}
 
 from matplotlib import cm
 default_cmap = cm.cool
+
+
+def auc_roc(dec, label):
+    # number of negatives, positives
+    posneg = np.array([np.sum(label == 1), np.sum(label == 0)])
+    assert posneg.sum() == label.size
+    assert np.all(np.isfinite(dec))
+
+    dl = np.zeros(label.size, dtype=[('dec', float), ('label', bool)])
+    dl['dec'] = dec
+    dl['label'] = label
+    dl.sort(order='dec')
+
+    if np.any(posneg == 0):
+        return 0, None
+        # TODO FIXME
+
+    tpfp = np.zeros(2)  # true, false positives so far in the sweep
+    roc_pts = [np.zeros(2)]  # points on the ROC curve
+
+    # sweep over possible thresholds
+    for d, group in itertools.groupby(dl, key=itemgetter(0)):
+        # group is an iterator over labels with this threshold
+        for _, l in group:
+            tpfp[1 - int(l)] += 1
+
+        roc_pts.append(tpfp / posneg)
+
+    roc_pts = np.asarray(roc_pts)
+
+    xs, ys = roc_pts.T
+    return np.trapz(x=xs, y=ys), roc_pts
+
 
 ################################################################################
 ### Plotting code
@@ -122,9 +156,10 @@ def _plot_lines(results, fn, ylabel):
     for idx, (nice_name, key_name, result) in enumerate(sorted(nice_results)):
         if len(result[0]) == 4:
             nums, rmses, ijs, vals = zip(*result)
+            preds = [None for _ in nums]
         else:
             nums, rmses, ijs, vals, preds = zip(*result)
-        vals = fn(nums, rmses, ijs, vals, results)
+        vals = fn(nums, rmses, ijs, vals, preds, results)
         nums = np.array(nums, copy=False) + (idx - total / 2) * offset
 
         l, c, m = next(l_c_m)
@@ -139,14 +174,27 @@ def _plot_lines(results, fn, ylabel):
 
 
 def plot_rmses(results, keys):
-    def get_rmses(nums, rmses, ijs, vals, results):
+    def get_rmses(nums, rmses, ijs, vals, preds, results):
         return rmses
     _plot_lines({k: v for k, v in results.items() if k in keys},
                 get_rmses, "RMSE")
 
+def plot_pred_aucs(results, keys):
+    def get_aucs(nums, rmses, ijs, vals, preds, results):
+        test_on = results['_test_on']
+        label = results['_real'][test_on] > 0
+        aucs = np.array([
+            np.nan if pred is None else auc_roc(pred[test_on], label)[0]
+            for pred in preds
+        ])
+        return aucs
+    _plot_lines({k: v for k, v in results.items()
+                      if k in keys or k.startswith('_')},
+                get_aucs, "Classification AUCs")
+
 
 def plot_num_ge_cutoff(results, cutoff, keys):
-    def get_cutoffs(nums, rmses, ijs, vals, results):
+    def get_cutoffs(nums, rmses, ijs, vals, preds, results):
         real = results['_real']
 
         assert ijs[0] is None
@@ -332,6 +380,7 @@ def main():
 
     add_bool_opt(parser, 'real', False)
     add_bool_opt(parser, 'rmse', False)
+    add_bool_opt(parser, 'pred-auc', False)
     parser.add_argument('--cutoff', type=float, nargs='+', metavar='CUTOFF')
     add_bool_opt(parser, 'criteria', False)
     add_bool_opt(parser, 'criteria-firsts', False)
@@ -414,6 +463,13 @@ def main():
         fig = plt.figure()
         plot_rmses(results, args.keys)
         save_plot('rmses', fig)
+
+    # binary classification AUCs
+    if args.pred_auc:
+        print("Plotting binary classification AUCs")
+        fig = plt.figure()
+        plot_pred_aucs(results, args.keys)
+        save_plot('pred_aucs', fig)
 
     # plot of numbers >= a cutoff
     if args.cutoff is not None:
