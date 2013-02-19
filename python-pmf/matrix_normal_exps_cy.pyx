@@ -13,10 +13,14 @@ def tripexpect(np.ndarray[DTYPE_t, ndim=2] mean not None,
                object b_i, object b_j,
                object c_i, object c_j):
     '''E[a b c] for MN(mean, cov_rows, cov_cols)'''
-    return (mean[a_i, a_j] * mean[b_i, b_j] * mean[c_i, c_j]
-           + mean[a_i, a_j] * cov_rows[b_i, c_i] * cov_cols[b_i, c_i]
-           + mean[b_i, b_j] * cov_rows[a_i, c_i] * cov_cols[a_i, c_i]
-           + mean[c_i, c_j] * cov_rows[a_i, b_i] * cov_cols[a_i, b_i])
+    cdef DTYPE_t ma = mean[a_i, a_j]
+    cdef DTYPE_t mb = mean[b_i, b_j]
+    cdef DTYPE_t mc = mean[c_i, c_j]
+
+    return (ma * mb * mc
+           + ma * cov_rows[b_i, c_i] * cov_cols[b_j, c_j]
+           + mb * cov_rows[a_i, c_i] * cov_cols[a_j, c_j]
+           + mc * cov_rows[a_i, b_i] * cov_cols[a_j, b_j])
 
 
 @cython.boundscheck(False)
@@ -121,8 +125,8 @@ def exp_a2bc(np.ndarray[DTYPE_t, ndim=2] mean not None,
 @cython.wraparound(False)
 def exp_dotprod_sq(int num_users,
                    np.ndarray[DTYPE_t, ndim=2] mean not None,
-                   np.ndarray[DTYPE_t, ndim=2] cov_rows not None,
-                   np.ndarray[DTYPE_t, ndim=2] cov_cols not None,
+                   np.ndarray[DTYPE_t, ndim=2] cov_useritems not None,
+                   np.ndarray[DTYPE_t, ndim=2] cov_latents not None,
                    int i, int j):
     '''E[ (U_i^T V_j)^2 ]
     = E[ (\sum_k U_ik V_jk)^2 ]
@@ -140,13 +144,13 @@ def exp_dotprod_sq(int num_users,
     cdef int k, l
 
     for k in range(latent_dim):
-        exp += exp_squared(mean, cov_rows, cov_cols, i, k,
-                                                     j_, k)
+        exp += exp_squared(mean, cov_useritems, cov_latents, i, k,
+                                                             j_, k)
         for l in range(k+1, latent_dim):
-            exp += 2 * quadexpect(mean, cov_rows, cov_cols, i, k,
-                                                            j_, k,
-                                                            i, l,
-                                                            j_, l)
+            exp += 2 * quadexpect(mean, cov_useritems, cov_latents, i, k,
+                                                                    j_, k,
+                                                                    i, l,
+                                                                    j_, l)
     return exp
 
 
