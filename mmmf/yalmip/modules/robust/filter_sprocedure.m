@@ -23,7 +23,7 @@ if any(is(F_xw,'elementwise'))
             e = (w-uncertaintyModel{1}.center);
             g = uncertaintyModel{1}.r^2-e'*e;
             Parameters = [Parameters;lambda];
-            F_sprocedure = [F_sprocedure, sos(p(i)-lambda*g), lambda>0];
+            F_sprocedure = [F_sprocedure, sos(p(i)-lambda*g), lambda>=0];
             %F_sprocedure = [F_sprocedure, lambda>0, compilesos(sos(p(i)-lambda*g),[],ops,s)];
             keep(i) = 0;
         elseif 0%any(d>2)
@@ -31,7 +31,7 @@ if any(is(F_xw,'elementwise'))
             e = (w-uncertaintyModel{1}.center);
             g = uncertaintyModel{1}.r^2-e'*e;
             Parameters = [Parameters;lambda];
-            F_sprocedure = [F_sprocedure,lambda>0,sos(p(i)-multiplier*g), sos(multiplier)];
+            F_sprocedure = [F_sprocedure,lambda>=0,sos(p(i)-multiplier*g), sos(multiplier)];
             %F_sprocedure = [F_sprocedure, lambda>0, compilesos(sos(p(i)-multiplier*g)+sos(multiplier),[],ops,s)];
             keep(i) = 0;
         end
@@ -40,7 +40,7 @@ if any(is(F_xw,'elementwise'))
         F_sprocedure = compilesos(F_sprocedure,[],ops,Parameters);
     end
     if any(keep)
-        F_xw = [F_xw,p(find(keep))>0];
+        F_xw = [F_xw,p(find(keep))>=0];
     end
 else
     F_sprocedure = [];

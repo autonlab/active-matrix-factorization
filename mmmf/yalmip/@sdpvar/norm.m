@@ -75,30 +75,39 @@ switch class(varargin{1})
                 % 1: Absolute value for complex data -> cone constraints on
                 %    elements
                 % 2: SUBSREF does not call SDPVAR subsref -> use extsubsref.m
-                
-                % FIX : Exploit symmetry to create smaller problem
+                                
                 switch p
                     case 1
-                        z = sdpvar(size(X,1),size(X,2),'full');
+                        if issymmetric(X)
+                            Z = sdpvar(size(X,1),size(X,2));
+                        else
+                            Z = sdpvar(size(X,1),size(X,2),'full');
+                        end
                         if min(size(X))>1
                             if isreal(X)
-                                F = set(-z < X < z);
+                                z = reshape(Z,[],1);
+                                x = reshape(X,[],1);
+                                F = set(-z <= x <= z);
                             else
                                 F = set([]);
-                                for i = 1:size(X,1)
-                                    for j = 1:size(X,2)
-                                        xi = extsubsref(X,i,j);
-                                        zi = extsubsref(z,i,j);
-                                        F = F + set(cone([real(xi);imag(xi)],zi));
-                                    end
-                                end
+                                zvec = reshape(Z,1,[]);
+                                xrevec=reshape(real(X),1,[]);
+                                ximvec=reshape(imag(X),1,[]);
+                                F = [F,cone([zvec;xrevec;ximvec])];
+%                                 for i = 1:size(X,1)
+%                                     for j = 1:size(X,2)
+%                                         xi = extsubsref(X,i,j);
+%                                         zi = extsubsref(Z,i,j);
+%                                         F = F + set(cone([real(xi);imag(xi)],zi));
+%                                     end
+%                                 end
                             end
-                            F = F + set(sum(z,1) < t);
+                            F = F + set(sum(Z,1) <= t);
                         else
                             if isreal(X)
                                 % Standard definition
                                 if 0%prod(size(X))==1
-                                    F = set(-t < X < t);
+                                    F = set(-t <= X <= t);
                                 else
                                     
                                     Xbase = getbase(X);
@@ -106,13 +115,13 @@ switch class(varargin{1})
                                     if ~isempty(Constant)
                                         % Exploit elements without any
                                         % decision variables
-                                        r1 = ones(length(z),1);
-                                        r2 = zeros(length(z),1);
+                                        r1 = ones(length(Z),1);
+                                        r2 = zeros(length(Z),1);
                                         r1(Constant) = 0;
                                         r2(Constant) = abs(Xbase(Constant,1));
-                                        z = z.*r1 + r2;
+                                        Z = Z.*r1 + r2;
                                     end
-                                    F = set(-z < X < z) + set(sum(z) < t);
+                                    F = set(-Z <= X <= Z) + set(sum(Z) <= t);
                                 end
                                 % Added to improve MILP models
                                 %  F = F + set(z > 0) + set(t > 0);
@@ -122,18 +131,18 @@ switch class(varargin{1})
                             else
                                 F = set([]);
                                 
-                                F = set(cone([reshape(z,1,[]);real(reshape(X,1,[]));imag(reshape(X,1,[]))]));
+                                F = set(cone([reshape(Z,1,[]);real(reshape(X,1,[]));imag(reshape(X,1,[]))]));
                                 
                                 %                                for i = 1:length(X)
                                 %                                    xi = extsubsref(X,i);
                                 %                                    zi = extsubsref(z,i);
                                 %                                    F = F + set(cone([real(xi);imag(xi)],zi));
                                 %                                end
-                                F = F + set(sum(z) < t);
+                                F = F + set(sum(Z) <= t);
                             end
                         end
                     case 2
-                        z = sdpvar(size(X,1),size(X,2));
+                        Z = sdpvar(size(X,1),size(X,2));
                         if min(size(X))>1
                             F = set([t*eye(size(X,1)) X;X' t*eye(size(X,2))]);
                         else
@@ -141,26 +150,26 @@ switch class(varargin{1})
                         end
                     case {inf,'inf'}
                         if min(size(X))>1
-                            z = sdpvar(size(X,1),size(X,2),'full');
+                            Z = sdpvar(size(X,1),size(X,2),'full');
                             if isreal(X)
-                                F = set(-z < X < z);
+                                F = set(-Z <= X <= Z);
                             else
                                 F = set([]);
                                 for i = 1:size(X,1)
                                     for j = 1:size(X,2)
                                         xi = extsubsref(X,i,j);
-                                        zi = extsubsref(z,i,j);
+                                        zi = extsubsref(Z,i,j);
                                         F = F + set(cone([real(xi);imag(xi)],zi));
                                     end
                                 end
                             end
-                            F = F + set(sum(z,2) < t);
+                            F = F + set(sum(Z,2) <= t);
                         else
                             if isreal(X)
-                                F = set(-t < X < t);
+                                F = set(-t <= X <= t);
                                 [M,m,infbound] = derivebounds(X);
                                 if ~infbound
-                                    F = F + set(0< t < max(max(abs([m M]))));
+                                    F = F + set(0 <= t <= max(max(abs([m M]))));
                                 end
                             else
                                 F = set([]);
@@ -177,7 +186,7 @@ switch class(varargin{1})
                     case 'nuclear'
                         U = sdpvar(X.dim(2));
                         V = sdpvar(X.dim(1));
-                        F = [trace(U)+trace(V) < 2*t, [U X';X V]>0];
+                        F = [trace(U)+trace(V) <= 2*t, [U X';X V]>=0];
                     otherwise
                 end
                 varargout{1} = F;

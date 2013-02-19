@@ -1,4 +1,4 @@
-function output = callquadprog(interfacedata)
+function output = callooqp(interfacedata)
 
 % Author Johan Löfberg 
 % $Id: callooqp.m,v 1.3 2006-11-29 16:45:58 joloef Exp $
@@ -22,7 +22,7 @@ otherwise
     options.quadprog.Display = 'iter';
 end
     
-showprogress('Calling QUADPROG',options.showprogress);
+showprogress('Calling OOQP',options.showprogress);
 
 if ~isempty(F_struc)
     A = -F_struc(1:1:K.f,2:end);

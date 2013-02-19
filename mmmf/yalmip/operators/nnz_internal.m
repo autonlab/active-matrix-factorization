@@ -43,11 +43,11 @@ switch direction
         eps=1e-3;
         F = F + set(sum([du dd],2) <= 1);
         F = F + set(z == length(negative)+length(positive) + ((sum(du) + sum(dd))));
-        F = F + set(x > eps+(m-eps).*(1-du));
-        F = F + set(x < eps+(M-eps).*du);
-        F = F + set(x <-eps+(M+eps).*(1-dd));
-        F = F + set(x > -eps+(m+eps).*dd);
-        F = F + set(m.*(du+dd) < x < M.*(dd+du));
+        F = F + set(x >= eps+(m-eps).*(1-du));
+        F = F + set(x <= eps+(M-eps).*du);
+        F = F + set(x <=-eps+(M+eps).*(1-dd));
+        F = F + set(x >= -eps+(m+eps).*dd);
+        F = F + set(m.*(du+dd) <= x <= M.*(dd+du));
         F = F + set(0 <= z <=nx*mx);
         
         %F = F + set(x > 0+(m-0).*(1-du));

@@ -58,7 +58,7 @@ if isa(options.radius,'sdpvar') | ~isinf(options.radius)
     if length(x)>1
         F = F + set(cone(x,options.radius));
     else
-        F = F + set(-options.radius < x < options.radius);
+        F = F + set(-options.radius <= x <= options.radius);
     end
 end
 
@@ -127,55 +127,6 @@ else
 end
 
 % *************************************************************************
-%% CONVERT CONVEX QUADRATIC CONSTRAINTS
-% We do not convert quadratic constraints to SOCPs if we have have
-% sigmonial terms (thus indicating a GP problem), if we have relaxed
-% nonlinear expressions, or if we have specified a nonlinear solver.
-% Why do we convert them already here? Don't remember, should be cleaned up
-% *************************************************************************
-[monomtable,variabletype] = yalmip('monomtable');
-F_vars = getvariables(F);
-do_not_convert = any(variabletype(F_vars)==4);
-do_not_convert = do_not_convert | strcmpi(options.solver,'snopt');
-do_not_convert = do_not_convert | strcmpi(options.solver,'snopt-geometric') | strcmpi(options.solver,'snopt-standard');
-do_not_convert = do_not_convert | strcmpi(options.solver,'ipopt');
-do_not_convert = do_not_convert | strcmpi(options.solver,'bonmin');
-do_not_convert = do_not_convert | strcmpi(options.solver,'ipopt-geometric') | strcmpi(options.solver,'ipopt-standard');
-do_not_convert = do_not_convert | strcmpi(options.solver,'pennon');
-do_not_convert = do_not_convert | strcmpi(options.solver,'pennon-geometric') | strcmpi(options.solver,'pennon-standard');
-do_not_convert = do_not_convert | strcmpi(options.solver,'pennlp') | strcmpi(options.solver,'penbmi');
-do_not_convert = do_not_convert | strcmpi(options.solver,'fmincon') | strcmpi(options.solver,'lindo') | strcmpi(options.solver,'sqplab');
-do_not_convert = do_not_convert | strcmpi(options.solver,'fmincon-geometric') | strcmpi(options.solver,'fmincon-standard');
-do_not_convert = do_not_convert | strcmpi(options.solver,'bmibnb');
-do_not_convert = do_not_convert | strcmpi(options.solver,'moment');
-%do_not_convert = do_not_convert | strcmpi(options.solver,'xpress');
-do_not_convert = do_not_convert | strcmpi(options.solver,'sparsepop');
-do_not_convert = do_not_convert | (options.convertconvexquad == 0);
-do_not_convert = do_not_convert | (options.relax == 1);
-if ~do_not_convert & any(variabletype(F_vars))
-    [F,socp_changed,infeasible] = convertquadratics(F);
-    if infeasible
-        diagnostic.solvertime = 0;
-        diagnostic.problem = 1;
-        diagnostic.info = yalmiperror(diagnostic.problem,'YALMIP');
-        return        
-    end
-    if socp_changed % changed holds the number of QC -> SOCC conversions
-        options.saveduals = 0; % We cannot calculate duals since we changed the problem
-        F_vars = []; % We have changed model so we cannot use this in categorizemodel
-    end
-else
-    socp_changed = 0;
-end
-
-% CHEAT FOR QC
-if socp_changed>0 & length(find(is(F,'socc')))==socp_changed
-    socp_are_really_qc = 1;
-else
-    socp_are_really_qc = 0;
-end
-
-% *************************************************************************
 %% LOOK FOR AVAILABLE SOLVERS
 % Finding solvers can be very slow on some systems. To alleviate this
 % problem, YALMIP can cache the list of available solvers.
@@ -228,6 +179,67 @@ if isempty(solvers)
 end
 
 % *************************************************************************
+%% CONVERT CONVEX QUADRATIC CONSTRAINTS
+% We do not convert quadratic constraints to SOCPs if we have have
+% sigmonial terms (thus indicating a GP problem), if we have relaxed
+% nonlinear expressions, or if we have specified a nonlinear solver.
+% Why do we convert them already here? Don't remember, should be cleaned up
+% *************************************************************************
+[monomtable,variabletype] = yalmip('monomtable');
+F_vars = getvariables(F);
+do_not_convert = any(variabletype(F_vars)==4);
+%do_not_convert = do_not_convert | ~solverCapable(solvers,options.solver,'constraint.inequalities.secondordercone');
+do_not_convert = do_not_convert | strcmpi(options.solver,'bmibnb');
+do_not_convert = do_not_convert | strcmpi(options.solver,'snopt');
+do_not_convert = do_not_convert | strcmpi(options.solver,'snopt-geometric'); 
+do_not_convert = do_not_convert | strcmpi(options.solver,'snopt-standard');
+do_not_convert = do_not_convert | strcmpi(options.solver,'ipopt');
+do_not_convert = do_not_convert | strcmpi(options.solver,'bonmin');
+do_not_convert = do_not_convert | strcmpi(options.solver,'nomad');
+do_not_convert = do_not_convert | strcmpi(options.solver,'ipopt-geometric');
+do_not_convert = do_not_convert | strcmpi(options.solver,'ipopt-standard');
+do_not_convert = do_not_convert | strcmpi(options.solver,'filtersd');
+do_not_convert = do_not_convert | strcmpi(options.solver,'filtersd-dense');
+do_not_convert = do_not_convert | strcmpi(options.solver,'filtersd-sparse');
+do_not_convert = do_not_convert | strcmpi(options.solver,'pennon');
+do_not_convert = do_not_convert | strcmpi(options.solver,'pennon-geometric');
+do_not_convert = do_not_convert | strcmpi(options.solver,'pennon-standard');
+do_not_convert = do_not_convert | strcmpi(options.solver,'pennlp');
+do_not_convert = do_not_convert | strcmpi(options.solver,'penbmi');
+do_not_convert = do_not_convert | strcmpi(options.solver,'fmincon');
+do_not_convert = do_not_convert | strcmpi(options.solver,'lindo');
+do_not_convert = do_not_convert | strcmpi(options.solver,'sqplab');
+do_not_convert = do_not_convert | strcmpi(options.solver,'fmincon-geometric');
+do_not_convert = do_not_convert | strcmpi(options.solver,'fmincon-standard');
+do_not_convert = do_not_convert | strcmpi(options.solver,'bmibnb');
+do_not_convert = do_not_convert | strcmpi(options.solver,'moment');
+do_not_convert = do_not_convert | strcmpi(options.solver,'sparsepop');
+do_not_convert = do_not_convert | (options.convertconvexquad == 0);
+do_not_convert = do_not_convert | (options.relax == 1);
+if ~do_not_convert & any(variabletype(F_vars))
+    [F,socp_changed,infeasible] = convertquadratics(F);
+    if infeasible
+        diagnostic.solvertime = 0;
+        diagnostic.problem = 1;
+        diagnostic.info = yalmiperror(diagnostic.problem,'YALMIP');
+        return        
+    end
+    if socp_changed % changed holds the number of QC -> SOCC conversions
+        options.saveduals = 0; % We cannot calculate duals since we changed the problem
+        F_vars = []; % We have changed model so we cannot use this in categorizemodel
+    end
+else
+    socp_changed = 0;
+end
+
+% CHEAT FOR QC
+if socp_changed>0 & length(find(is(F,'socc')))==socp_changed
+    socp_are_really_qc = 1;
+else
+    socp_are_really_qc = 0;
+end
+
+% *************************************************************************
 %% WHAT KIND OF PROBLEM DO WE HAVE NOW?
 % *************************************************************************
 [ProblemClass,integer_variables,binary_variables,parametric_variables,uncertain_variables,semicont_variables,quad_info] = categorizeproblem(F,logdetStruct,h,options.relax,parametric,evaluation_based,F_vars);
@@ -238,7 +250,7 @@ end
 [solver,problem] = selectsolver(options,ProblemClass,solvers,socp_are_really_qc);
 if isempty(solver)
     diagnostic.solvertime = 0;
-    if problem == -4
+    if problem == -4 | problem == -3 
         diagnostic.info = yalmiperror(problem,options.solver);
     else
         diagnostic.info = yalmiperror(problem,'YALMIP');
@@ -257,16 +269,17 @@ end
 if ProblemClass.constraint.complementarity.linear | ProblemClass.constraint.complementarity.nonlinear
     if ~(solver.constraint.complementarity.linear | solver.constraint.complementarity.nonlinear)
                
-        % FIXME: SYNC with expandmodel
-        nv = yalmip('nvars');
-        yalmip('setbounds',1:nv,repmat(-inf,nv,1),repmat(inf,nv,1));        
-        if isfield(options,'avoidequalitybounds')
-            LU = getbounds(F,0);
-        else
-            LU = getbounds(F);
-        end                
-        LU = extract_bounds_from_abs_operator(LU,yalmip('extstruct'),extendedvariables);        
-        yalmip('setbounds',1:nv,LU(:,1),LU(:,2));
+        % Extract the terms in the complementarity constraints x^Ty==0,
+        % x>=0, y>=0, since these involves bounds that should be appended
+        % to the list of constraints from which we do bound propagation
+        Fc = F(find(is(F,'complementarity')));      
+        Ftemp = F;
+        for i = 1:length(Fc)
+            [Cx,Cy] = getComplementarityTerms(Fc(i));
+            Ftemp = [Ftemp, Cx>=0, Cy >=0];
+        end
+        % FIXME: SYNC with expandmodel       
+        setupBounds(Ftemp,options,extendedvariables);
                         
         [F] = modelComplementarityConstraints(F,solver,ProblemClass);  
         % FIXME Reclassify should be possible to do manually!
@@ -290,10 +303,32 @@ if strcmpi(solver.tag,'bnb')
     tempProblemClass.constraint.semicont = 0;
     localsolver = selectsolver(temp_options,tempProblemClass,solvers,socp_are_really_qc);
     if isempty(localsolver) | strcmpi(localsolver.tag,'bnb')
-        diagnostic.solvertime = 0;
-        diagnostic.info = yalmiperror(-2,'YALMIP');
-        diagnostic.problem = -2;
+        if isempty(temp_options.bnb.solver)
+            diagnostic.solvertime = 0;
+            diagnostic.info = yalmiperror(-2,'YALMIP');
+            diagnostic.problem = -2;
+        else
+            % User has specified a lower-bound solver, but we failed to use
+            % this. Could be that it doesn't exist, or that it is not
+            % applicable
+            for i = 1:length(solvers)
+                if strcmpi(solvers(i).tag,temp_options.bnb.solver)
+                    % Solver exist, hence it is not applicable 
+                    diagnostic.solvertime = 0;
+                    diagnostic.info = yalmiperror(-4,temp_options.bnb.solver);
+                    diagnostic.problem = -4;
+                    return
+                end
+            end
+            % Solver was not found in list of available solvers, hance user
+            % has specified a solver which doesn't exist
+            diagnostic.solvertime = 0;
+            diagnostic.info = yalmiperror(-3,temp_options.bnb.solver);
+            diagnostic.problem = -3;
+            return
+        end
         return
+        
     end
     solver.lower = localsolver;
 end
@@ -414,6 +449,7 @@ if strcmpi(solver.tag,'bmibnb')
     tempProblemClass.constraint.inequalities.semidefinite.linear = sdp.linear | sdp.quadratic | sdp.polynomial;
     tempProblemClass.constraint.inequalities.semidefinite.quadratic = 0;
     tempProblemClass.constraint.inequalities.semidefinite.polynomial = 0;
+    tempProblemClass.constraint.inequalities.rank = 0;
 
     lp = tempProblemClass.constraint.inequalities.elementwise;
     tempProblemClass.constraint.inequalities.elementwise.linear = lp.linear | lp.quadratic.convex | lp.quadratic.nonconvex | sdp.polynomial;
@@ -473,10 +509,27 @@ if strcmpi(solver.tag,'bmibnb')
 
     temp_options = options;
     temp_options.solver = options.bmibnb.uppersolver;
-    temp_ProblemClass = ProblemClass;
+    
+    if any(getcutflag(F))
+        % Could be that the model involves, e.g., semidefinite cuts, which
+        % shouldn't be sent to the upper bound solver
+        Ftemp = F;
+        Ftemp(find(getcutflag(F)))=[];
+        [temp_ProblemClass,aux1,aux2,aux3,aux4,aux5,aux6] = categorizeproblem(Ftemp,logdetStruct,h,options.relax,parametric,evaluation_based,F_vars);
+    else
+        temp_ProblemClass = ProblemClass;
+    end
+    
     temp_ProblemClass.constraint.binary = 0;
     temp_ProblemClass.constraint.integer = 0;
-    temp_ProblemClass.constraint.semicont = 0;
+%     if temp_ProblemClass.objective.linear
+%         % Allow feasibility solver to be selected if the objective is
+%         % linear. We will create feasibility problems based on lower and
+%         % upper bounds clevery inside bmibnb
+%         temp_ProblemClass.objective.linear = 0;
+%     end
+   % temp_ProblemClass.constraint.semicont = 0;
+   % temp_ProblemClass.constraint.inequalities.rank = 0;
     [uppersolver,problem] = selectsolver(temp_options,temp_ProblemClass,solvers,socp_are_really_qc);
     if ~isempty(uppersolver) & strcmpi(uppersolver.tag,'bnb')
         temp_options.solver = 'none';
@@ -683,7 +736,11 @@ end
 if ~((solver.constraint.inequalities.elementwise.quadratic.convex == 1) & socp_are_really_qc)
     if ~(strcmp(solver.tag,'bnb') & socp_are_really_qc & localsolver.constraint.inequalities.elementwise.quadratic.convex==1 )
         if ((solver.constraint.inequalities.secondordercone == 0) | (strcmpi(solver.tag,'bnb') & localsolver.constraint.inequalities.secondordercone==0))
-            [F,changed] = convertsocp(F);
+            if solver.constraint.inequalities.semidefinite.linear
+                [F,changed] = convertsocp(F);
+            else
+                [F,changed] = convertsocp2NONLINEAR(F);
+            end
             if changed
                 options.saveduals = 0; % We cannot calculate duals since we change the problem
             end
@@ -697,7 +754,7 @@ end
 % *************************************************************************
 if ~isempty(logdetStruct) & solver.objective.maxdet.convex==1 & solver.constraint.inequalities.semidefinite.linear
     for i = 1:length(logdetStruct.P)
-        F = F + set(logdetStruct.P{i} > 0);
+        F = F + set(logdetStruct.P{i} >= 0);
         if ~isreal(logdetStruct.P{i})
             logdetStruct.gain(i) = logdetStruct.gain(i)/2;
             ProblemClass.complex = 1;
@@ -825,6 +882,16 @@ if ~isempty(evalMap)
     for i = 1:length(evalMap)
         for j = 1:length(evalMap{i}.computes)
             evalMap{i}.computes(j) = find(evalMap{i}.computes(j) == used_variables);
+        end
+    end
+    
+    % Add information about which argument is the variable
+    for i = 1:length(evalMap)
+        for j = 1:length(evalMap{i}.arg)-1
+            if isa(evalMap{i}.arg{j},'sdpvar')
+                evalMap{i}.argumentIndex = j;
+                break
+            end
         end
     end
 end
@@ -1021,7 +1088,7 @@ end
 mt = mt(used_variables,used_variables);
 variabletype = variabletype(used_variables);
 if (options.relax == 1)|(options.relax==3)
-    mt = eye(length(used_variables));
+    mt = speye(length(used_variables));
     variabletype = variabletype*0;
 end
 
@@ -1039,6 +1106,33 @@ ub(old_binary_variables) = min(ub(old_binary_variables),1);
 if ~isempty(oldc)
     lb = [];
     ub = [];
+end
+
+% Sanity check
+if ~isempty(c)
+    if any(isnan(c) )
+        error('You have NaNs in your objective!. Please fix model')
+    end
+end
+if ~isempty(Q)
+    if any(any(isnan(Q)))
+        error('You have NaNs in your quadratic objective!. Please fix model')
+    end
+end
+if ~isempty(lb)
+    if any(isnan(lb))
+        error('You have NaNs in a lower bound!. Please fix model')
+    end
+end
+if ~isempty(ub)
+    if any(isnan(ub))
+        error('You have NaNs in an upper bound!. Please fix model')
+    end
+end
+if ~isempty(F_struc)
+    if any(any(isnan(F_struc)))
+        error('You have NaNs in your constraints!. Please fix model')
+    end
 end
 
 % *************************************************************************
@@ -1118,8 +1212,16 @@ if ~isempty(evalVariables)
         % Find all variables used in the arguments of these functions
         hidden = [];
         for i = 1:length(evalMap)
-            n = length(evalMap{i}.arg{1});
-            if isequal(getbase(evalMap{i}.arg{1}),[zeros(n,1) eye(n)])% & is(evalMap{i}.arg{1},'linear')
+            % Find main main argument (typically first argument, but this
+            % could be different in a user-specified sdpfun object) 
+            for aux = 1:length(evalMap{i}.arg)-1
+                if isa(evalMap{i}.arg{aux},'sdpvar')
+                    X = evalMap{i}.arg{aux};
+                    break
+                end
+            end
+            n = length(X);
+            if isequal(getbase(X),[zeros(n,1) eye(n)])% & is(evalMap{i}.arg{1},'linear')
                 for j = 1:length(evalMap{i}.arg)-1
                     % The last argument is the help variable z in the
                     % transformation from f(ax+b) to f(z),z==ax+b. We should not
@@ -1162,9 +1264,15 @@ if ~isempty(evalVariables)
         evalVariables = usedEvalVariables;
 
         for i = 1:length(evalMap)
-            n = length(evalMap{i}.arg{1});
-            if isequal(getbase(evalMap{i}.arg{1}),[zeros(n,1) eye(n)])
-                index = ismember(used_variables,getvariables(evalMap{i}.arg{1}));
+            for aux = 1:length(evalMap{i}.arg)-1
+                if isa(evalMap{i}.arg{aux},'sdpvar')
+                    X = evalMap{i}.arg{aux};
+                    break
+                end
+            end
+            n = length(X);
+            if isequal(getbase(X),[zeros(n,1) eye(n)])
+                index = ismember(used_variables,getvariables(X));
                 evalMap{i}.variableIndex = find(index);
             else
                 index = ismember(used_variables,getvariables(evalMap{i}.arg{end}));
@@ -1206,28 +1314,20 @@ for i = 1:length(F)
 end
 
 
-
-
-function [F,ProblemClass] = modelComplementarityConstraints(F,solver,ProblemClass)
-
-i = find(is(F,'complementarity'));
-Fc = F(i);
-F(i)=[];
-for i = 1:length(Fc)
-    X = sdpvar(Fc(i));
-    C1 = X(:,1);
-    C2 = X(:,2);
-    if solver.constraint.equalities.polynomial == 1
-        [M,m]=derivebounds(C1);
-        F = [F,C1>=0, C2>=0, C1'*C2 == 0];
-        ProblemClass.constraint.equalities.polynomial = 1;
-    elseif (solver.constraint.binary == 1) | (solver.constraint.integer == 1)
-        [M1,m1]=derivebounds(C1);
-        [M2,m2]=derivebounds(C2);
-        delta = binvar(length(C1),1);        
-        F = [F, C1>=0, C2>=0, C1<= M1.*delta, C2 <= M2.*(1-delta)];
-        ProblemClass.constraint.binary = 1;
-        ProblemClass.constraint.inequalities.elementwise.linear = 1;        
+function [Fnew,changed] = convertsocp2NONLINEAR(F);
+changed = 0;
+socps = find(is(F,'socp'));
+Fsocp = F(socps);
+Fnew = F;
+if length(socps) > 0
+    changed = 1;
+    Fnew(socps) = [];
+    for i = 1:length(Fsocp)
+        z = sdpvar(Fsocp(i));
+        Fnew = [Fnew, z(1)>=0, z(1)^2 >= z(2:end)'*z(2:end)];
     end
 end
+
+
+
 

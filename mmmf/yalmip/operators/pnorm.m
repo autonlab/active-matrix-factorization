@@ -69,8 +69,8 @@ switch class(varargin{1})
                 if 2^fix(log2(l))==l &  m == 1
                     s=sdpvar(length(X),1);
                     absX = sdpvar(length(X),1);
-                    F = [-absX < X < absX];
-                    F = [F,sum(s)< t,s>0];
+                    F = [-absX <= X <= absX];
+                    F = [F,sum(s)<= t,s>=0];
                     for i = 1:length(X)
                         F = [F,detset(absX(i),[repmat(t,1,l-m) s(i)])];
                         F = [F,detset(-absX(i),[repmat(t,1,l-m) s(i)])];
@@ -85,8 +85,8 @@ switch class(varargin{1})
                     s=sdpvar(length(X),1);
                     w = 2^(ceil(log2(l)));
                     absX = sdpvar(length(X),1);
-                    F = [-absX < X < absX];
-                    F = [F,sum(s)< t,s>0];
+                    F = [-absX <= X <= absX];
+                    F = [F,sum(s)<= t,s>=0];
                     for i = 1:length(X)
                         F = [F,detset(absX(i),[repmat(t,1,l-m) repmat(s(i),1,m) repmat(absX(i),1,w-l)])];
                         F = [F,detset(-absX(i),[repmat(t,1,l-m) repmat(s(i),1,m) repmat(absX(i),1,w-l)])];

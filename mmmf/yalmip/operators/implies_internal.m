@@ -124,7 +124,7 @@ switch settype(X)
         n = length(X);
         if isequal(getbase(X),[-ones(n,1) eye(n)]) | isequal(getbase(X),[ones(n,1) -eye(n)]) & all(ismember(depends(X),yalmip('binvariables')));
             % Smart code for X == 1 implies Y
-            F = [Y >= recover(getvariables(X))];
+            F = [Y(:) >= recover(getvariables(X))];
         else
             %zero_tolerance = 1e-4;
             d = binvar(length(X),2,'full');

@@ -1,4 +1,4 @@
-function [Fhull,t] = hull(varargin)
+function [Fhull,t,y] = hull(varargin)
 % HULL  Construct a model of the convex hull
 %
 % H = hull(F1,F2,...)
@@ -21,4 +21,4 @@ for i = 1:nargin
     end
 end
 % Call the hull operator from the set
-[Fhull,t] = hull(varargin{:});
+[Fhull,t,y] = hull(varargin{:});

@@ -1,8 +1,5 @@
 function output = callsdpt34(interfacedata)
 
-% Author Johan Löfberg
-% $Id: callsdpt34.m,v 1.21 2010-01-13 13:49:21 joloef Exp $ 
-
 % Retrieve needed data
 options = interfacedata.options;
 F_struc = interfacedata.F_struc;
@@ -17,23 +14,11 @@ if ~isempty(ub)
     [F_struc,K] = addbounds(F_struc,K,ub,lb);
 end
 
-% % if options.removethem
-%  [F_struc,K,c,variables] = preproc2(F_struc,K,c);
- % [F_struc,K,c,variables] = preproc1(F_struc,K,c);
-%  [F_struc,K,c,variables] = preproc2(F_struc,K,c);
-% % end
-
 if any(K.m > 0)
     % Messy to keep track of
     options.sdpt3.smallblkdim = 0;
 end
 
-% Convert from internal (sedumi-like) format
-if ~isempty(K.schur_funs)
-  %  if length(length([(K.schur_funs{:})]))>0
-   %     options.sdpt3.smallblkdim = 1;
-    %end
-end
 if ~isempty(interfacedata.lowrankdetails)
     options.sdpt3.smallblkdim = 1;
 end
@@ -63,8 +48,12 @@ options.sdpt3.expon=options.sdpt3.expon(1);
 % Setup the logarithmic barrier cost. We exploit the fact that we know that
 % the only logaritmic cost is in the last SDP constraint
 if abs(K.m) > 0
+    lpLogsStart = 1;
     for i = 1:size(blk,1)
         if isequal(blk{i,1},'l')
+            options.sdpt3.parbarrier{i,1} = zeros(1,blk{i,2});
+        elseif isequal(blk{i,1},'u')
+            lpLogsStart = 2;
             options.sdpt3.parbarrier{i,1} = zeros(1,blk{i,2});
         else
             options.sdpt3.parbarrier{i,1} = 0*blk{i,2};
@@ -81,7 +70,7 @@ if abs(K.m) > 0
     for i = 1:length(K.m)
         if K.m(i) == 1
             % We placed it in the linear cone
-            options.sdpt3.parbarrier{1,1}(end-lp_count+1) = -K.maxdetgain(i);
+            options.sdpt3.parbarrier{lpLogsStart,1}(end-lp_count+1) = -K.maxdetgain(i);
             lp_count = lp_count-1;
         elseif K.m(i) > 1
             % We placed it in the SDP cone
@@ -165,12 +154,6 @@ else
     [obj,X,y,Z,info,runhist] =  sdpt3(blk,A,C,b,options.sdpt3,[],x0,[]);            
 end
 
-% if options.removethem
-% temp = y;
-% y = nan(length(interfacedata.c),1);
-% y(variables) = temp;
-% end
-
 % Create YALMIP dual variable and slack
 Dual = [];
 Slack = [];
@@ -214,10 +197,6 @@ end
 if any(K.m > 0)
    % Dual = [];
 end
-
-% if options.removethem
-% Dual = [];
-% end
 
 solvertime = etime(clock,solvertime);
 Primal = -y;  % Primal variable in YALMIP

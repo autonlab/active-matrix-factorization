@@ -1,16 +1,18 @@
 function y=min(varargin)
 %MIN (overloaded)
 %
-% t = MIN(X,Y,DIM)
+% t = MIN(X)
+% t = MIN(X,Y)
+% t = MIN(X,[],DIM)
 %
 % Creates an internal structure relating the variable t with concave
 % operator MIN(X).
 %
 % The variable t is primarily meant to be used in convexity preserving
-% operations such as t>0, maximize t etc.
+% operations such as t>=0, maximize t etc.
 %
 % If the variable is used in a non-convexity preserving operation, such as
-% t<0, a mixed integer model will be derived.
+% t<=0, a mixed integer model will be derived.
 %
 % See built-in MIN for syntax.
 
@@ -37,29 +39,30 @@ switch nargin
         % 2. A vector input should give scalar output
         % 3. Matrix input returns vector output
         X = varargin{1};
-
+        
         if max(size(X))==1
             y = X;
             return
         elseif min(size(X))==1
             
             
-            X = removeInf(X);            
+            X = removeInf(X);
             if isa(X,'double')
                 y = min(X);
             elseif length(X) == 1
                 y = X;
             else
                 y = yalmip('define','min_internal',X);
-            end            
+                reDeclareForBinaryMax(y,X);
+            end
             return
         else
             % This is just short hand for general command
             y = min(X,[],1);
         end
-
+        
     case 2
-
+        
         X = varargin{1};
         Y = varargin{2};
         [nx,mx] = size(X);
@@ -70,7 +73,7 @@ switch nargin
                 error('Array dimensions must match.');
             end
         end
-
+        
         % Convert to compatible matrices
         if nx*mx==1
             X = X*ones(ny,my);
@@ -81,7 +84,7 @@ switch nargin
             ny = nx;
             my = mx;
         end
-
+        
         % Ok, done with error checks etc.
         % Introduce one extended variable/element
         % Lame code since we cannot call overloaded
@@ -99,29 +102,29 @@ switch nargin
             end
             y = [y;temp];
         end
-
+        
     case 3
-
+        
         X = varargin{1};
         Y = varargin{2};
         DIM = varargin{3};
-
+        
         if ~(isa(X,'sdpvar') & isempty(Y))
             error('MIN with two matrices to compare and a working dimension is not supported.');
         end
-
+        
         if ~isa(DIM,'double')
             error('Dimension argument must be 1 or 2.');
         end
-
+        
         if ~(length(DIM)==1)
             error('Dimension argument must be 1 or 2.');
         end
-
+        
         if ~(DIM==1 | DIM==2)
             error('Dimension argument must be 1 or 2.');
         end
-
+        
         if DIM==1
             % Create one extended variable per column
             y = [];
@@ -131,11 +134,13 @@ switch nargin
                     y = [y min(inparg)];
                     return
                 end
-                inparg = removeInf(inparg);        
+                inparg = removeInf(inparg);
                 if  isa(inparg,'double')
-                        y = [y min(inparg)];
+                    y = [y min(inparg)];
                 elseif isa(inparg,'sdpvar')
-                    y = [y yalmip('define','min_internal',inparg)];
+                    z = yalmip('define','min_internal',inparg);
+                    y = [y z];
+                    reDeclareForBinaryMax(z,inparg);
                 else
                     y = [y min(inparg)];
                 end
@@ -144,7 +149,7 @@ switch nargin
             % Re-use code recursively
             y = min(X',[],1)';
         end
-
+        
     otherwise
         error('Too many input arguments.')
 end

@@ -1,7 +1,8 @@
 function model = yalmip2nonlinearsolver(model)
 
+model.dense = 0;
 if ~model.equalitypresolved
-    model = presolve_bounds_from_equalities(model);
+    model = propagate_bounds_from_equalities(model);
 end
 
 K = model.K;
@@ -104,9 +105,12 @@ if ~isempty(ub)
     ub = ub(linearindicies);
 end
 
+lb_old = lb;
+ub_old = ub;
 [lb,ub,A,b] = remove_bounds_from_Ab(A,b,lb,ub);
 [lb,ub,Aeq,beq] = remove_bounds_from_Aeqbeq(Aeq,beq,lb,ub);
 
+    
 if size(A,1) == 0
     A = [];
 end
@@ -123,14 +127,17 @@ if size(beq,1) == 0
     beq = [];
 end
 
-if ~isempty(beq) &  ~model.equalitypresolved
+if ~isempty(beq) &  (~model.equalitypresolved | ~(isequal(lb,lb_old) & isequal(ub,ub_old)))
     % This helps when there are artificial variables introduced to model
     % nonlinear operators such as log(2*x+1)
     p.F_struc = [beq -Aeq];
     p.K.f = size(beq,1);
     p.lb = lb;
     p.ub = ub;
-    p = presolve_bounds_from_equalities(p);
+    p.variabletype = zeros(1,length(lb));
+    p.binary_variables = [];
+    p.integer_variables = [];
+    p = propagate_bounds_from_equalities(p);
     lb = p.lb;
     ub = p.ub;
 end

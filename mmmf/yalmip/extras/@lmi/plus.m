@@ -29,8 +29,6 @@ if ~((isa(X,'lmi')) & (isa(Y,'lmi')))
     error('Both arguments must be SET objects')
 end
 
-%nX = length(X.clauses);
-%nY = length(Y.clauses);
 nX = length(X.LMIid);
 nY = length(Y.LMIid);
 if nX==0
@@ -41,7 +39,11 @@ if nY == 0
     return;
 end
 
-X.clauses = {X.clauses{:},Y.clauses{:}};
+if length(Y.clauses)==1
+    X.clauses{end + 1} = Y.clauses{1};
+else
+    X.clauses = {X.clauses{:},Y.clauses{:}};
+end
 X.LMIid = [X.LMIid Y.LMIid];
 
 % VERY FAST UNIQUE BECAUSE THIS IS CALLED A LOT OF TIMES....

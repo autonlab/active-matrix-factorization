@@ -6,10 +6,10 @@ function diagnostic = solvesdp(varargin)
 %
 %    min        h
 %    subject to
-%            F >(=) 0
+%            F >=(<=,==) 0
 %
 %   NOTES
-%    Desptite the name, SOLVESDP is the interface for solving all
+%    Despite the name, SOLVESDP is the interface for solving all
 %    supported problem classes (LP, QP, SOCP, SDP, BMI, MILP, MIQP,...)
 %
 %    To obtain solution for a variable, use DOUBLE.
@@ -29,7 +29,7 @@ function diagnostic = solvesdp(varargin)
 %   EXAMPLE
 %    A = randn(15,5);b = rand(15,1)*5;c = randn(5,1);
 %    x = sdpvar(5,1);
-%    solvesdp(set(A*x<b),c'*x);double(x)
+%    solvesdp(set(A*x<=b),c'*x);double(x)
 %
 %   See also DUAL, @SDPVAR/DOUBLE, SDPSETTINGS, YALMIPERROR
 
@@ -141,6 +141,12 @@ if ~isempty(F)
         return
     end
 end
+
+if isa(h,'sdpvar')
+    if is(h,'complex')
+        error('Complex valued objective does not make sense.');
+    end
+end
     
 if nargin>=3
     options = varargin{3};
@@ -162,6 +168,16 @@ if ~isempty(logdetStruct)
      %   options.solver = 'sdpt3,*';
     end
 end
+
+% Call chance solver?
+if length(F) > 0
+    rand_declarations = is(F,'random');
+    if any(rand_declarations)
+    %    diagnostic = solverandom(F(find(~rand_declarations)),h,options,recover(getvariables(sdpvar(F(find(unc_declarations))))));
+        return
+    end
+end
+
 
 % Call robust solver?
 if length(F) > 0
@@ -280,8 +296,8 @@ end
 %******************************************
 % DID WE SELECT THE MPT solver (backwards comb)
 %******************************************
-if strcmpi(solver.tag,'mpt') | strcmpi(solver.tag,'mpcvx') | strcmpi(solver.tag,'mplcp')
-    actually_save_output = interfacedata.options.savesolveroutput;
+actually_save_output = interfacedata.options.savesolveroutput;
+if strcmpi(solver.tag,'mpt-2') | strcmpi(solver.tag,'mpt-3') | strcmpi(solver.tag,'mpcvx') | strcmpi(solver.tag,'mplcp')    
     interfacedata.options.savesolveroutput = 1;
     if isempty(interfacedata.parametric_variables)
         if (nargin < 4 | ~isa(varargin{4},'sdpvar'))
@@ -380,7 +396,9 @@ catch
     diagnostic.info = yalmiperror(output.problem,solver.tag);
 end
 diagnostic.problem = output.problem;
-diagnostic.dimacs = dimacs;
+if options.dimacs
+    diagnostic.dimacs = dimacs;
+end
 
 % Some more info is saved internally
 solution_internal = diagnostic;

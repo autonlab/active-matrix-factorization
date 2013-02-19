@@ -14,4 +14,5 @@ end
 
 sys = C1;
 sys.clauses{1}.data = [C1.clauses{1}.data(:) C2.clauses{1}.data(:)];
+sys.clauses{1}.extra.indicators = binvar(length(C1.clauses{1}.data(:)),1);
 sys.clauses{1}.type = 55;

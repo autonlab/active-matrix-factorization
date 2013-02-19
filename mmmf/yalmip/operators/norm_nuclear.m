@@ -32,7 +32,7 @@ switch class(varargin{1})
                 U = sdpvar(m,m,'hermitian','complex');
                 V = sdpvar(n,n,'hermitian','complex');
             end
-            F = [trace(U)+trace(V) < 2*t, [U X';X V]>0];
+            F = [trace(U)+trace(V) <= 2*t, [U X';X V]>=0];
             varargout{1} = F;
             varargout{2} = struct('convexity','convex','monotonicity','none','definiteness','positive','model','graph');
             varargout{3} = X;

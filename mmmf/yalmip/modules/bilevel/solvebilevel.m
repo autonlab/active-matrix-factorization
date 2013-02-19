@@ -50,7 +50,10 @@ y = InnerVariables;
 if strcmp(options.bilevel.algorithm,'external')
     % Derive KKT conditions of inner problem, append with outer, and solve
     % using standard solver
-    K = kkt(InnerConstraints,InnerObjective,y);
+    z = [depends(OuterConstraints) depends(OuterObjective) depends(InnerObjective) depends(InnerConstraints)];
+    z = setdiff(z,depends(y));
+    z = recover(unique(z));
+    K = kkt(InnerConstraints,InnerObjective,z);
     Constraints = [K,OuterConstraints];    
     sol = solvesdp(Constraints,OuterObjective,options);
     info = [];
@@ -96,6 +99,11 @@ y = recover(unique([v1(:);v2(:);v3(:)]));
 % Export the outer model, and select solver
 options.solver = options.bilevel.outersolver;
 [Omodel,Oax1,Oax2,outer_p] = export(OuterConstraints,OuterObjective,options,[],[],0);
+if isstruct(Oax2)
+   sol = Oax2;
+   info = 2;
+   return
+end
 % Export a joint model with KKT removed, to simplify some setup later
 % [Auxmodel,Auxax1,Auxax2,outerinner_p] = export([OuterConstraints,InnerConstraints],OuterObjective+pi*InnerObjective,options,[],[],0);
 
@@ -308,7 +316,7 @@ while length(list)>0 & gap > options.bilevel.relgaptol & iter < options.bilevel.
         end
         
         output  = feval(p.solver.call,p);
-
+       
         if output.problem==2
             Comment = 'Unbounded node';
         end
@@ -338,12 +346,12 @@ while length(list)>0 & gap > options.bilevel.relgaptol & iter < options.bilevel.
                 if outputCheck.problem == 1
                     % We will not continue branching, and let the user now
                     % that this choice
-                    Comment = [Comment 'Infeasible solution returned, resolve => abort'];
+                    Comment = ['Infeasible'];
                     cost = inf;
                     sol.problem = 4;  
                 else
                     % Hard to say anything                    
-                    Comment = [Comment 'Infeasible solution returned, resolve => continue'];
+                    Comment = ['Infeasible solution returned, resolve => continue'];
                     sol.problem = 4;  
                     cost = p.lower;
                 end
@@ -351,6 +359,12 @@ while length(list)>0 & gap > options.bilevel.relgaptol & iter < options.bilevel.
             if cost<inf
                  
                  if strcmp(p.options.solver,'bmibnb') 
+                     if output.problem == -6
+                         sol.problem = -6;
+                         sol.info = yalmiperror(-6);
+                         info = [];
+                         return
+                     end
                      p.lb = max([p.lb output.extra.propagatedlb],[],2);
                      p.ub = min([p.ub output.extra.propagatedub],[],2);
                  end

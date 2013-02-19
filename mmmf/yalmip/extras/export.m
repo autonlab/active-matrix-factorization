@@ -116,6 +116,16 @@ if any(is(F,'uncertain'))
 end
 
 % ******************************************
+% Export SOS problem to SOS first
+% ******************************************
+ if any(is(F,'sos'))   
+     old =  options.verbose;
+     options.verbose = max(options.verbose - 1,0);
+     [F,h] = compilesos(F,h,options);
+     options.verbose = old;
+ end
+ 
+% ******************************************
 % COMPILE IN GENERALIZED YALMIP FORMAT
 % ******************************************
 if ~isempty(F) & any(is(F,'parametric'))
@@ -153,27 +163,30 @@ switch lower(solver.tag)
             n = fieldnames(o1);
             for i = 1:length(n)
                 if isequal(o1.(n{i}),o2.(n{i}))
-                    interfacedata.options.cplex = rmfield(interfacedata.options.cplex,n{i});
+                    interfacedata.options.cplex = rmfield(interfacedata.options.cplex,n{i});                    
                 end
             end
+            model = yalmip2cplex(interfacedata);
         catch
         end
 
         
     case 'gurobi-gurobi'        
-        model = yalmip2gurobi(interfacedata);
-        model = [];
+        model = yalmip2gurobi(interfacedata);       
         
     case 'gurobi-mex'        
-        model = yalmip2gurobimex(interfacedata);
-        model = [];
+        model = yalmip2gurobimex(interfacedata);       
         
     case 'cplex-cplexint'
         [model.H,model.C,model.A,model.B,model.LB,model.UB,model.QC,model.VARTYPE,model.INDEQ,model.PARAM,model.OPTIONS] = cplex2yalmip(interfacedata);
         
-    case {'mosek-socp','mosek-lp/qp','mosek-geometric'}
-        model.prob = yalmip2mosek(interfacedata);
-                
+    case {'mosek-socp','mosek-lp/qp','mosek-geometric','mosek-sdp'}
+        if interfacedata.K.s(1)>0
+            model.prob = yalmip2SDPmosek(interfacedata);                       
+        else
+            model.prob = yalmip2mosek(interfacedata);
+        end
+                    
     case 'quadprog'
         model = yalmip2quadprog(interfacedata);
         

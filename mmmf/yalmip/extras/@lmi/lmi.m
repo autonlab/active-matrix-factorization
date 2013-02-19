@@ -55,9 +55,12 @@ if isempty(X)
     F.clauses{1}.strict = [];
     F.clauses{1}.cut = [];
     F.clauses{1}.expanded = [];
-    F.clauses{1}.lift = [];
+    F.clauses{1}.lift = [];    
     F.clauses{1}.schurfun  = [];
     F.clauses{1}.schurdata = [];
+    F.clauses{1}.jointprobabilistic = [];
+    F.clauses{1}.confidencelevel = [];
+    F.clauses{1}.extra = [];
     return
 end
 
@@ -71,7 +74,8 @@ end
 %10 : Eigenvalue constraint
 %11 : Sum of square constraint
 %12 : Logic CNF
-%14 : Uncertain variable
+%15 : Deterministic uncertain variable
+%16 : Random uncertain variable
 %20 : Power cone
 %30 : User generated Schur
 %40 : Generalized KYP
@@ -81,6 +85,7 @@ end
 %53 : semiintvar
 %55 : Complementary
 %56 : Meta constraint to be expanded (implies, iff)
+%60 : Chance constraint
 
 switch class(X)
     case 'lmi'
@@ -223,7 +228,7 @@ while i <= length(Fi)
         Fi{i} = thisFi;
 
         switch TypeofConstraint(i)
-            case {1,2,3,4,5,7,8,9,10,11,12,13,15,20,30,40,50,51,52,53,54}
+            case {1,2,3,4,5,7,8,9,10,11,12,13,15,16,20,30,40,50,51,52,53,54}
                 i = i + 1;
             otherwise
                 error('Error in argument in LMI. Please report bug');
@@ -270,13 +275,16 @@ if all(TypeofConstraint == 2) & all(strict==strict(1))
     F.clauses{1}.lift = 0;
     F.clauses{1}.schurfun  = '';
     F.clauses{1}.schurdata = [];
+    F.clauses{1}.jointprobabilistic = [];
+    F.clauses{1}.confidencelevel = [];
+    F.clauses{1}.extra = [];
  %   F.LMIid = [F.LMIid yalmip('lmiid')];
     F.LMIid = [F.LMIid LMIIdentifiers(1)];
 else
     %start = yalmip('lmiid');
     for i = 1:length(Fi)
         switch TypeofConstraint(i)
-            case {1,2,3,4,5,7,8,9,10,11,12,13,15,20,30,40,50,51,52,53,54}
+            case {1,2,3,4,5,7,8,9,10,11,12,13,15,16,20,30,40,50,51,52,53,54}
                 F.clauses{i}.data=Fi{i};
                 F.clauses{i}.type = TypeofConstraint(i);
                 F.clauses{i}.symbolic=X;
@@ -286,11 +294,11 @@ else
                 F.clauses{i}.expanded = 0;
                 F.clauses{i}.lift = 0; 
                 F.clauses{i}.schurfun  = '';
-                F.clauses{i}.schurdata = [];                
+                F.clauses{i}.schurdata = [];
+                F.clauses{i}.jointprobabilistic = [];
+                F.clauses{i}.confidencelevel = [];
+                F.clauses{i}.extra = [];
                 F.LMIid = [F.LMIid LMIIdentifiers(i)];
-%                 if TypeofConstraint(i)==9
-%                     1
-%                 end
                 i = i + 1;
             otherwise
                 error('Error in argument in LMI. Please report bug');

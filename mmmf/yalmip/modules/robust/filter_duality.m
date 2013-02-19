@@ -31,7 +31,6 @@ c_wTbase = [];
 AAA = [];
 ccc = [];
 for i = 1:length(X)
-    %[Q,c,f,dummy,nonquadratic] = quaddecomp(X(i),xw);
     Q = Qs{i};
     c = cs{i};
     f = fs{i};
@@ -131,14 +130,14 @@ for i = 1:length(b)
                         return
                     end
                 else
-                    F = F + set(bi'*x + (di+e'*ci) - norm(T*ci,1) > 0);
+                    F = F + set(bi'*x + (di+e'*ci) - norm(T*ci,1) >= 0);
                 end
             else
                 non_zeroBirow = find(sum(abs(Bi'),2));
                 zeroBirow = find(sum(abs(Bi'),2) == 0);
                 if length(non_zeroBirow)>1
                     t = sdpvar(length(non_zeroBirow),1);
-                    F = F + set((bi'+e'*Bi')*x + (di+e'*ci) - sum(t) >= 0) + set(-t < T(non_zeroBirow,:)*(ci+Bi'*x) < t);
+                    F = F + set((bi'+e'*Bi')*x + (di+e'*ci) - sum(t) >= 0) + set(-t <= T(non_zeroBirow,:)*(ci+Bi'*x) <= t);
                 else
                     F = F + set((bi'+e'*Bi')*x + (di+e'*ci) - T(non_zeroBirow,:)*(ci+Bi'*x) >= 0) ;
                     F = F + set((bi'+e'*Bi')*x + (di+e'*ci) + T(non_zeroBirow,:)*(ci+Bi'*x) >= 0) ;
@@ -174,7 +173,7 @@ for i = 1:length(b)
                     if length(zeta)>2
                         Flocal = Flocal + set(cone(zeta));
                     else
-                        Flocal = Flocal + set(zeta(2) < zeta(1)) + set(-zeta(2) < zeta(1));
+                        Flocal = Flocal + set(zeta(2) <= zeta(1)) + set(-zeta(2) <= zeta(1));
                     end
                     lhs1 = lhs1 + Zmodel.F_struc(top:top + Zmodel.K.q(j)-1,2:end)'*zeta(:);
                     lhs2 = lhs2 - Zmodel.F_struc(top:top + Zmodel.K.q(j)-1,1)'*zeta(:);
@@ -209,10 +208,22 @@ for i = 1:length(b)
                 lhs2 = replace(lhs2,recover(depends(lhs1)),zeta2);
                 Flocal = replace(Flocal,recover(depends(lhs1)),zeta2);
             else
-                F = F + set(lhs1 == Bi'*x + ci);
+                Flocal = [Flocal,lhs1 == Bi'*x + ci]; 
+               % F = F + set(lhs1 == Bi'*x + ci);
             end
-            F = F + Flocal;
-            F = F + set(lhs2 >= - (bi'*x + di));
+            if isa(Bi,'double') & ops.robust.reducesemiexplicit
+                ops2=ops;ops2.verbose = 0;
+                sol = solvesdp([Flocal],-lhs2,ops);
+                if sol.problem == 0
+                    F = F + set(double(lhs2) >= - (bi'*x + di));
+                else
+                    F = F + Flocal;
+                    F = F + set(lhs2 >= - (bi'*x + di));
+                end
+            else
+                F = F + Flocal;
+                F = F + set(lhs2 >= - (bi'*x + di));
+            end
         end
     end
 end

@@ -12,6 +12,7 @@ emptysolver.call    = '';
 emptysolver.subcall = '';
 emptysolver.show    = 1;
 emptysolver.usesother = 0;
+emptysolver.supportsinitial = 1;
 
 emptysolver.objective.linear = 0;
 emptysolver.objective.quadratic.convex = 0;
@@ -119,84 +120,19 @@ solver(i).constraint.semivar = 1;
 solver(i).constraint.sos2 = 1;
 i = i+1;
 
-solver(i) = lpsolver;
-solver(i).tag     = 'CPLEX';
-solver(i).version = 'IBM';
-solver(i).subversion = '12.4';
-solver(i).checkfor = {'cplexlp.m','cplexlink124'};
-solver(i).call    = 'call_cplexibm_milp';
-solver(i).constraint.integer = 1;
-solver(i).constraint.binary = 1;
-solver(i).constraint.sos2 = 1;
-solver(i).constraint.semivar = 1;
-solver(i).constraint.semiintvar = 1;
-i = i+1;
-
-solver(i) = lpsolver;
-solver(i).tag     = 'CPLEX';
-solver(i).version = 'IBM';
-solver(i).subversion = '12.3';
-solver(i).checkfor = {'cplexlp.m','cplexlink123'};
-solver(i).call    = 'call_cplexibm_milp';
-solver(i).constraint.integer = 1;
-solver(i).constraint.binary = 1;
-solver(i).constraint.sos2 = 1;
-solver(i).constraint.semivar = 1;
-solver(i).constraint.semiintvar = 1;
-i = i+1;
-
-% duals bug...(so we pick old versions
-solver(i) = solver(i-1);
-solver(i).checkfor = {'cplexlp.m','cplexlink122'};
-solver(i).subversion = '12.2';
-i = i+1;
-solver(i) = solver(i-1);
-solver(i).checkfor = {'cplexlp.m','cplexlink121'};
-solver(i).subversion = '12.1';
-i = i+1;
-solver(i) = solver(i-1);
-solver(i).checkfor = {'cplexlp.m','cplexlink120'};
-solver(i).subversion = '12.0';
-i = i+1;
-
 solver(i) = qpsolver;
 solver(i).tag     = 'CPLEX';
 solver(i).version = 'IBM';
-solver(i).subversion = '12.4';
-solver(i).checkfor= {'cplexqp.m','cplexlink124'};
-solver(i).call    = 'call_cplexibm_miqp';
+solver(i).subversion = '12.5';
+solver(i).checkfor= {'cplexqcp.m','cplexlink125'};
+solver(i).call    = 'call_cplexibm_qcmiqp';
+solver(i).constraint.inequalities.elementwise.quadratic.convex = 1;
+solver(i).constraint.inequalities.secondordercone = 1;
 solver(i).constraint.integer = 1;
 solver(i).constraint.binary = 1;
 solver(i).constraint.sos2 = 1;
 solver(i).constraint.semivar = 1;
 solver(i).constraint.semiintvar = 1;
-i = i+1;
-
-solver(i) = qpsolver;
-solver(i).tag     = 'CPLEX';
-solver(i).version = 'IBM';
-solver(i).subversion = '12.3';
-solver(i).checkfor= {'cplexqp.m','cplexlink123'};
-solver(i).call    = 'call_cplexibm_miqp';
-solver(i).constraint.integer = 1;
-solver(i).constraint.binary = 1;
-solver(i).constraint.sos2 = 1;
-solver(i).constraint.semivar = 1;
-solver(i).constraint.semiintvar = 1;
-i = i+1;
-
-% duals bug...
-solver(i) = solver(i-1);
-solver(i).checkfor = {'cplexqp.m','cplexlink122'};
-solver(i).subversion = '12.2';
-i = i+1;
-solver(i) = solver(i-1);
-solver(i).checkfor = {'cplexqp.m','cplexlink121'};
-solver(i).subversion = '12.1';
-i = i+1;
-solver(i) = solver(i-1);
-solver(i).checkfor = {'cplexqp.m','cplexlink120'};
-solver(i).subversion = '12.0';
 i = i+1;
 
 solver(i) = qpsolver;
@@ -311,10 +247,14 @@ solver(i).call    = 'callclp';
 i = i+1;
 
 solver(i) = qpsolver;
-solver(i).tag     = 'CLP';
-solver(i).version = 'OPTI';
-solver(i).checkfor= {'clp','opti_clp'};
-solver(i).call    = 'callopticlp';
+solver(i).tag     = 'SCIP';
+solver(i).version = '';
+solver(i).checkfor= {'scip'};
+solver(i).call    = 'callscipmex';
+solver(i).constraint.integer = 1;
+solver(i).constraint.binary = 1;
+solver(i).constraint.sos2 = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.convex = 1;
 i = i+1;
 
 solver(i) = qpsolver;
@@ -407,6 +347,14 @@ solver(i).constraint.integer = 1;
 solver(i).constraint.inequalities.secondordercone = 1;
 i = i+1;
 
+solver(i) = sdpsolver;
+solver(i).tag     = 'MOSEK';
+solver(i).version = 'SDP';
+solver(i).checkfor= {'mosekopt'};
+solver(i).call    = 'callmosek';
+solver(i).constraint.inequalities.secondordercone = 1;
+i = i+1;
+
 solver(i) = lpsolver;
 solver(i).tag     = 'MOSEK';
 solver(i).version = 'GEOMETRIC';
@@ -441,6 +389,16 @@ solver(i).checkfor= {'bp'};
 solver(i).call    = 'callbpmpd';
 i = i+1;
 
+
+
+solver(i) = qpsolver;
+solver(i).tag     = 'QUADPROG';
+solver(i).version = '';
+solver(i).checkfor= {'quadprog'};
+solver(i).call    = 'callquadprog';
+solver(i).objective.quadratic.nonconvex = 1;
+i = i+1;
+
 solver(i) = qpsolver;
 solver(i).tag     = 'CLP';
 solver(i).version = 'CLPMEX-QP';
@@ -450,11 +408,10 @@ solver(i).call    = 'callclp';
 i = i+1;
 
 solver(i) = qpsolver;
-solver(i).tag     = 'QUADPROG';
-solver(i).version = '';
-solver(i).checkfor= {'quadprog'};
-solver(i).call    = 'callquadprog';
-solver(i).objective.quadratic.nonconvex = 1;
+solver(i).tag     = 'CLP';
+solver(i).version = 'OPTI';
+solver(i).checkfor= {'clp','opti_clp'};
+solver(i).call    = 'callopticlp';
 i = i+1;
 
 solver(i) = qpsolver;
@@ -640,7 +597,6 @@ solver(i).version = '';
 solver(i).checkfor= {'sdplr'};
 solver(i).call    = 'callsdplr';
 solver(i).constraint.equalities.linear = 0;
-
 i = i+1;
 
 solver(i) = sdpsolver;
@@ -745,7 +701,21 @@ i = i+1;
 
 solver(i) = emptysolver;
 solver(i).tag     = 'MPT';
-solver(i).version = '';
+solver(i).version = '3';
+solver(i).checkfor= {'mpt_mpqp','mpt_plcp'};
+solver(i).call    = 'callmpt3';
+solver(i).objective.linear = 1;
+solver(i).objective.quadratic.convex = 1;
+solver(i).objective.quadratic.nonconvex = 1;
+solver(i).constraint.inequalities.elementwise.linear = 1;
+solver(i).constraint.equalities.linear = 1;
+solver(i).parametric = 1;
+solver(i).constraint.binary = 1;
+i = i+1;
+
+solver(i) = emptysolver;
+solver(i).tag     = 'MPT';
+solver(i).version = '2';
 solver(i).checkfor= {'mpt_mpqp'};
 solver(i).call    = 'callmpt';
 solver(i).objective.linear = 1;
@@ -916,6 +886,78 @@ solver(i).constraint.equalities.linear = 1;
 solver(i).constraint.equalities.quadratic = 1;
 solver(i).constraint.equalities.polynomial = 1;
 solver(i).constraint.equalities.sigmonial = 1;
+solver(i).constraint.inequalities.elementwise.linear = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.convex = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.nonconvex = 1;
+solver(i).constraint.inequalities.elementwise.polynomial = 1;
+solver(i).constraint.inequalities.elementwise.sigmonial = 1;
+solver(i).constraint.integer = 1;
+solver(i).constraint.binary = 1;
+solver(i).dual = 0;
+solver(i).evaluation = 1;
+i = i+1;
+
+solver(i) = emptysolver;
+solver(i).tag     = 'FILTERSD';
+solver(i).version = 'dense';
+solver(i).checkfor= {'filtersd.m'};
+solver(i).call    = 'callfiltersd';
+solver(i).objective.linear = 1;
+solver(i).objective.quadratic.convex = 1;
+solver(i).objective.quadratic.nonconvex = 1;
+solver(i).objective.polynomial = 1;
+solver(i).objective.sigmonial = 1;
+solver(i).constraint.equalities.linear = 1;
+solver(i).constraint.equalities.quadratic = 1;
+solver(i).constraint.equalities.polynomial = 1;
+solver(i).constraint.equalities.sigmonial = 1;
+solver(i).constraint.inequalities.elementwise.linear = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.convex = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.nonconvex = 1;
+solver(i).constraint.inequalities.elementwise.polynomial = 1;
+solver(i).constraint.inequalities.elementwise.sigmonial = 1;
+solver(i).dual = 1;
+solver(i).evaluation = 1;
+i = i+1;
+
+
+solver(i) = emptysolver;
+solver(i).tag     = 'FILTERSD';
+solver(i).version = 'sparse';
+solver(i).checkfor= {'filtersdsp.m'};
+solver(i).call    = 'callfiltersdsp';
+solver(i).objective.linear = 1;
+solver(i).objective.quadratic.convex = 1;
+solver(i).objective.quadratic.nonconvex = 1;
+solver(i).objective.polynomial = 1;
+solver(i).objective.sigmonial = 1;
+solver(i).constraint.equalities.linear = 1;
+solver(i).constraint.equalities.quadratic = 1;
+solver(i).constraint.equalities.polynomial = 1;
+solver(i).constraint.equalities.sigmonial = 1;
+solver(i).constraint.inequalities.elementwise.linear = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.convex = 1;
+solver(i).constraint.inequalities.elementwise.quadratic.nonconvex = 1;
+solver(i).constraint.inequalities.elementwise.polynomial = 1;
+solver(i).constraint.inequalities.elementwise.sigmonial = 1;
+solver(i).dual = 1;
+solver(i).evaluation = 1;
+i = i+1;
+
+solver(i) = emptysolver;
+solver(i).tag     = 'nomad';
+solver(i).version = '';
+solver(i).checkfor= {'nomad'};
+solver(i).call    = 'callnomad';
+solver(i).objective.linear = 1;
+solver(i).objective.quadratic.convex = 1;
+solver(i).objective.quadratic.nonconvex = 1;
+solver(i).objective.polynomial = 1;
+solver(i).objective.sigmonial = 1;
+solver(i).constraint.equalities.linear = 0;
+solver(i).constraint.equalities.quadratic = 0;
+solver(i).constraint.equalities.polynomial = 0;
+solver(i).constraint.equalities.sigmonial = 0;
 solver(i).constraint.inequalities.elementwise.linear = 1;
 solver(i).constraint.inequalities.elementwise.quadratic.convex = 1;
 solver(i).constraint.inequalities.elementwise.quadratic.nonconvex = 1;
@@ -1144,7 +1186,6 @@ solver(i).constraint.inequalities.semidefinite.quadratic = 1;
 solver(i).constraint.inequalities.semidefinite.polynomial = 1;
 solver(i).constraint.inequalities.secondordercone = 1;
 solver(i).constraint.inequalities.rotatedsecondordercone = 1;
-solver(i).constraint.inequalities.rank = 0;
 solver(i).constraint.binary  = 1;
 solver(i).constraint.integer = 1;
 solver(i).constraint.semivar = 0;

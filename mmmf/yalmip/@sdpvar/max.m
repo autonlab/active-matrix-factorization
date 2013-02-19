@@ -1,16 +1,18 @@
 function y = max(varargin)
 %MAX (overloaded)
 %
-% t = max(X,Y,DIM)
+% t = max(X)
+% t = max(X,Y)
+% t = max(X,[],DIM)
 %
 % Creates an internal structure relating the variable t with convex
 % operator max(X).
 %
 % The variable t is primarily meant to be used in convexity preserving
-% operations such as t<..., minimize t etc.
+% operations such as t<=..., minimize t etc.
 %
 % If the variable is used in a non-convexity preserving operation, such as
-% t>0, a mixed integer model will be derived.
+% t>=0, a mixed integer model will be derived.
 %
 % See built-in MAX for syntax.
 
@@ -36,7 +38,12 @@ switch nargin
             elseif length(X) == 1
                 y = X;
             else
+                
                 y = yalmip('define','max_internal',X);
+                % Some special code to ensure max(x) when x is a simple
+                % binary vector yields a binary graph variable. This will
+                % simplify some models
+                reDeclareForBinaryMax(y,X);
             end
             return
         else
@@ -69,7 +76,9 @@ switch nargin
         end
         
         % Ok, done with error checks etc.
-        y = yalmip('define','max_internal',[reshape(X,1,[]);reshape(Y,1,[])]);
+        Z = [reshape(X,1,[]);reshape(Y,1,[])];
+        y = yalmip('define','max_internal',Z);
+        reDeclareForBinaryMax(y,Z);
         y = reshape(y,nx,mx);
         
     case 3
@@ -106,7 +115,12 @@ switch nargin
                     elseif length(inparg) == 1
                         y = [y max(inparg)];
                     else
-                        y = [y yalmip('define','max_internal',inparg)];
+                        z = yalmip('define','max_internal',inparg);
+                        y = [y z];
+                        % Some special code to ensure max(x) when x is a simple
+                        % binary vector yields a binary graph variable. This will
+                        % improve some models
+                        reDeclareForBinaryMax(z,inparg);
                     end
                 else
                     y = [y max(inparg)];

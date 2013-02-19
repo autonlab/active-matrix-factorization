@@ -167,8 +167,7 @@ for i = 1:Counter
             case 50
                 problem.constraint.sos2 = 1;
             case 51
-                problem.constraint.sos1 = 1;
-                
+                problem.constraint.sos1 = 1;                
             case 55
                 problem.constraint.complementarity.linear = 1;
             otherwise
@@ -227,9 +226,9 @@ for i = 1:Counter
                                 f = Fi.data;f = f(:);
                                 ii = 1;
                                 while convex & ii<=length(f)
-                                    [Q,c,f,x,info] = quaddecomp(f(ii));
+                                    [Q,caux,faux,xaux,info] = quaddecomp(f(ii));
                                     
-                                    if info | any(eig(Q) > 0)
+                                    if info | any(eig(full(Q)) > 0)
                                         convex = 0;
                                     end
                                     ii= ii + 1;
@@ -294,6 +293,8 @@ for i = 1:Counter
                     problem.constraint.sos1 = 1;                    
                 case 52
                     problem.constraint.semicont = 1;
+                case 55
+                    problem.constraint.complementarity.linear = 1;
                 otherwise
                     error('Report bug in problem classification (linear constraint)');
             end
@@ -352,6 +353,7 @@ if (relax==1) | (relax==3)
     poly_constraint = 0;
     bilin_constraint = 0;
     sigm_constraint = 0;
+    problem.evaluation = 0;
 end
 
 

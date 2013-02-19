@@ -1,4 +1,4 @@
-function x = uncertain(x)
+function x = uncertain(x,varargin)
 %UNCERTAIN Declares a variable as uncertain
 %
 %   F = UNCERTAIN(w) is used to describe the set of uncertain variables
@@ -20,5 +20,13 @@ function x = uncertain(x)
 % Author Johan Löfberg
 % $Id: uncertain.m,v 1.3 2006-08-18 15:01:04 joloef Exp $
 
-x.typeflag = 15;
-x = lmi(x);
+if nargin == 1 || ((nargin == 2) && strcmpi(varargin{1},'deterministic'))
+    x.typeflag = 15;
+    x.extra.distribution.name = 'deterministic';
+    x = lmi(x);
+else
+    x.typeflag = 16;
+    x.extra.distribution.name = varargin{1};
+    x.extra.distribution.parameters = {varargin{2:end}};
+    x = lmi(x);
+end

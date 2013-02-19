@@ -50,12 +50,12 @@ if nnz(removethese)>0 & all(p.variabletype == 0) & isempty(p.evalMap)% ~isequal(
     
     % This is not necessarily correct!! x*y^2, fix y and we have a linear!
     p.variabletype(removethese) = [];
-  %  p.variabletype = []; % Reset, to messy to recompute
+    % p.variabletype = []; % Reset, to messy to recompute
     if ~isequal(p.K.l,0) & p.options.bnb.ineq2eq
         Beq = p.F_struc(1:p.K.f,1);
         Aeq = -p.F_struc(1:p.K.f,2:end);
         B   = p.F_struc(1+p.K.f:p.K.l+p.K.f,1);
-        A   = -p.F_struc(1+p.K.f:p.K.l+p.K.f,2:end);        
+        A   = -p.F_struc(1+p.K.f:p.K.l+p.K.f,2:end);
         affected = affected(affected <= p.K.f + p.K.l);
         affected = affected(affected > p.K.f) - p.K.f;
         aaa = zeros(p.K.l,1);aaa(affected) = 1;

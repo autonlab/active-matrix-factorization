@@ -10,24 +10,24 @@ switch class(varargin{1})
        
     case 'sdpvar' % Overloaded operator for SDPVAR objects. Pass on args and save them.
         
-         X = varargin{1};
+        X = varargin{1};
         [n,m] = size(X);
         if n~=m
-           error('Matrix must be square.')
+            error('Matrix must be square.')
         end
-      if nargin == 2
-      if strcmp(varargin{2},'polynomial')
-          varargout{1} = polynomialform(X);
-          return
-      else
-          error('If you use two arguments in @sdpvar/det, the second should be ''polynomial''');
-      end
-      end
-       if n==1
+        if nargin == 2
+            if strcmp(varargin{2},'polynomial')
+                varargout{1} = polynomialform(X);
+                return
+            else
+                error('If you use two arguments in @sdpvar/det, the second should be ''polynomial''');
+            end
+        end
+        if n==1
             varargout{1} = X;
             return
         else
-            y = yalmip('define','det_internal',reshape(X,[],1));            
+            y = yalmip('define','det_internal',reshape(X,[],1));
         end
         varargout{1} = y;
 

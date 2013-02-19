@@ -1,5 +1,4 @@
-function varargout = invsathub (varargin)
-%SIN (overloaded)
+function varargout = deadhub(varargin)
 
 % Author Johan Löfberg
 % $Id: deadhub.m,v 1.1 2008-01-24 21:38:29 joloef Exp $

@@ -83,7 +83,7 @@ for i = 1:length(all_f)
                     return
                 end
             else
-                F = F + set(bi'*x + (di+e'*ci) - norm(T*ci,1) > 0);
+                F = F + set(bi'*x + (di+e'*ci) - norm(T*ci,1) >= 0);
             end
         else
             % (bi' + (Bi*w)')*x + (ci'*w + di)

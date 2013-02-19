@@ -53,25 +53,12 @@ try
     for i = 1:length(extstruct.arg)-1
         involved = union(involved,getvariables(extstruct.arg{i}));
     end
-    if ~(strcmp(options.robust.auxreduce,'none'))
-        % This info is only needed when we do advanced Robust optimization
-        yalmip('setdependence',[getvariables(extstruct.var) newAux],involved);
-        yalmip('setdependence',[getvariables(extstruct.var)],newAux);
-%         F_scalar = F( find(is(F,'elementwise')));
-%         F_hard = F( find(~is(F,'elementwise')));
-%         if ~isempty(F_scalar)
-%             XX = sdpvar(F_scalar);
-%             X_var = getvariables(XX);
-%             XX = getbase(XX);XX = XX(:,2:end);
-%             for i = 1:size(XX,1)
-%                 auxInThis = intersect(newAux,X_var(find(XX(i,:))));
-%                 nonAuxInThis = setdiff(X_var(find(XX(i,:))),newAux);
-%                 yalmip('setdependence',auxInThis,nonAuxInThis); 
-%             end
-%         end
-%         if ~isempty(F_hard)
-     %        yalmip('setdependence',[getvariables(extstruct.var) intersect(newAux,getvariables(F_hard))],involved);
-%        end
+    if ~isempty(options)
+        if ~(strcmp(options.robust.auxreduce,'none'))
+            % This info is only needed when we do advanced Robust optimization
+            yalmip('setdependence',[getvariables(extstruct.var) newAux],involved);
+            yalmip('setdependence',[getvariables(extstruct.var)],newAux);
+        end
     end
 catch
     error(['Failed when trying to create a model for the "' extstruct.fcn '" operator']);

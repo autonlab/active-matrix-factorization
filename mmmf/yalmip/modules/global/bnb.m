@@ -48,16 +48,6 @@ function output = bnb(p)
 % ********************************
 %% INITIALIZE DIAGNOSTICS IN YALMIP
 % ********************************
-%
-% p.c(23) = 64;
-% p.Q=p.Q*0;
-% p.monomtable(end+1,7)=1;
-% p.monomtable(end+1,8)=1;
-% p.lb(end+1)=-inf;
-% p.ub(end+1)=inf;
-% p.F_struc(end,end+1)=0;
-% p.Q(end+1,end+1)=0;
-
 bnbsolvertime = clock;
 showprogress('Branch and bound started',p.options.showprogress);
 
@@ -128,14 +118,15 @@ if ~isempty(p.binary_variables)
     p.ub(p.binary_variables) =  min(p.ub(p.binary_variables),1);
     p.lb(p.binary_variables) =  max(p.lb(p.binary_variables),0);
     
-    godown = find(p.ub(p.binary_variables) < 1);
-    goup   = find(p.lb(p.binary_variables) > 0);
-    p.ub(p.binary_variables(godown)) = 0;
-    p.lb(p.binary_variables(goup)) = 1;
+   % godown = find(p.ub(p.binary_variables) < 1);
+   % goup   = find(p.lb(p.binary_variables) > 0);
+   % p.ub(p.binary_variables(godown)) = 0;
+   % p.lb(p.binary_variables(goup)) = 1;
 end
 
-p.lb(p.integer_variables) = ceil(p.lb(p.integer_variables));
-p.ub(p.integer_variables) = floor(p.ub(p.integer_variables));
+%p.lb(p.integer_variables) = ceil(p.lb(p.integer_variables));
+%p.ub(p.integer_variables) = floor(p.ub(p.integer_variables));
+p = update_integer_bounds(p);
 
 if ~isempty(p.semicont_variables)
     redundant = find(p.lb<=0 & p.ub>=0);
@@ -156,7 +147,7 @@ p = updatemonomialbounds(p);
 %% PRE-SOLVE (nothing fancy coded)
 % *******************************
 pss=[];
-p = presolve_bounds_from_equalities(p);
+p = propagate_bounds_from_equalities(p);
 
 if p.K.f > 0
     pp = p;
@@ -165,10 +156,15 @@ if p.K.f > 0
     pp.F_struc(:,r+1)=[];
     pp.lb(r)=[];
     pp.ub(r)=[];
-    pp = presolve_bounds_from_equalities(pp);
+    pp.variabletype(r)=[];
+    % FIXME: This is lazy, should update new list
+    pp.binary_variables = [];
+    pp.integer_variables = [];
+    pp = propagate_bounds_from_equalities(pp);
     other = setdiff(1:length(p.lb),r);
     p.lb(other) = pp.lb;
     p.ub(other) = pp.ub;
+    p = update_integer_bounds(p);
     redundant = find(~any(pp.F_struc(1:p.K.f,2:end),2));
     if any(p.F_struc(redundant,1)<0)
         p.feasible = 0;
@@ -202,7 +198,7 @@ end
 
 % Silly redundancy
 p = updatemonomialbounds(p);
-p = presolve_bounds_from_equalities(p);
+p = propagate_bounds_from_equalities(p);
 if p.K.l > 0
     b = p.F_struc(1+p.K.f:p.K.l+p.K.f,1);
     A = -p.F_struc(1+p.K.f:p.K.l+p.K.f,2:end);
@@ -218,11 +214,11 @@ end
 % *******************************
 p.corig = p.c;
 if nnz(p.Q)==0 & isequal(p.K.m,0)
-    g = randn('seed');
-    randn('state',1253); %For my testing, I keep this the same...
-    % This perturbation has to be better. Crucial for many real LP problems
-    p.c = (p.c).*(1+randn(length(p.c),1)*1e-4);
-    randn('seed',g);
+%     g = randn('seed');
+%     randn('state',1253); %For my testing, I keep this the same...
+%     % This perturbation has to be better. Crucial for many real LP problems
+%     p.c = (p.c).*(1+randn(length(p.c),1)*1e-4);
+%     randn('seed',g);
 end
 
 % *******************************
@@ -326,7 +322,7 @@ end
 function [x_min,solved_nodes,lower,upper,profile,diagnostics] = branch_and_bound(p,pss)
 
 % *******************************
-%% We don't need this
+% We don't need this
 % *******************************
 p.options.savesolveroutput = 0;
 p.options.saveduals = 0;
@@ -336,29 +332,6 @@ diagnostics = 0;
 % Tracking performance etc
 % *******************************
 profile.local_solver_time = 0;
-
-% Musts = [];
-% if p.K.s(1)>0
-%     top = 1+p.K.f+p.K.l;
-%     for j = 1:length(p.K.s)
-%
-%         n = p.K.s(j);
-%         for i = 1:n
-%             thisdiag = p.F_struc(top,:);
-%             vars = find(thisdiag(2:end));
-%             if all(ismember(vars,p.binary_variables))
-%                 if all(thisdiag(2:end)>=0) & thisdiag(1)<=0
-%                     Musts = [Musts;thisdiag(2:end) | thisdiag(2:end)];
-%                 end
-%             end
-%             if i==n
-%                 top = top+1;
-%             else
-%                 top = top+n+1;
-%             end
-%         end
-%     end
-% end
 
 % *************************************************************************
 % We save this to re-use some stuff in fmincon
@@ -630,8 +603,7 @@ while ~isempty(node) & (solved_nodes < p.options.bnb.maxiter) & (isinf(lower) | 
             %solved_nodes
         end
         output = bnb_solvelower(lowersolver,relaxed_p,upper+abs(upper)*1e-2+1e-4,lower);
-        %  output
-        
+               
         % output = bnb_solvelower(lowersolver,relaxed_p,inf,lower);
         if p.options.bnb.profile
             profile.local_solver_time  = profile.local_solver_time + output.solvertime;
@@ -702,8 +674,13 @@ while ~isempty(node) & (solved_nodes < p.options.bnb.maxiter) & (isinf(lower) | 
         non_semivar_semivar = find(~(abs(x(p.semicont_variables))<p.options.bnb.inttol | (x(p.semicont_variables)>p.semibounds.lb & x(p.semicont_variables)<=p.semibounds.ub)));
     end
     
-    TotalIntegerInfeas =  sum(abs(round(x(non_integer_integer))-x(non_integer_integer)));
-    TotalBinaryInfeas =  sum(abs(round(x(non_integer_binary))-x(non_integer_binary)));
+    try
+    x  = setnonlinearvariables(p,x);
+    catch
+    end
+    
+    TotalIntegerInfeas = sum(abs(round(x(non_integer_integer))-x(non_integer_integer)));
+    TotalBinaryInfeas = sum(abs(round(x(non_integer_binary))-x(non_integer_binary)));
     
     % *************************************
     % NODE HEURISTICS (NOTHING CODED)
@@ -718,16 +695,8 @@ while ~isempty(node) & (solved_nodes < p.options.bnb.maxiter) & (isinf(lower) | 
     end
     if output.problem==0 | output.problem==3 | output.problem==4
         cost = computecost(f,c,Q,x,p);
-        %
-        %         if output.problem == 0
-        %             if cost < lower-1e-3
-        %                 if ~checkfeasiblefast(relaxed_p,x)
-        %                     output.problem = 1;
-        %                 end
-        %             end
-        %         end
+        
         if output.problem~=1
-            %  [num2str(p.fixedvariable) ' ' p.fixdir ' ' num2str((cost-p.lower)/cost)]
             if isnan(lower)
                 lower = cost;
             end
@@ -860,6 +829,11 @@ while ~isempty(node) & (solved_nodes < p.options.bnb.maxiter) & (isinf(lower) | 
         % **********************************
         p0_feasible = 1;
         p1_feasible = 1;
+        
+%         if output.problem ~= 0
+%             cost = p.lower;
+%         end
+        
         switch whatsplit
             case 'binary'
                 [p0,p1,index] = binarysplit(p,x,index,cost,[],sosgroups,sosvariables);
@@ -1282,7 +1256,7 @@ if p.options.usex0
     z = p.x0;
     residual = resids(p,z);
     relaxed_feasible = all(residual(1:p.K.f)>=-1e-12) & all(residual(1+p.K.f:end)>=-1e-6);
-    if relaxed_feasible
+    if relaxed_feasible & all(z(p.integer_variables)==fix(z(p.integer_variables))) & all(z(p.binary_variables)==fix(z(p.binary_variables)))
         upper = computecost(p.f,p.corig,p.Q,z,p);%upper = p.f+p.c'*z+z'*p.Q*z;
         x_min = z;
     end

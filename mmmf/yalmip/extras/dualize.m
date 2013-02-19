@@ -54,7 +54,7 @@ elseif isa(obj,'logdet')
     LogDetTerm = 1;
     Ftemp = set([]);
     for i = 1:length(Plogdet)
-        Ftemp = Ftemp + set(Plogdet{i} > 0,'LOGDET');
+        Ftemp = Ftemp + set(Plogdet{i} >= 0,'LOGDET');
     end
     F = Ftemp + F;
 end
@@ -77,6 +77,7 @@ if nargin<5
 end
 
 if extend
+    options = sdpsettings;
     options.dualize = 1;
     options.allowmilp = 0;
     options.solver = '';
@@ -180,7 +181,7 @@ if ~isempty(elementwise_index)
     if ~isempty(implicit_positive)        
         implicit_positive = setdiff(implicit_positive,getvariables(F_CONE));
         if ~isempty(implicit_positive) 
-            Flp = Flp + set(recover(implicit_positive) > 0);
+            Flp = Flp + set(recover(implicit_positive) >= 0);
         end
     end
 
@@ -382,7 +383,6 @@ end
 if length(F)>0
     error('DUALIZE can only treat standard SDPs (and LPs) at the moment.')
 end
-
 
 % Sort the SDP cone variables X according to YALMIP
 % This is just to simplify some indexing later

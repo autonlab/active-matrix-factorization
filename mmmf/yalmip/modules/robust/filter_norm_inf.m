@@ -27,7 +27,7 @@ for i = 1:length(all_f)
     
     if (nnz(ci_basis(:,i))==0) & nnz(Bi)==0
         % This constraint row is constant
-        F = F + set(X(i)>0);
+        F = F + set(X(i)>=0);
     else
         ci = ci_basis(:,i);
 
@@ -38,7 +38,7 @@ for i = 1:length(all_f)
         if nnz(Bi) == 0
             if nnz(bi)==0 & nnz(Q_xx{i})==0
                 % Basically constant + w > 0
-                if  (di+e'*ci) - norm(T*ci,1) < 0
+                if  (di+e'*ci) - norm(T*ci,1) <= 0
                     error('Problem is trivially infeasible');
                     feasible = 0;
                     return
@@ -48,7 +48,7 @@ for i = 1:length(all_f)
                 alldi = [alldi;(di+e'*ci)-norm(T*ci,1) ];    
                % F = F + set(bi'*x + (di+e'*ci) - norm(T*ci,1) > 0);
             else                           
-                F = F + set(x'*Q_xx{i}*x+bi'*x + (di+e'*ci) - norm(T*ci,1) > 0);                
+                F = F + set(x'*Q_xx{i}*x+bi'*x + (di+e'*ci) - norm(T*ci,1) >= 0);                
             end
         else
             % (bi' + (Bi*w)')*x + (ci'*w + di)
@@ -80,7 +80,7 @@ for i = 1:length(all_f)
     end
 end
 if ~isempty(allbi)
-    F = F+[allbi*x+alldi>0];
+    F = F+[allbi*x+alldi>=0];
 end
 if ~isempty(collectA)
     z = collectE*x + collectd;

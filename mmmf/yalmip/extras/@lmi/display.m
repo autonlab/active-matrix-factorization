@@ -26,6 +26,7 @@ lmiinfo{12}= 'Logic constraint';
 lmiinfo{13}= 'Parametric declaration';
 lmiinfo{14}= 'Low-rank data declaration';
 lmiinfo{15}= 'Uncertainty declaration';
+lmiinfo{16}= 'Distribution declaration';
 lmiinfo{20}= 'Power cone constraint';
 lmiinfo{30}= 'User defined compilation';
 lmiinfo{40}= 'Generalized KYP constraint';
@@ -46,9 +47,10 @@ if nlmi>0
         data{i,1} = ['#' num2str(i)];
         data{i,2} = X.clauses{i}.symbolic;
         data{i,3} = lmiinfo{X.clauses{i}.type};
+        data{i,4} = '';
         if length(getvariables(X.clauses{i}.data)) == 1
             if any(ismember(getvariables(X.clauses{i}.data),rankVariables))
-                 data{i,3} = 'Rank constraint';
+                 data{i,3} = 'Rank constraint';                
             end
         end
         
@@ -66,6 +68,10 @@ if nlmi>0
 
             if size(X.clauses{i},2)>1
                 classification = [classification ',logic'];                
+            end
+           
+            if ~isempty(X.clauses{i}.confidencelevel)            
+                classification = [classification ',chance'];                
             end
            
             linearbilinearquadraticsigmonial = is(X.clauses{i}.data,'LBQS');
@@ -108,6 +114,7 @@ if length([data{:,4}])==0
     headers = {headers{:,1:3}};
     data = reshape({data{:,1:3}},length({data{:,1:3}})/3,3);
 end
+
 
 
 table('',headers,data)

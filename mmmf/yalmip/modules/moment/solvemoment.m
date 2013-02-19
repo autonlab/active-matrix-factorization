@@ -195,7 +195,7 @@ end
 % end
 
 % Lasserres relaxation (Lasserre, SIAM J. OPTIM, 11(3) 796-817)
-Fmoments = set(M{k+1}>0);
+Fmoments = set(M{k+1}>=0);
 for i = 1:length(vecConstraints)   
     if isinequality(i)
         v_k = floor((degree(vecConstraints(i))+1)/2);
@@ -207,7 +207,7 @@ for i = 1:length(vecConstraints)
                 continue
             end
         end
-        Fmoments = Fmoments+set(Localizer>0);
+        Fmoments = Fmoments+set(Localizer>=0);
     else
         if isa(vecConstraints(i),'double')
             if vecConstraints(i)~=0
@@ -222,7 +222,7 @@ for i = 1:length(vecConstraints)
 end
 for i = 1:length(sdpConstraints)
     v_k = floor((degree(sdpConstraints{i})+1)/2);
-    Fmoments = Fmoments+set(kron(M{k-v_k+1},sdpConstraints{i})>0);
+    Fmoments = Fmoments+set(kron(M{k-v_k+1},sdpConstraints{i})>=0);
 end
 
 % Add them all

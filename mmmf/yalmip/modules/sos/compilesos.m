@@ -112,6 +112,13 @@ end
 % *************************************************************************
 ParametricVariables = uniquestripped([depends(obj) depends(F_parametric) depends(params)]);
 
+if any(find(is(F_parametric,'parametric')))
+    F_parametric(find(is(F_parametric,'parametric')))=[];
+end
+if any(find(is(F,'parametric')))
+    F(find(is(F,'parametric')))=[];
+end
+
 if options.verbose>0;
     disp('-------------------------------------------------------------------------');
     disp('YALMIP SOS module started...');
@@ -293,7 +300,7 @@ if options.sos.newton
     tempops.solver = 'cdd,glpk,*';  % CDD is generally robust on these problems
     tempops.verbose = 0;
     tempops.saveduals = 0;
-    [aux1,aux2,aux3,LPmodel] = export(set(temp>0),temp,tempops);   
+    [aux1,aux2,aux3,LPmodel] = export(set(temp>=0),temp,tempops);   
 else
     LPmodel = [];
 end
@@ -515,7 +522,7 @@ switch options.sos.model
     case 1
         % Kernel model
         [F,obj,BlockedQ,Primal_matrices,Free_variables] = create_kernelmodel(BlockedA,Blockedb,F_parametric,parobj,options,[]);
-    case 2
+    case {2,4}
         % Image model
         [F,obj,BlockedQ,sol] = create_imagemodel(BlockedA,Blockedb,F_parametric,parobj,options);
 
@@ -952,7 +959,12 @@ else
     B = (base(:,ismember(g_vars,q_vars)));
     [Bnull,Q1,R1] = sparsenull(B);Bnull(abs(Bnull) < 1e-12) = 0;
     t = sdpvar(size(Bnull,2),1);
-    imQ = -Q1*(R1'\(A+C*recover(x_vars)))+Bnull*t;
+    if options.sos.model == 2
+        imQ = -Q1*(R1'\(A+C*recover(x_vars)))+Bnull*t;
+    else
+        H = testnice(B);
+        imQ = -B\(A+C*recover(x_vars))+H*t;        
+    end
 end
 notUsed = find(sum(abs(B),2)==0);
 if ~isempty(notUsed)
@@ -1170,3 +1182,20 @@ end
 sol =  solvesdp(F(find(keep)) + Frank,[],sdpsettings(options,'solver',''));
 
 
+function  [indx]=colspaces(A)
+indx = [];
+for i = 1:size(A,2)
+    s = max(find(A(:,i)));
+    indx = [indx s];
+end
+indx = unique(indx);
+
+function H = testnice(A_equ)
+[L,U,P] = lu(A_equ);
+[L,U,P] = lu(A_equ');
+r = colspaces(L');
+AA = L';
+H1 = AA(:,r);
+H2 = AA(:,setdiff(1:size(AA,2),r));
+H = P'*[-H1\H2;eye(size(H2,2))];
+    

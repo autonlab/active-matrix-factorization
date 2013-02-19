@@ -1,4 +1,4 @@
-function x_opt = plot(varargin)
+function varargout = plot(varargin)
 %PLOT  Plots the feasible region of a set of constraints
 %
 % p = plot(C,x,c,n,options)
@@ -36,6 +36,7 @@ else
         opts = sdpsettings('verbose',0);
     end
 end
+opts.verbose = max(opts.verbose-1,0);
 
 if any(is(F,'uncertain'))
     F = robustify(F,[],opts);
@@ -186,6 +187,10 @@ elseif nargout == 0
     end
 end
 
+if nargout > 0
+    varargout{1} = x_opt;
+end
+
 
 function [xout,errorstatus] = solvefordirection(c,internalmodel,uv)
 internalmodel.c = 0*internalmodel.c;
@@ -202,10 +207,14 @@ if size(x_opt,1)==2
     set(p,'LineStyle',options.plot.wirestyle);   
     set(p,'LineWidth',options.plot.linewidth);
     set(p,'EdgeColor',options.plot.edgecolor);
-  %  set(p,'Facealpha',options.plot.shade);    
+    set(p,'Facealpha',options.plot.shade);    
 else
-    K = convhulln(x_opt');
-    p = patch('Vertices', x_opt', 'Faces', K,'FaceColor', color);
+    try
+        K = convhulln(x_opt');
+        p = patch('Vertices', x_opt','Faces',K,'FaceColor', color);
+    catch
+         p = fill3(x_opt(1,:),x_opt(2,:),x_opt(3,:),1);
+    end
     set(p,'LineStyle',options.plot.wirestyle);   
     set(p,'LineWidth',options.plot.linewidth);
     set(p,'EdgeColor',options.plot.edgecolor);
@@ -215,43 +224,7 @@ else
     camlight('headlight','infinite');
     camlight('headlight','infinite');
     camlight('right','local');
-    camlight('left','local');
-   
-%     if ~(isequal(options.plot.wirestyle,'') | isequal(options.plot.wirestyle,'none'))
-%         for i = 1:size(K,1) 
-%             p1 = K(i,1);p2 = K(i,2);p3 = K(i,3);
-%             x1 = x_opt(:,p1);
-%             x2 = x_opt(:,p2);
-%             x3 = x_opt(:,p3);
-%             n = cross(x2-x1,x3-x1);n = n/norm(n);
-%             normals(:,i)=n;
-%         end
-%         for i = 1:size(K,1)    
-%             p1 = K(i,1);p2 = K(i,2);p3 = K(i,3);
-%             x1 = x_opt(:,p1);
-%             x2 = x_opt(:,p2);
-%             x3 = x_opt(:,p3);
-%             n = cross(x2-x1,x3-x1);n = n/norm(n);
-%             cand1 =  setdiff(find(sum((sort(K')' == p1) | (sort(K')' == p2),2)==2),i);
-%             cand2 =  setdiff(find(sum((sort(K')' == p1) | (sort(K')' == p3),2)==2),i);
-%             cand3 =  setdiff(find(sum((sort(K')' == p2) | (sort(K')' == p3),2)==2),i);
-%             cand = [cand1(:);cand2(:);cand3(:)];
-%             doplot = 1;
-%             if length(cand)>0
-%                for j = 1:length(cand)
-%                    if norm(n-normals(:,cand(j)))<1e-8
-%                        doplot = 0;
-%                    end
-%                end
-%             end
-%             if doplot
-%            l = line(x_opt(1,K(i,:)),x_opt(2,K(i,:)),x_opt(3,K(i,:)));
-%            set(l,'LineStyle',options.plot.wirestyle);
-%            set(l,'LineWidth',options.plot.linewidth);
-%            set(l,'Color',options.plot.wirecolor);
-%             end
-%         end
-%     end
+    camlight('left','local');   
 end
 
 
@@ -284,8 +257,14 @@ try % Try to ensure that we close h
     while i<=n & errorstatus ~=1
         [xi,errorstatus] = solvefordirection(c(:,i),internalmodel,localindex(:));
         if errorstatus == 2
-            disp('Discovered unbounded direction. You should add bounds on variables')
-        end
+            disp('Discovered unbounded direction. You should add bounds on variables')            
+        elseif errorstatus == 12
+            [xi,errorstatus] = solvefordirection(0*c(:,i),internalmodel,localindex(:));
+            if errorstatus == 0
+                errorstatus = 2;
+                disp('Discovered unbounded direction. You should add bounds on variables')
+            end
+        end                                        
         x_opt = [x_opt xi];
         if ~waitbar_created
             if etime(clock,t0)>waitbar_starts_at;

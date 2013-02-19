@@ -45,16 +45,14 @@ switch class(varargin{1})
         if m>=1
             varargout{1} = F + set(sum(xy) >= 1);
         else
-            varargout{1} = F + set(sum(xy) > z) + set(z > xy) +set(binary(z));
+            varargout{1} = F + set(sum(xy) >= z) + set(z >= xy) +set(binary(z));
         end
         varargout{2} = struct('convexity','none','monotonicity','exact','definiteness','none','model','integer');
         varargout{3} = xy;
 
-    case {'sdpvar','constraint'}
-        x = varargin{1};
-        y = varargin{2};
-        varargout{1} = yalmip('define','or',varargin{:});
-
+    case {'sdpvar','constraint'}             
+        varargout{1} = yalmip('define','or',varargin{:});       
+ 
     otherwise
 end
 

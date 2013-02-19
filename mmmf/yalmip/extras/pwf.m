@@ -155,10 +155,10 @@ switch class(varargin{1})
                     [M,m] = derivebounds(xi);
                     z{i} = sdpvar(length(xi),1);
                     cost = cost + z{i}'*Q{i}*z{i}+c{i}'*z{i} + g{i}*indicators(i);
-                    F = F + set(xi+(1-indicators(i))*m<z{i}<xi+(1-indicators(i)).*M);
-                    F = F + set(m*indicators(i) < z{i} < M*indicators(i));
+                    F = F + set(xi+(1-indicators(i))*m<=z{i}<xi+(1-indicators(i)).*M);
+                    F = F + set(m*indicators(i) <= z{i} <= M*indicators(i));
                 end
-                F = F + set(cost < t);
+                F = F + set(cost <= t);
             else
                 fmax_max = -inf;
                 fmin_min = inf;
@@ -170,7 +170,7 @@ switch class(varargin{1})
                     [fmax,fmin] = derivebounds(c{i}'*xi+g{i});                                        
                     fmax_max = max(fmax,fmax_max);
                     fmin_min = min(fmin,fmin_min);
-                    F = F + set(c{i}'*xi +g{i} < t + fmax*(1-indicators(i)));
+                    F = F + set(c{i}'*xi +g{i} <= t + fmax*(1-indicators(i)));
                 end
             end
             % To help variable strenghtening, constraint removal etc in

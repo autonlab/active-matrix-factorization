@@ -83,6 +83,9 @@ for i = 1:length(solvers)
     if solvers(i).show
         data{j,1} = upper(solvers(i).tag); 
         data{j,2} = solvers(i).version;
+        if length(solvers(i).subversion)>0
+            data{j,2} = [data{j,2} ' ' solvers(i).subversion];
+        end
         data{j,3} = foundstring{found(i)+1};   
         if ~donttest
             if found(i)
@@ -385,8 +388,8 @@ end
 function [pass,sol,result] = feasible(ops) 
 t = sdpvar(1,1);
 Y = sdpvar(2,2);
-F = set('Y<t*eye(2)');
-F = F+set('Y>[1 0.2;0.2 1]');
+F = set('Y<=t*eye(2)');
+F = F+set('Y>=[1 0.2;0.2 1]');
 sol = solvesdp(F,t,ops);
 pass = ismember(sol.problem,[0 3 4 5]);
 if pass
@@ -400,8 +403,8 @@ end
 function [pass,sol,result] = infeasible(ops)
 t = sdpvar(1,1);
 Y = sdpvar(2,2);
-F = set('t>0');
-F = F+set('t<-10');
+F = set('t>=0');
+F = F+set('t<=-10');
 sol = solvesdp(F,t,ops);
 pass = ~(sol.problem==0);
 result = 'N/A';
@@ -413,7 +416,7 @@ L = [1.9034 1.1501];
 
 Y = sdpvar(2,2);
 F = set([Y Y*(A-B*L)';(A-B*L)*Y Y]);
-F = F+set('L*Y*L''<1');
+F = F+set('L*Y*L''<=1');
 sol = solvesdp(F,-logdet(Y),ops);
 Y = double(Y);
 pass = ismember(sol.problem,[0 3 4 5]);
@@ -429,8 +432,8 @@ A = [1 0;0.4 1];
 B = [0.4;0.08]; 
 L = [1.9034 1.1501];  
 Y = sdpvar(2,2);
-F = set('[Y Y*(A-B*L)'';(A-B*L)*Y Y]>0');
-F = F+set('L*Y*L''<1');
+F = set('[Y Y*(A-B*L)'';(A-B*L)*Y Y]>=0');
+F = F+set('L*Y*L''<=1');
 sol = solvesdp(F,-logdet(Y),ops);
 Y = double(Y);
 pass = ismember(sol.problem,[0 3 4 5]);
@@ -447,13 +450,13 @@ z = sdpvar(1,1);
 
 X = [x 1 2;1 y 3;2 3 100];
 
-F = set(X>0);
-F = F+set(x>10);
-F = F+set(y>0); 
-F = F+set(z>0);
-F = F+set(x<1000);
-F = F+set(y<1000); 
-F = F+set(z<1000);
+F = set(X>=0);
+F = F+set(x>=10);
+F = F+set(y>=0); 
+F = F+set(z>=0);
+F = F+set(x<=1000);
+F = F+set(y<=1000); 
+F = F+set(z<=1000);
 sol = solvesdp(F,x+y+z,ops);
 x   = double(x);
 y   = double(y);
@@ -475,11 +478,11 @@ z = sdpvar(1,1);
 
 X = [x 2;2 z];
 
-F = set('X>0');
-F = F+set('x>0');
-F = F+set('z>0');
-F = F+set('x<10');
-F = F+set('z<10');
+F = set('X>=0');
+F = F+set('x>=0');
+F = F+set('z>=0');
+F = F+set('x<=10');
+F = F+set('z<=10');
 sol = solvesdp(F,x+z,ops);
 x   = double(x);
 %y   = double(y);
@@ -508,7 +511,7 @@ Q = 0.25*(diag(Q*ones(n,1))-Q);
 t = sdpvar(1,1);
 tau = sdpvar(n,1);
 
-F = set('t>0');
+F = set('t>=0');
 
 M = [-Q zeros(n,1);zeros(1,n) t];
 
@@ -517,7 +520,7 @@ for i = 1:n
     M = M+tau(i)*[ei*ei' zeros(n,1);zeros(1,n) -1];
 end
 
-F = F+set(M>0);
+F = F+set(M>=0);
 sol = solvesdp(F,t,ops);
 
 t   = double(t);
@@ -584,8 +587,8 @@ b = [1;1];
 F = set('||x-a||<1');
 F = F+set('||x-b||<1');
 F = F+set('x(1)==0.35');
-F = F+set('z(1,end)>5');
-F = F+set('z(2,end)<100');
+F = F+set('z(1,end)>=5');
+F = F+set('z(2,end)<=100');
 F = F+set('z(2)==5');
 
 sol = solvesdp(F,sum(x),ops);
@@ -612,10 +615,10 @@ x = [2;0];
 t = sdpvar(2*N,1);
 U = sdpvar(N,1);   
 Y = H*x+S*U; 
-F = set(U<1)+set(U>-1);
-F = F+set(Y(N)>-1);  
-F = F+set(Y(N)<1); 
-F = F+set([Y;U]<t)+set([Y;U]>-t);
+F = set(U<=1)+set(U>=-1);
+F = F+set(Y(N)>=-1);  
+F = F+set(Y(N)<=1); 
+F = F+set([Y;U]<=t)+set([Y;U]>=-t);
 sol = solvesdp(F,sum(t),ops);
 pass = ismember(sol.problem,[0 3 4 5]); 
 if pass
@@ -633,9 +636,9 @@ C = [0.5 0.5];
 x = [2;0];
 U = sdpvar(N,1);   
 Y = H*x+S*U; 
-F = set(U<1)+set(U>-1);
-F = F+set(Y(N)>-1);  
-F = F+set(Y(N)<1); 
+F = set(U<=1)+set(U>=-1);
+F = F+set(Y(N)>=-1);  
+F = F+set(Y(N)<=1); 
 sol = solvesdp(F,Y'*Y+U'*U,ops);
 pass = ismember(sol.problem,[0 3 4 5]); 
 if pass
@@ -654,10 +657,10 @@ C = [0.5 0.5];
 x = [2;0];
 U = sdpvar(N,1);   
 Y = H*x+S*U; 
-F = set(U<1)+set(U>-1);
-F = F+set(Y(N)>-1);  
-F = F+set(Y(N)<1); 
-F = F + set(U>0);
+F = set(U<=1)+set(U>=-1);
+F = F+set(Y(N)>=-1);  
+F = F+set(Y(N)<=1); 
+F = F + set(U>=0);
 sol = solvesdp(F,Y'*Y+U'*U,ops);
 pass = ismember(sol.problem,[1]); 
 result = 'N/A';
@@ -668,7 +671,7 @@ function [pass,sol,result] = infeasiblesdp(ops)
 A = magic(6);
 A = A*A';
 P = sdpvar(6,6);
-sol = solvesdp(set(A'*P+P*A < -P) + set(P>eye(6)),trace(P),ops); 
+sol = solvesdp(set(A'*P+P*A <= -P) + set(P>=eye(6)),trace(P),ops); 
 pass = (sol.problem==1);
 result = 'N/A';
 
@@ -678,7 +681,7 @@ n = 5;
 P = magic(n);
 Z = sdpvar(n,n,'toeplitz');
 t = sdpvar(n,n,'full');
-F = set(P-Z<t)+set(P-Z>-t);
+F = set(P-Z<=t)+set(P-Z>=-t);
 sol = solvesdp(F,sum(sum(t)),ops);
 pass = ismember(sol.problem,[0 3 4 5]); 
 result = 'N/A';
@@ -713,14 +716,14 @@ x3 = sdpvar(1,1);
 
 objective = -2*x1+x2-x3;
 
-F = set(x1*(4*x1-4*x2+4*x3-20)+x2*(2*x2-2*x3+9)+x3*(2*x3-13)+24>0);
-F = F + set(4-(x1+x2+x3)>0);
-F = F + set(6-(3*x2+x3)>0);
-F = F + set(x1>0);
-F = F + set(2-x1>0);
-F = F + set(x2>0);
-F = F + set(x3>0);
-F = F + set(3-x3>0);
+F = set(x1*(4*x1-4*x2+4*x3-20)+x2*(2*x2-2*x3+9)+x3*(2*x3-13)+24>=0);
+F = F + set(4-(x1+x2+x3)>=0);
+F = F + set(6-(3*x2+x3)>=0);
+F = F + set(x1>=0);
+F = F + set(2-x1>=0);
+F = F + set(x2>=0);
+F = F + set(x3>=0);
+F = F + set(3-x3>=0);
 sol = solvemoment(F,objective,ops);
 pass = ismember(sol.problem,[0 3 4 5]); 
 result = 'N/A';
@@ -751,7 +754,7 @@ function [pass,sol,result]=bmitest(ops)
 A = [-1 2;-3 -4];
 P = sdpvar(2,2);
 alpha = sdpvar(1,1);
-F = set(P>eye(2))+set(A'*P+P*A < -2*alpha*P)+set(alpha > 0);
+F = set(P>=eye(2))+set(A'*P+P*A <= -2*alpha*P)+set(alpha >= 0);
 sol = solvesdp(F,-alpha,ops);
 pass = ismember(sol.problem,[0 3 4 5]); 
 result = 'N/A';
@@ -790,7 +793,7 @@ D6 = R(6)*Cout6;
 D7 = R(7)*Cout7;
 
 % Constraints
-F = set(x > 1) + set(P < 20) + set(A < 100);
+F = set(x >= 1) + set(P <= 20) + set(A <= 100);
 
 % Objective
 D = max((D1+D4+D6),(D1+D4+D7),(D2+D4+D6),(D2+D4+D7),(D2+D5+D7),(D3+D5+D6),(D3+D7));
@@ -810,7 +813,7 @@ end
 
 
 function result = resultstring(x,xopt)
-if norm(double(x(:))-xopt(:))<1e-3*(1+norm(xopt(:)))
+if norm(double(x(:))-xopt(:))<=1e-3*(1+norm(xopt(:)))
     result = 'Correct';
 else
     result = 'Incorrect';

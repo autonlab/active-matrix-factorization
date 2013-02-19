@@ -96,6 +96,8 @@ Names = {'solver'
     %  'plot.gradcolor'
     %'kkt.primalbounds'
     'kkt.dualbounds'
+    'kkt.minnormdual'
+    'kkt.licqcut'
     'kkt.dualpresolve.lplift'
     'kkt.dualpresolve.passes'
     'plot.edgecolor'
@@ -160,6 +162,13 @@ Names = {'solver'
     'bmibnb.numglobal'
     'bmibnb.localstart'
     'bmibnb.strengthscheme'
+    'bmibnb.cut.multipliedequality'
+    'bmibnb.cut.evalvariable'
+    'bmibnb.cut.bilinear'  
+    'bmibnb.cut.monomial'  
+    'cbc.tolint'
+    'cbc.maxiter'
+    'cbc.maxnodes'
     'cutsdp.solver'
     'cutsdp.maxiter'
     'cutsdp.cutlimit'
@@ -176,6 +185,7 @@ Names = {'solver'
     'robust.auxreduce'
     'robust.polya'
     'robust.reducedual'
+    'robust.reducesemiexplicit'
     'global.branchmethod'
     'global.branchrule'
     'global.lpreduce'
@@ -201,6 +211,7 @@ Names = {'solver'
     'gurobi.SolutionLimit'
     'gurobi.TimeLimit'
     'gurobi.BarConvTol'
+    'gurobi.BarQCPConvTol'
     'gurobi.FeasibilityTol'
     'gurobi.IntFeasTol'
     'gurobi.MarkowitzTol'
@@ -218,15 +229,18 @@ Names = {'solver'
     'gurobi.SiftMethod'
     'gurobi.SimplexPricing'
     'gurobi.BarCorrectors'
+    'gurobi.BarHomogeneous'
     'gurobi.BarOrder'
     'gurobi.Crossover'
     'gurobi.CrossoverBasis'
+    'gurobi.QCPDual'
     'gurobi.BranchDir'
     'gurobi.Heuristics'
     'gurobi.ImproveStartGap'
     'gurobi.ImproveStartTime'
     'gurobi.MinRelNodes'
     'gurobi.MIPFocus'
+    'gurobi.MIQCPMethod'
     'gurobi.NodefileDir'
     'gurobi.NodefileStart'
     'gurobi.NodeMethod'
@@ -256,19 +270,30 @@ Names = {'solver'
     'gurobi.AggFill'
     'gurobi.Aggregate'
     'gurobi.DisplayInterval'
+    'gurobi.DualReductions'
+    'gurobi.FeasRelaxBigM'
     'gurobi.IISMethod'
     'gurobi.LogFile'
     'gurobi.Method'
     'gurobi.PreCrush'
     'gurobi.PreDepRow'
     'gurobi.PreDual'
+    'gurobi.PrePasses'
     'gurobi.PreMIQPMethod'
     'gurobi.PrePasses'
+    'gurobi.PreQLinearize'
     'gurobi.Presolve'
     'gurobi.PreSparsify'
     'gurobi.ResultFile'
     'gurobi.Threads'
     
+    'filtersd.maxiter'
+    'filtersd.maxtime'
+    'filtersd.maxfeval'        
+    'filtersd.rho'
+    'filtersd.htol'
+    'filtersd.rgtol'
+         
     'mpcvx.solver'
     'mpcvx.relgaptol'
     'mpcvx.absgaptol'
@@ -567,7 +592,7 @@ Names = {'solver'
     'lindo.METHOD'
     
     
-    'mosek.param'
+    %'mosek.param'
     'sos.model'
     'sos.newton'
     'sos.congruence'
@@ -696,10 +721,10 @@ else
     % YALMIP options
     options.solver = '';
     options.verbose = 1;
-    options.dimacs = 0;
+    options.debug = 0;
+    options.usex0 = 0;
     options.warning = 1;
-    options.cachesolvers = 0;
-    options.beeponproblem = [-5 -4 -3 -2 -1];
+    options.cachesolvers = 0;  
     options.showprogress = 0;
     options.saveduals = 1;
     options.removeequalities = 0;
@@ -711,26 +736,29 @@ else
     options.relax = 0;
     options.dualize = 0;
     options.usex0 = 0;
-    options.shift = 0;
     options.savedebug = 0;
     options.debug = 0;
     options.expand = 1;
     options.allowmilp = 1;
     options.allownonconvex = 1;
-    
+    options.shift = 0;
+    options.dimacs = 0;
+    options.beeponproblem = [-5 -4 -3 -2 -1];
     % options.plot.colormap = 'hsv';
     % options.plot.gradcolor = 0;
     options.plot.edgecolor = 'k';
     options.plot.wirestyle = '-';
     options.plot.wirecolor = 'k';
     options.plot.linewidth = 0.5;
-    options.plot.shade = 0.6;
+    options.plot.shade = 1;
     options.plot.waitbar = 1;
     
     %options.kkt.primalbounds = 1;
     options.kkt.dualbounds = 1;
     options.kkt.dualpresolve.passes = 1;
     options.kkt.dualpresolve.lplift = 1;
+    options.kkt.minnormdual = 0;
+    options.kkt.licqcut = 0;
     
     options.sos.model = 0;
     options.sos.newton = 1;
@@ -758,6 +786,7 @@ else
     options.robust.lplp = 'enumeration';
     options.robust.auxreduce = 'none';
     options.robust.reducedual = 0;
+    options.robust.reducesemiexplicit = 0;
     options.robust.polya = nan;
     
     options.bilevel.algorithm = 'internal';
@@ -765,7 +794,7 @@ else
     options.bilevel.outersolver = '';
     options.bilevel.innersolver = '';
     options.bilevel.rootcuts = 0;
-    options.bilevel.solvefrp = 1;
+    options.bilevel.solvefrp = 0;
     options.bilevel.relgaptol = 1e-3;
     options.bilevel.feastol = 1e-6;
     options.bilevel.compslacktol = 1e-8;
@@ -804,6 +833,10 @@ else
     % Options for global BMI solver
     options.bmibnb.branchmethod = 'best';
     options.bmibnb.branchrule = 'omega';
+    options.bmibnb.cut.multipliedequality = 0;
+    options.bmibnb.cut.evalvariable = 1;
+    options.bmibnb.cut.bilinear = 1;
+    options.bmibnb.cut.monomial = 1;
     options.bmibnb.sdpcuts = 0;
     options.bmibnb.lpreduce = 1;
     options.bmibnb.lowrank  = 0;
@@ -824,7 +857,7 @@ else
     options.bmibnb.numglobal = inf;
     options.bmibnb.localstart = 'relaxed';
     options.bmibnb.presolvescheme = [];
-    options.bmibnb.strengthscheme = [1 2 1 3 1 4 1 5 1 6 1 4 1 6 1 4 1];
+    options.bmibnb.strengthscheme = [1 2 1 3 1 4 1 6 1 5 1 4 1 6 1 4 1];
     
     options.cutsdp.solver = '';
     options.cutsdp.maxiter = 100;
@@ -867,6 +900,10 @@ else
     options.mpcvx.plot = 0;
     options.mpcvx.rays = 'n*20';
     
+    options.cbc.tolint = 1e-4;
+    options.cbc.maxiter = 10000;
+    options.cbc.maxnodes = 100000;
+
     options.cdd.method = 'criss-cross';
     
     options.clp.solver = 1;
@@ -879,23 +916,41 @@ else
     
     options.quadprogbb.max_time = inf;
   
-      
     try
-        options.bonmin.ipopt = bonminset;        
+        options.ipopt = ipoptset;    
+        options.ipopt.hessian_approximation = 'limited-memory';
+    catch
+        options.ipopt.mu_strategy = 'adaptive';
+        options.ipopt.tol = 1e-7;
+        options.ipopt.hessian_approximation = 'limited-memory';    
+    end
+      
+    try   
+        options.bonmin = bonminset;   
         options.bonmin.ipopt.hessian_approximation = 'limited-memory';
-        options.bonmin.algorithm = options.bonmin.ipopt.algorithm;
-        options.bonmin.ipopt = rmfield(options.bonmin.ipopt,'var_lin');
-        options.bonmin.ipopt = rmfield(options.bonmin.ipopt,'cons_lin');
-        options.bonmin.ipopt = rmfield(options.bonmin.ipopt,'algorithm');
+        options.bonmin = rmfield(options.bonmin,'var_lin');
+        options.bonmin = rmfield(options.bonmin,'cons_lin');
         
         cNames = recursivefieldnames(options.bonmin);
         for i = 1:length(cNames)
-            Names{end+1} = ['bonmin.' cNames{i}];          
+            Names{end+1} = ['bonmin.' cNames{i}];
         end
         [m,n] = size(Names);
         names = lower(Names);
     catch
         options.bonmin =[];
+    end
+    
+     try
+        options.nomad = nomadset;                       
+        cNames = recursivefieldnames(options.nomad);
+        for i = 1:length(cNames)
+            Names{end+1} = ['nomad.' cNames{i}];          
+        end
+        [m,n] = size(Names);
+        names = lower(Names);
+    catch
+        options.nomad =[];
     end
     
     try
@@ -926,6 +981,7 @@ else
         
     try
         options.cplex = cplexoptimset('cplex');
+        options.cplex.output.clonelog = 0;
         remove = zeros(length(Names),1);
         for i = 1:length(Names)
             if strfind(Names{i},'cplex')
@@ -985,7 +1041,7 @@ else
     options.csdp.usexzgap = 1;
     options.csdp.tweakgap = 0;
     
-    options.mosek.param = [];
+  %  options.mosek.param = [];
     
     % Options for DSDP 5.6
     options.dsdp.r0 = -1;
@@ -1014,6 +1070,11 @@ else
     options.dsdp.max_infeasible_mu_reduction = 2;
     options.dsdp.max_mu_reduction = 1e8;
     options.dsdp.maxlanczos = 20;
+    
+    
+    options.filtersd.maxiter = 1500;
+    options.filtersd.maxtime = 1000;
+    options.filtersd.maxfeval = 10000;         
     
     % Options for GLPK
     options.glpk.lpsolver = 1;
@@ -1062,6 +1123,7 @@ else
     options.gurobi.TimeLimit = inf;
     
     options.gurobi.BarConvTol = 1e-8;
+     options.gurobi.BarQCPConvTol = 1e-6;
     options.gurobi.FeasibilityTol = 1e-6;
     options.gurobi.IntFeasTol = 1e-6;
     options.gurobi.MarkowitzTol = 0.0078125;
@@ -1079,15 +1141,18 @@ else
     options.gurobi.SiftMethod = -1;
     options.gurobi.SimplexPricing = -1;
     options.gurobi.BarCorrectors = -1;
+    options.gurobi.BarHomogeneous = -1;
     options.gurobi.BarOrder = -1;
     options.gurobi.Crossover = -1;
     options.gurobi.CrossoverBasis = 0;
+    options.gurobi.QCPDual = 0;
     options.gurobi.BranchDir = 0;
     options.gurobi.Heuristics = 0.05;
     options.gurobi.ImproveStartGap = 0;
     options.gurobi.ImproveStartTime = inf;
     options.gurobi.MinRelNodes = 0;
     options.gurobi.MIPFocus = 0;
+    options.gurobi.MIQCPMethod = -1;
     options.gurobi.NodefileDir = '.';
     options.gurobi.NodefileStart = inf;
     options.gurobi.NodeMethod = 1;
@@ -1115,8 +1180,10 @@ else
     options.gurobi.CutPasses = -1;
     options.gurobi.GomoryPasses = -1;
     options.gurobi.AggFill = 10;
-    options.gurobi.Aggregate = 1;
+    options.gurobi.Aggregate = 1;    
     options.gurobi.DisplayInterval = 5;
+    options.gurobi.DualReductions = 1;
+    options.gurobi.FeasRelaxBigM = 1e6;
     options.gurobi.IISMethod = -1;
     options.gurobi.LogFile = '';
     options.gurobi.Method = -1;
@@ -1124,16 +1191,17 @@ else
     options.gurobi.PreDepRow = -1;
     options.gurobi.PreDual = -1;
     options.gurobi.PreMIQPMethod = -1;
+    options.gurobi.PreQLinearize = -1;
     options.gurobi.PrePasses = -1;
     options.gurobi.Presolve = -1;
     options.gurobi.PreSparsify = 0;
     options.gurobi.ResultFile = '';
     options.gurobi.Threads = 0;
     
-    options.ipopt.mu_strategy = 'adaptive';
-    options.ipopt.tol = 1e-7;
-    options.ipopt.hessian_approximation = 'limited-memory';
-    
+%     options.ipopt.mu_strategy = 'adaptive';
+%     options.ipopt.tol = 1e-7;
+%     options.ipopt.hessian_approximation = 'limited-memory';
+%     
     options.kypd.solver = '';
     options.kypd.lyapunovsolver = 'schur';
     options.kypd.reduce = 0;
@@ -1291,7 +1359,7 @@ else
     options.sdplr.centol = 1e-1;
     options.sdplr.dir = 1;
     options.sdplr.penfac = 2;
-    options.sdplr.reduce = 1;
+    options.sdplr.reduce = 0;
     options.sdplr.limit = 3600;
     options.sdplr.soln_factored = 0;
     options.sdplr.maxrank = 0;
@@ -1527,11 +1595,22 @@ end
 function [Names,solvernames,solverops] = trytoset(solver,Names)
 
 try
-    solverops = optimset(solver);
+    try
+        solverops = optimset(solver);
+    catch
+        solverops = optimset;
+    end
     solvernames = fieldnames(solverops);
     
-    if any(strcmp(solvernames,'LargeScale'))
-        solverops.LargeScale = 'off';
+    
+    if isequal(solver, 'quadprog') && isfield(solverops, 'Algorithm') && ~isempty(solverops.Algorithm)
+        solverops.Algorithm = 'active-set';
+    end
+
+    if  any(strcmp(solvernames,'LargeScale'))
+        if isequal(solver, 'quadprog')
+            solverops.LargeScale = 'off';
+        end
     else
         solvernames{end+1} = 'LargeScale';
         solverops.LargeScale = 'off';

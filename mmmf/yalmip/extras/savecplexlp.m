@@ -4,9 +4,6 @@ function filename = savecplexlp(varargin)
 %    SAVCPLEXLP(F,h,'filename')    Saves the problem min(h(x)), F(x)>0 to the file filename
 %    SAVCPLEXLP(F,h)               A "Save As"- box will be opened
 %
-% Note that YALMIP changes the variable names. Continuous variables
-% are called x, binary are called y while z denotes integer variables.
-
 % Author Johan Lofberg, modified by Yi-Shuai NIU
 % $Id: savecplexlp.m,v 1.5 2008-06-02 10:27:56 joloef Exp $
 
@@ -61,7 +58,8 @@ end
 
 fid = fopen(filename,'w');
 
-obj = lptext(c(:)');
+obj = strrep(lptext(c(:)'),'+ -','-');
+    
 fprintf(fid,['Minimize\r\n obj:  ' obj(1:end-2) '']);
 if any(any(Q))
     obj = qptext(Q);
@@ -74,14 +72,15 @@ fprintf(fid,['Subject To\r\n']);
 
 for i = 1:length(b)
     rowtext = lptext(-A(i,:));
-    rowtext = [rowtext(1:end-2) '>= ' sprintf('%10.10f',full(-b(i)))];
-    fprintf(fid,[' c%i: ' rowtext ''],i);
+    rhs = sprintf('%0.20g',full(-b(i)));
+    rowtext = [rowtext(1:end-2) ' >= ' rhs]; 
+    fprintf(fid,[' c%i: ' strrep(rowtext,'+ -','-') ''],i);
     fprintf(fid,'\r\n');
 end
 for i = 1:length(beq)
     rowtext = lptext(-Aeq(i,:));
-    rowtext = [rowtext(1:end-2) '== ' sprintf('%10.10f',full(-beq(i)))];
-    fprintf(fid,[' eq%i: ' rowtext ''],i);
+    rowtext = [rowtext(1:end-2) '== ' sprintf('%0.20g',full(-beq(i)))];    
+    fprintf(fid,[' eq%i: ' strrep(rowtext,'+ -','-') ''],i);
     fprintf(fid,'\r\n');
 end
 
@@ -90,14 +89,14 @@ if length(c)>length(model.binary_variables)
     for i = 1:length(c)
         %        if ~ismember(i,model.binary_variables)
         if isinf(lb(i)) & isinf(ub(i))
-            fprintf(fid,[' x%i free\r\n'],i);
+            fprintf(fid,[' x%i free\n\r'],i);
         elseif lb(i)==0 & isinf(ub(i))
             % Standard non-negative variable
         elseif isinf(ub(i))
-            s = strrep(sprintf(['%10.10f <= x%i \r\n'],[lb(i) i ]),'Inf','inf');
+            s = strrep(sprintf(['%0.20g <= x%i \r\n'],[lb(i) i ]),'Inf','inf');
             fprintf(fid,s);
         else
-            s = strrep(sprintf(['%10.10f <= x%i <= %10.10f \r\n'],[lb(i) i ub(i)]),'Inf','inf');
+            s = strrep(sprintf(['%0.20g <= x%i <= %0.20g \r\n'],[lb(i) i ub(i)]),'Inf','inf');
             fprintf(fid,s);
         end
         %        end
@@ -125,15 +124,25 @@ fclose(fid);
 
 function rowtext = lptext(a)
 [aux,poss,vals] = find(a);
-rowtext = sprintf('%10.10f x%d + ',reshape([vals(:) poss(:)]',[],1));
-rowtext = strrep(rowtext,'+ -','- ');
+rowtext = sprintf('%0.20g x%d + ',reshape([vals(:) poss(:)]',[],1));
+%rowtext = strrep(rowtext,'+ -','- ');
+%rowtext(isspace(rowtext))=[];
+%rowtext = strrep(rowtext,'+-','-');
+%rowtext = strrep(rowtext,'-1x','-x');
+%rowtext = strrep(rowtext,'+1x','+x');
 
 function rowtext = qptext(Q)
 n=size(Q,2);
-rowtext = sprintf('%10.10f x%d ^2 + ',reshape([diag(Q) (1:n)']',[],1));
+q = diag(Q);
+if any(q)
+    i = find(q);
+    rowtext = sprintf('%0.20g x%d ^2 + ',reshape([q(i) i]',[],1));
+end
 for i=1:n
     for j=i+1:n
-        rowtext = [rowtext sprintf('%10.10f x%d * x%d + ',Q(i,j)+Q(j,i),i,j)];
+        if ~(Q(i,j)+Q(j,i)==0)
+        rowtext = [rowtext sprintf('%0.20g x%d * x%d + ',Q(i,j)+Q(j,i),i,j)];
+        end
     end
 end
 rowtext = strrep(rowtext,'+ -','- ');

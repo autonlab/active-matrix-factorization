@@ -5,6 +5,10 @@
 % Author Johan Löfberg
 % $Id: yalmipdemo.m,v 1.7 2007-04-04 07:30:58 joloef Exp $
 
+disp('Please run examples from YALMIP Wiki instead.')
+disp('The examples here are obsolute.')
+return
+
 % Check for paths
 if ~(exist('socpex')==2)
     disp('You have to set the path to the demo library (...\yalmip\demos\)')

@@ -531,7 +531,7 @@ for clique = 1:length(commonProjections)
         A(:,j)=[];
         left = recover(setdiff(allVariables,newAuxVariables));
         X = b-A*left(:);
-        Fnew = [Fnew,[[X > 0] : 'Projected uncertain']];
+        Fnew = [Fnew,[[X >= 0] : 'Projected uncertain']];
     end
 end
 if started & ops.verbose

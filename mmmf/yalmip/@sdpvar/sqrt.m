@@ -63,7 +63,7 @@ switch class(varargin{1})
                 X = varargin{3};
                 [U,L] = derivebounds(X);
                 if L<0
-                    F = set(X > 0);
+                    F = set(X >= 0);
                 else
                     F = [];
                 end

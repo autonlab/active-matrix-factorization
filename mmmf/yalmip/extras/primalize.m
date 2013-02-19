@@ -71,7 +71,7 @@ end
 if model.K.l > 0
     x = sdpvar(model.K.l,1);
     xvec = [xvec;x];
-    Fdual = Fdual + set(x>0);
+    Fdual = Fdual + set(x>=0);
 end
 
 if model.K.q(1) > 0
@@ -86,7 +86,7 @@ if model.K.s(1)>0
     for i = 1:length(model.K.s)
         X{i} = sdpvar(model.K.s(i),model.K.s(i));
         xvec = [xvec;X{i}(:)];
-        Fdual = Fdual + set(X{i}>0);       
+        Fdual = Fdual + set(X{i}>=0);       
     end
 end
 
