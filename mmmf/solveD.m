@@ -64,7 +64,8 @@ function [x,xu,xv,Qval,Dval] = solveD(y,maxoravg,C,solver)
   if (nargin>2) & (C<inf)
     c = c+set(q<=C);
   end
-  d = solvesdp(c,-sum(q),sdpsettings('showprogress',1,'solver',solver));
+  settings = sdpsettings('showprogress', 1, 'solver', solver, 'cachesolvers', 1);
+  d = solvesdp(c, -sum(q), settings);
   num_runs = 1;
   while d.problem ~= 0
       disp(d.info);
@@ -73,7 +74,7 @@ function [x,xu,xv,Qval,Dval] = solveD(y,maxoravg,C,solver)
       end
       % hackety hack
       C = C * (1 + randn() * .1);
-      d = solvesdp(c,-sum(q),sdpsettings('showprogress',1,'solver',solver));
+      d = solvesdp(c, -sum(q), settings);
       num_runs = num_runs + 1;
   end
   xx = dual(c('QI'));
