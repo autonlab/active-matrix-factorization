@@ -116,6 +116,7 @@ def exp_a2bc(np.ndarray[DTYPE_t, ndim=2] mean not None,
           + 2 * ma * mb * cov_ac
           + 2 * cov_ab * cov_ac)
 
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def exp_dotprod_sq(int num_users,

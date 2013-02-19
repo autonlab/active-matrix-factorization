@@ -108,7 +108,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
                  knowable=None,
                  fit_type=('batch',)):
         # the actual PMF model
-        super(ActivePMF, self).__init__(rating_tuples,
+        super(MNActivePMF, self).__init__(rating_tuples,
                 latent_d=latent_d, subtract_mean=False,
                 knowable=knowable, fit_type=fit_type)
 
@@ -143,14 +143,14 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
 
     def __copy__(self):
         # need to copy fields from super
-        res = ActivePMF(self.ratings, self.latent_d, self.rating_values,
+        res = MNActivePMF(self.ratings, self.latent_d, self.rating_values,
                 self.discrete_expectations)
         res.__setstate__(self.__getstate__())
         return res
 
     def __deepcopy__(self, memodict):
         # need to copy fields from super
-        res = ActivePMF(self.ratings, self.latent_d, self.rating_values,
+        res = MNActivePMF(self.ratings, self.latent_d, self.rating_values,
                 self.discrete_expectations)
         res.__setstate__(deepcopy(self.__getstate__(), memodict))
         return res
@@ -271,106 +271,106 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         p = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
         return np.abs(self.mean - p).mean()
 
+    def approx_pred_mean_var(self, i, j):
+        '''
+        Returns the mean and variance of the prediction for the (i, j)th rating
+        under the matrix normal approximation.
+        '''
+        mean = self.mean
+        cov_useritems = self.cov_useritems
+        cov_latents = self.cov_latents
+
+        j_ = j + self.num_users
+
+        mn = ((mean[i, :] * mean[j_, :]).sum()
+              + cov_useritems[i, j_] * cov_latents.trace())
+        e2 = exp_dotprod_sq(self.num_users, mean, cov_useritems, cov_latents,
+                             i, j)
+        return mn, e2 - mn**2
+
     def approx_pred_means_vars(self):
         '''
         Returns the mean and variance of the predicted R matrix under
-        the normal approximation.
+        the matrix normal approximation.
         '''
         p_mean = np.zeros((self.num_users, self.num_items))
         p_var = np.zeros((self.num_users, self.num_items))
 
-        mean = self.mean
-        cov = self.cov
-
-        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
-
         # TODO: vectorize
         for i in range(self.num_users):
-            us = self.u[:, i]
             for j in range(self.num_items):
-                vs = self.v[:, j]
-                p_mean[i, j] = m = (mean[us] * mean[vs] + cov[us, vs]).sum()
-                p_var[i, j] = e_dot_sq(i, j) - m**2
+                p_mean[i, j], p_var[i, j] = self.approx_pred_mean_var(i, j)
 
         return p_mean, p_var
 
-    def approx_pred_covs(self):
-        '''
-        Returns the covariance between elements of the predicted R matrix
-        under the normal approximation.
-        '''
-        n = self.num_users
-        m = self.num_items
-        D = self.latent_d
-
-        pred_covs = np.zeros((n*m, n*m))
-        # covariance of U_i.V_j with U_a.V_b
-
-        mean = self.mean
-        cov = self.cov
-
-        qexp = functools.partial(quadexpect, mean, cov)
-        a2bc = functools.partial(exp_a2bc, mean, cov)
-        e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
-
-        # TODO: vectorize, maybe cythonize
-        ijs = list(itertools.product(range(n), range(m)))
-
-        for idx1, (i, j) in enumerate(ijs):
-            u_i = self.u[:, i]
-            v_j = self.v[:, j]
-
-            # variance of U_i . V_j
-            pred_covs[idx1, idx1] = (
-                e_dot_sq(i, j)
-                - (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() ** 2
-            )
-
-            # loop over lower triangle of the cov matrix
-            for idx2 in range(idx1 + 1, len(ijs)):
-                a, b = ijs[idx2]
-                u_a = self.u[:, a]
-                v_b = self.v[:, b]
-
-                cv = 0
-
-                # sum_k sum_{l != k} E[Uki Vkj Ula Vlb]
-                for k in range(D):
-                    # sum over l != k
-                    for l in range(k):
-                        cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
-                    for l in range(k+1, D):
-                        cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
-
-                # sum_k E[Uki Uka Vkj Vkb]
-                if i == a:  # j != b
-                    for k in range(D):
-                        cv += a2bc(u_i[k], v_j[k], v_b[k])
-                elif j == b:  # i != a
-                    for k in range(D):
-                        cv += a2bc(v_j[k], u_i[k], u_a[k])
-                else:  # i != a, j != b
-                    for k in range(D):
-                        cv += qexp(u_i[k], v_j[k], u_a[k], v_b[k])
-
-                # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
-                cv -= ((mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() *
-                       (mean[u_a] * mean[v_b] + cov[u_a, v_b]).sum())
-
-                pred_covs[idx1, idx2] = cv
-                pred_covs[idx2, idx1] = cv
-
-        return pred_covs
-
-    def approx_pred_mean_var(self, i, j):
-        mean = self.mean
-        cov = self.cov
-        us = self.u[:, i]
-        vs = self.v[:, j]
-
-        mn = (mean[us] * mean[vs] + cov[us, vs]).sum()
-        var = exp_dotprod_sq(self.u, self.v, mean, cov, i, j) - mn**2
-        return mn, var
+    # def approx_pred_covs(self):  # XXX TODO
+    #     '''
+    #     Returns the covariance between elements of the predicted R matrix
+    #     under the normal approximation.
+    #     NOTE: covariance matrix is likely to be enormous...
+    #     '''
+    #     n = self.num_users
+    #     m = self.num_items
+    #     D = self.latent_d
+    #
+    #     pred_covs = np.zeros((n*m, n*m))
+    #     # covariance of U_i.V_j with U_a.V_b
+    #
+    #     mean = self.mean
+    #     cov = self.cov
+    #
+    #     qexp = functools.partial(quadexpect, mean, cov)
+    #     a2bc = functools.partial(exp_a2bc, mean, cov)
+    #     e_dot_sq = functools.partial(exp_dotprod_sq, self.u, self.v, mean, cov)
+    #
+    #     # TODO: vectorize, maybe cythonize
+    #     ijs = list(itertools.product(range(n), range(m)))
+    #
+    #     for idx1, (i, j) in enumerate(ijs):
+    #         u_i = self.u[:, i]
+    #         v_j = self.v[:, j]
+    #
+    #         # variance of U_i . V_j
+    #         pred_covs[idx1, idx1] = (
+    #             e_dot_sq(i, j)
+    #             - (mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() ** 2
+    #         )
+    #
+    #         # loop over lower triangle of the cov matrix
+    #         for idx2 in range(idx1 + 1, len(ijs)):
+    #             a, b = ijs[idx2]
+    #             u_a = self.u[:, a]
+    #             v_b = self.v[:, b]
+    #
+    #             cv = 0
+    #
+    #             # sum_k sum_{l != k} E[Uki Vkj Ula Vlb]
+    #             for k in range(D):
+    #                 # sum over l != k
+    #                 for l in range(k):
+    #                     cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
+    #                 for l in range(k+1, D):
+    #                     cv += qexp(u_i[k], v_j[k], u_a[l], v_b[l])
+    #
+    #             # sum_k E[Uki Uka Vkj Vkb]
+    #             if i == a:  # j != b
+    #                 for k in range(D):
+    #                     cv += a2bc(u_i[k], v_j[k], v_b[k])
+    #             elif j == b:  # i != a
+    #                 for k in range(D):
+    #                     cv += a2bc(v_j[k], u_i[k], u_a[k])
+    #             else:  # i != a, j != b
+    #                 for k in range(D):
+    #                     cv += qexp(u_i[k], v_j[k], u_a[k], v_b[k])
+    #
+    #             # - sum_{k,l} E[Uki Vkj] E[Uli Vlb]
+    #             cv -= ((mean[u_i] * mean[v_j] + cov[u_i, v_j]).sum() *
+    #                    (mean[u_a] * mean[v_b] + cov[u_a, v_b]).sum())
+    #
+    #             pred_covs[idx1, idx2] = cv
+    #             pred_covs[idx2, idx1] = cv
+    #
+    #     return pred_covs
 
     ############################################################################
     ### Various criteria to use to pick query points
@@ -439,7 +439,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         where we define values >= cutoff as the target class and others
         as the negative class.
         '''
-        fn = functools.partial(ActivePMF._last_step_lookahead_helper,
+        fn = functools.partial(MNActivePMF._last_step_lookahead_helper,
                                cutoff=cutoff)
         fn.__name__ = '_1step_{}'.format(cutoff)
         return self._exp_with_rij(ij, fn,
@@ -482,25 +482,17 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         approximation.
         '''
         i, j = ij
-
-        mean = self.mean
-        cov = self.cov
-        us = self.u[:, i]
-        vs = self.v[:, j]
-
-        return (
-            # E[ (U_i^T V_j)^2 ]
-            exp_dotprod_sq(self.u, self.v, mean, cov, i, j)
-
-            # - E[U_i^T V_j] ^ 2
-            - (mean[us] * mean[vs] + cov[us, vs]).sum() ** 2
-        )
+        return self.approx_pred_mean_var(i, j)[1]
 
     def _approx_entropy(self):
         '''Entropy of the normal approximation, up to an additive constant'''
-        sign, logdet = np.linalg.slogdet(self.cov)
-        assert sign == 1
-        return logdet
+        ui_sign, ui_logdet = np.linalg.slogdet(self.cov_useritems)
+        l_sign, l_logdet = np.linalg.slogdet(self.cov_latents)
+        assert ui_sign == 1
+        assert l_sign == 1
+
+        return 0.5 * (self.latent_d * ui_logdet
+                      + (self.num_users + self.num_items) * l_logdet)
 
     @do_normal_fit(True)
     @spawn_processes(True)
@@ -512,7 +504,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         calculated according to our current MAP belief about the distribution
         of Rij, up to a constant common to all (i,j) pairs.
         '''
-        return self._exp_with_rij(ij, ActivePMF._approx_entropy,
+        return self._exp_with_rij(ij, MNActivePMF._approx_entropy,
                 use_map=True)
 
     @do_normal_fit(True)
@@ -526,54 +518,55 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         Rij pretending that it's normal with mean and variance defined by our
         distribution over U and V, up to a constant common to all (i,j) pairs.
         '''
-        return self._exp_with_rij(ij, ActivePMF._approx_entropy,
+        return self._exp_with_rij(ij, MNActivePMF._approx_entropy,
                 use_map=False)
 
-    def _pred_entropy_bound(self):
-        '''
-        Upper bound on the entropy of the predicted matrix, up to an additive
-        constant.
-        '''
-        p_cov = self.approx_pred_covs()
-        s, logdet = np.linalg.slogdet(p_cov)
-        if s != 1:
-            if s == -1 and logdet < -50:
-                # numerical error, pretend it's basically 0
-                # TODO: track these in a way that's not as slow as printing
-                return -1000  # XXX if we did det, could be 0 here
-            else:
-                m = "prediction cov has det with sign {}, log {}"
-                raise ValueError(m.format(s, logdet))
-        return logdet
+    # def _pred_entropy_bound(self):
+    #     '''
+    #     Upper bound on the entropy of the predicted matrix, up to an additive
+    #     constant.
+    #     '''
+    #     # TODO: is there a better form for this?
+    #     p_cov = self.approx_pred_covs()
+    #     s, logdet = np.linalg.slogdet(p_cov)
+    #     if s != 1:
+    #         if s == -1 and logdet < -50:
+    #             # numerical error, pretend it's basically 0
+    #             # TODO: track these in a way that's not as slow as printing
+    #             return -1000  # XXX if we did det, could be 0 here
+    #         else:
+    #             m = "prediction cov has det with sign {}, log {}"
+    #             raise ValueError(m.format(s, logdet))
+    #     return logdet
 
-    @do_normal_fit(True)
-    @spawn_processes(True)
-    @nice_name("E[Pred Entropy Bound] (MAP)")
-    @minimize
-    def exp_pred_entropy_bound(self, ij):
-        '''
-        The expectation on an upper bound of the entropy in our predicted R
-        matrix if we know Rij, calculated according to our current MAP belief
-        about the distribution of Rij, up to a constant common to all (i,j)
-        pairs.
-        '''
-        return self._exp_with_rij(ij, ActivePMF._pred_entropy_bound,
-                use_map=True)
+    # @do_normal_fit(True)
+    # @spawn_processes(True)
+    # @nice_name("E[Pred Entropy Bound] (MAP)")
+    # @minimize
+    # def exp_pred_entropy_bound(self, ij):
+    #     '''
+    #     The expectation on an upper bound of the entropy in our predicted R
+    #     matrix if we know Rij, calculated according to our current MAP belief
+    #     about the distribution of Rij, up to a constant common to all (i,j)
+    #     pairs.
+    #     '''
+    #     return self._exp_with_rij(ij, MNActivePMF._pred_entropy_bound,
+    #             use_map=True)
 
-    @do_normal_fit(True)
-    @spawn_processes(True)
-    @nice_name("E[Pred Entropy Bound] (Approx)")
-    @minimize
-    def exp_pred_entropy_bound_byapprox(self, ij):
-        '''
-        The expectation on an upper bound of the entropy in our predicted R
-        matrix if we know Rij, calculated according to our current belief about
-        the distribution of Rij pretending that it's normal with mean and
-        variance defined by our distribution over U and V, up to a constant
-        common to all (i,j) pairs.
-        '''
-        return self._exp_with_rij(ij, ActivePMF._pred_entropy_bound,
-                use_map=False)
+    # @do_normal_fit(True)
+    # @spawn_processes(True)
+    # @nice_name("E[Pred Entropy Bound] (Approx)")
+    # @minimize
+    # def exp_pred_entropy_bound_byapprox(self, ij):
+    #     '''
+    #     The expectation on an upper bound of the entropy in our predicted R
+    #     matrix if we know Rij, calculated according to our current belief about
+    #     the distribution of Rij pretending that it's normal with mean and
+    #     variance defined by our distribution over U and V, up to a constant
+    #     common to all (i,j) pairs.
+    #     '''
+    #     return self._exp_with_rij(ij, MNActivePMF._pred_entropy_bound,
+    #             use_map=False)
 
     def _total_variance(self):
         return self.approx_pred_means_vars()[1].sum()
@@ -588,7 +581,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         calculated according to our current MAP belief about the distribution
         of Rij, up to a constant common to all (i,j) pairs.
         '''
-        return self._exp_with_rij(ij, ActivePMF._total_variance,
+        return self._exp_with_rij(ij, MNActivePMF._total_variance,
                 use_map=True)
 
     @do_normal_fit(True)
@@ -602,7 +595,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         Rij pretending that it's normal with mean and variance defined by our
         distribution over U and V, up to a constant common to all (i,j) pairs.
         '''
-        return self._exp_with_rij(ij, ActivePMF._total_variance,
+        return self._exp_with_rij(ij, MNActivePMF._total_variance,
                 use_map=False)
 
     def _exp_with_rij(self, ij, fn, use_map=True, discretize=None,
@@ -662,7 +655,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
                 s = "summed"
         else:
             if discretize and points is None:
-                warnings.warn("ActivePMF has no rating_values; doing integral")
+                warnings.warn("MNActivePMF has no rating_values; doing integral")
 
             # only take the expectation out to 2 sigma (>95% of normal mass)
             left = mean - 2 * std
@@ -682,7 +675,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
     def pick_query_point(self, pool=None, key=None, procs=None, worker_pool=None):
         '''
         Use the approximation of the PMF model to select the next point to
-        query, choosing elements according to key, which should be an ActivePMF
+        query, choosing elements according to key, which should be an MNActivePMF
         method taking a user-item pair as its argument. Defaults to
         pred_variance.
 
@@ -698,7 +691,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         if pool is None:
             pool = self.unrated
         if key is None:
-            key = ActivePMF.pred_variance
+            key = MNActivePMF.pred_variance
         chooser = getattr(key, 'chooser', max)
 
         if len(pool) == 0:
@@ -751,7 +744,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         if pool is None:
             pool = self.unrated
         if key is None:
-            key = ActivePMF.pred_variance
+            key = MNActivePMF.pred_variance
 
         evals = np.empty((self.num_users, self.num_items))
         evals.fill(np.nan)
@@ -766,7 +759,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
 # TODO: could share the gradient-descent work for the first step, or any case
 #       where they've made the same choices
 
-def full_test(apmf, real, picker_key=ActivePMF.pred_variance,
+def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
               fit_normal=True, fit_sigmas=False, processes=None):
     print("Training PMF")
 
@@ -872,27 +865,27 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
 
 
 KEY_FUNCS = {
-    "random": ActivePMF.random_weighting,
-    "pred-variance": ActivePMF.pred_variance,
+    "random": MNActivePMF.random_weighting,
+    "pred-variance": MNActivePMF.pred_variance,
 
-    "total-variance": ActivePMF.exp_total_variance,
-    "total-variance-approx": ActivePMF.exp_total_variance_byapprox,
+    "total-variance": MNActivePMF.exp_total_variance,
+    "total-variance-approx": MNActivePMF.exp_total_variance_byapprox,
 
-    "uv-entropy": ActivePMF.exp_approx_entropy,
-    "uv-entropy-approx": ActivePMF.exp_approx_entropy_byapprox,
+    "uv-entropy": MNActivePMF.exp_approx_entropy,
+    "uv-entropy-approx": MNActivePMF.exp_approx_entropy_byapprox,
 
-    "pred-entropy-bound": ActivePMF.exp_pred_entropy_bound,
-    "pred-entropy-bound-approx": ActivePMF.exp_pred_entropy_bound_byapprox,
+    # "pred-entropy-bound": MNActivePMF.exp_pred_entropy_bound,
+    # "pred-entropy-bound-approx": MNActivePMF.exp_pred_entropy_bound_byapprox,
 
-    "pred": ActivePMF.pred,
-    "prob-ge-3.5": ActivePMF.prob_ge_3_5,
-    "prob-ge-.5": ActivePMF.prob_ge_half,
+    "pred": MNActivePMF.pred,
+    "prob-ge-3.5": MNActivePMF.prob_ge_3_5,
+    "prob-ge-.5": MNActivePMF.prob_ge_half,
 
-    "1step-ge-3.5": ActivePMF.onestep_ge_3_5,
-    "1step-ge-3.5-approx": ActivePMF.onestep_ge_3_5_approx,
+    "1step-ge-3.5": MNActivePMF.onestep_ge_3_5,
+    "1step-ge-3.5-approx": MNActivePMF.onestep_ge_3_5_approx,
 
-    "1step-ge-.5": ActivePMF.onestep_ge_half,
-    "1step-ge-.5-approx": ActivePMF.onestep_ge_half_approx,
+    "1step-ge-.5": MNActivePMF.onestep_ge_half,
+    "1step-ge-.5-approx": MNActivePMF.onestep_ge_half_approx,
 }
 
 
@@ -1002,7 +995,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             apmf.discrete_expectations = discrete_exp
 
     if apmf is None:
-        apmf = ActivePMF(ratings, latent_d=latent_d,
+        apmf = MNActivePMF(ratings, latent_d=latent_d,
                 rating_values=rating_vals,
                 discrete_expectations=discrete_exp,
                 refit_lookahead=refit_lookahead,
@@ -1185,7 +1178,7 @@ def main():
                 data['_rating_vals'] if '_rating_vals' in data else None,
             )
             if args.load_model:
-                apmf = data['_initial_apmf']
+                apmf = data['_initial_mnapmf']
 
         knowable = np.isfinite(real)
         knowable[real == 0] = 0
