@@ -19,7 +19,8 @@ if nargin < 3; steps = -1; end
 if nargin < 4; known = eye(size(Y)); end
 if nargin < 5; queryable = (Y ~= 0); end
 if nargin < 6; C = 1; end
-if nargin < 7; save_partial = false; else; save_partial = true; end
+% test_on handled later
+if nargin < 8; save_partial = false; else; save_partial = true; end
 
 addpath(genpath('yalmip'))
 addpath('~/share/csdp/matlab')
@@ -34,7 +35,7 @@ queryable(known) = false;
 Ytr_init = double(zeros(size(Y)));
 Ytr_init(known) = Y(known);
 
-if nargin < 7
+if nargin < 7 || numel(test_on) < 1
     test_on = (Y ~= 0) & (~known);
 else
     test_on = logical(test_on);
@@ -81,7 +82,7 @@ for selector_i = 1 : length(selectors)
         results(stepnum, :) = {num_known, get_misclass(x), [i,j], evals, x};
         stepnum = stepnum + 1;
         if save_partial
-            save outfile results;
+            save(outfile, 'results');
         end
     end
 

@@ -35,13 +35,16 @@ selectors = {{ {selectors} }};
 C = double(C);
 
 results = evaluate_active(...
-    Y, selectors, steps, known, queryable, C, test_on, '{outfile}');
+    Y, selectors, steps, known, queryable, C, test_on {partial});
 
 save {outfile} results
 '''
 
-def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=1,
-            mat_cmd='matlab', return_tempdir=False, cutoff=None):
+def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1,
+            C=1, cutoff=None,
+            mat_cmd='matlab',
+            return_tempdir=False, delete_tempdir_if_success=True,
+            tempdir_base=None, partial_results=True):
     # TODO: switch to fMMMF to not throw out partial solutions
 
     # # can't contain any zeros
@@ -58,7 +61,7 @@ def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=
         data_matrix = new_data_matrix
 
     # make temporary dir
-    tempdir = mkdtemp()
+    tempdir = mkdtemp(dir=tempdir_base)
     path = functools.partial(os.path.join, tempdir)
 
     infile_path = path('data_in.mat')
@@ -71,10 +74,15 @@ def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=
         'Y': data_matrix,
         'known': known,
         'queryable': queryable,
-        'test_on': test_on,
+        'test_on': [] if test_on is None else test_on,
         'steps': steps,
         'C': C,
     }
+
+    if partial_results:
+        partial = ", '{}'".format(path('partial_results.mat'))
+    else:
+        partial = ""
 
     try:
         scipy.io.savemat(infile_path, matdata, oned_as='column')
@@ -83,9 +91,12 @@ def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=
             selectors=', '.join(KEY_FUNCS[k].code for k in keys),
             infile=infile_path,
             outfile=outfile_path,
+            partial=partial,
         )
         with open(mfile_path, 'w') as mfile:
             mfile.write(mfile_content)
+
+        print(mfile_path)
 
         # run matlab
         proc = subprocess.Popen([mat_cmd, "-nojvm",
@@ -95,9 +106,19 @@ def compare(keys, data_matrix, known, queryable=None, test_on=None, steps=-1, C=
         # read results
         with open(outfile_path, 'rb') as outfile:
             mat_results = scipy.io.loadmat(outfile)['results']
-    finally:
+
+        if delete_tempdir_if_success:
+            shutil.rmtree(tempdir)
+    except:
+        try:
+            proc.kill()
+        except:
+            pass
+
         if not return_tempdir:
             shutil.rmtree(tempdir)
+
+        raise
 
     results = results_from_mat(mat_results, keys)
 
@@ -147,9 +168,16 @@ def main():
     parser.add_argument('--steps', '-s', type=int, default=-1)
     parser.add_argument('--data-file', '-D', required=True)
     parser.add_argument('--matlab', '-m', default='matlab')
-    parser.add_argument('--delete-tempdir', action='store_true', default=False)
-    parser.add_argument('--no-delete-tempdir',
-            action='store_false', dest='delete_tempdir')
+
+    g = parser.add_mutually_exclusive_group()
+    g.set_defaults(delete_tempdir='success')
+    g.add_argument('--delete-tempdir-always', action='store_const',
+        dest='delete_tempdir', const='always')
+    g.add_argument('--delete-tempdir-on-success', action='store_const',
+        dest='delete_tempdir', const='success')
+    g.add_argument('--keep-tempdir', action='store_false', dest='delete_tempdir')
+
+    parser.add_argument('--tempdir-base', default=None, metavar='DIR')
 
     parser.add_argument('--results-file', '-R', default=None, metavar='FILE',
             help="Save results in FILE; by default, add to --data-file.")
@@ -187,15 +215,20 @@ def main():
     queryable = real != 0
 
     # get new results
+    return_tempdir = args.delete_tempdir != 'always'
+    delete_tempdir_if_success = bool(args.delete_tempdir)
     results = compare(keys=list(args.keys),
                       data_matrix=real, cutoff=args.cutoff,
                       known=known, queryable=queryable, test_on=test_on,
                       steps=args.steps, C=args.C,
                       mat_cmd=args.matlab,
-                      return_tempdir=not args.delete_tempdir)
-    if not args.delete_tempdir:
+                      tempdir_base=args.tempdir_base,
+                      return_tempdir=return_tempdir,
+                      delete_tempdir_if_success=delete_tempdir_if_success)
+    if return_tempdir:
         results, tempdir = results
-        print("Temporary files in {}".format(tempdir))
+        if not delete_tempdir_if_success:
+            print("Temporary files in {}".format(tempdir))
 
     # back up original file if we're overwriting it
     if os.path.exists(args.results_file):
