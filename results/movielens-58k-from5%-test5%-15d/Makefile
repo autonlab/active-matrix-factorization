@@ -93,6 +93,7 @@ run%/results_mmmf_min-margin-pos.pkl: | run%/data.npz
 		--matlab $(MATLAB) \
 		-C 1 \
 		min-margin-pos \
+		$(OUTPUT)
 run%/results_mmmf_max-margin.pkl: | run%/data.npz
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_mmmf.py \
