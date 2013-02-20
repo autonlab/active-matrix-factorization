@@ -24,7 +24,9 @@ linear_variables = find((sum(abs(mt),2)==1) & (any(mt==1,2)));
 nonlinear_variables = setdiff((1:size(mt,1))',linear_variables);
 sigmonial_variables = find(any(0>mt,2) | any(mt-fix(mt),2));
 
-if ~isempty(sigmonial_variables) | isequal(interfacedata.solver.version,'GEOMETRIC')
+if K.s(1)>0
+    [x,D_struc,problem,res,solvertime,prob] = call_mosek_sdp(interfacedata);
+elseif ~isempty(sigmonial_variables) | isequal(interfacedata.solver.version,'GEOMETRIC')
     [x,D_struc,problem,res,solvertime,prob] = call_mosek_geometric(options,F_struc,c,Q,K,ub,lb,mt,linear_variables,extended_variables);          
 else
     [x,D_struc,problem,res,solvertime,prob] = call_mosek_lpqp(options,F_struc,c,Q,K,ub,lb,mt,linear_variables,integer_variables,x0);        
@@ -89,10 +91,12 @@ end
 
 if K.q(1)>0
     nof_new = sum(K.q);
-    prob.a = [prob.a [spalloc(K.f,nof_new,0);
-              spalloc(K.l,nof_new,0);speye(nof_new)]];
-    prob.blc(1+K.f+K.l:end) = prob.buc(1+K.f+K.l:end);
-    prob.buc(1+K.f+K.l:end) = prob.buc(1+K.f+K.l:end);    
+    prob.a = [prob.a [spalloc(K.f,nof_new,0);spalloc(K.l,nof_new,0);speye(nof_new);spalloc(sum(K.s.^2),nof_new,0)]];
+   % prob.blc(1+K.f+K.l:end) = prob.buc(1+K.f+K.l:end); % Note, fixed the SDP cones too
+   % prob.buc(1+K.f+K.l:end) = prob.buc(1+K.f+K.l:end); % Note, fixed the SDP cones too 
+    prob.blc(1+K.f+K.l:K.f+K.l+sum(K.q)) = prob.buc(1+K.f+K.l:K.f+K.l+sum(K.q)); % Note, fixed the SDP cones too
+    %prob.buc(1+K.f+K.l:end) = prob.buc(1+K.f+K.l:end); % Note, fixed the SDP cones too 
+    
     prob.c = [prob.c;zeros(nof_new,1)];
     top = size(F_struc,2)-1;
     for i = 1:length(K.q)
@@ -104,14 +108,54 @@ if K.q(1)>0
     end    
 end
 
+
+if K.s(1)>0  
+    % Semidefinite expressions start here
+    prob.bardim = [];
+    prob.bara.subi = [];
+    prob.bara.subj = [];
+    prob.bara.subk = [];
+    prob.bara.subl = [];
+    prob.bara.val = [];
+    
+    prob.barc.subj = [];
+    prob.barc.subk = [];
+    prob.barc.subl = [];
+    prob.barc.val  = [];   
+    
+    prob.blc(1+K.f+K.l+sum(K.q):end) = prob.buc(1+K.f+K.l+sum(K.q):end);
+
+    top = 1 + K.f + K.l + sum(K.q);
+    localtop = top;
+    remove = [];
+    for i = 1:length(K.s)
+        n = K.s(i);
+        aux = ones(n);
+        remove = [remove;top + find(triu(reshape(1:n^2,n,n),1))-1];
+        [k,l,val] = find(tril(aux+eye(n))/2); 
+        prob.bardim = [prob.bardim n];
+        prob.bara.subi = [prob.bara.subi localtop+(0:length(k)-1)];
+        prob.bara.subj = [prob.bara.subj repmat(i,1,length(k))];
+        prob.bara.subk = [prob.bara.subk k(:)'];
+        prob.bara.subl = [prob.bara.subl l(:)'];
+        prob.bara.val =  [prob.bara.val val(:)'];
+        top = top + n^2;
+        localtop = localtop + length(val);
+    end        
+    prob.a(remove,:)=[];
+    prob.blc(remove,:)=[];
+    prob.buc(remove,:)=[];
+end
+
+
 if ~isempty(integer_variables)
     prob.ints.sub = integer_variables;
 end
 
 param = options.mosek;
-if isfield(param,'param')
-    param = rmfield(param,'param');
-end
+% if isfield(param,'param')
+%     param = rmfield(param,'param');
+% end
 
 if ~isempty(x0)
     if options.usex0
@@ -231,9 +275,9 @@ prob.a = A;
 prob.buc = u_c;
 
 param = options.mosek;
-if isfield(param,'param')
-    param = rmfield(param,'param');
-end
+% if isfield(param,'param')
+%     param = rmfield(param,'param');
+% end
 
 % For debugging
 if options.savedebug
@@ -289,9 +333,6 @@ if problem == 0
     end
 
     param = options.mosek;
-    if isfield(param,'param')
-        param = rmfield(param,'param');
-    end
 
     % Call MOSEK
     solvertime = clock;
@@ -323,3 +364,61 @@ if problem == 0
             problem = -1;
     end
 end
+
+function [x,D_struc,problem,res,solvertime,prob] = call_mosek_sdp(model)
+
+param = model.options.mosek;
+
+% Convert
+[model.F_struc,model.K] = addbounds(model.F_struc,model.K,model.ub,model.lb);
+prob = yalmip2SDPmosek(model);
+solvertime = clock;
+if model.options.verbose == 0
+    [r,res] = mosekopt('minimize echo(0)',prob,param);    
+else
+    [r,res] = mosekopt('minimize info',prob,param);
+end
+solvertime = etime(clock,solvertime);
+
+x = res.sol.itr.y;
+if model.options.saveduals
+    D_struc = [res.sol.itr.xx];    
+    top = 1;
+    for i = 1:length(model.K.s)
+        X = zeros(model.K.s(i));
+        n = model.K.s(i);
+        I = find(tril(ones(n)));
+        X(I) = res.sol.itr.barx(top:((top+n*(n+1)/2)-1));
+        X = X + tril(X,-1)';
+        D_struc = [D_struc;X(:)];
+        top = top + n*(n+1)/2;
+    end
+else
+    D_struc = [];
+end
+
+switch res.sol.itr.prosta
+    case 'PRIMAL_AND_DUAL_FEASIBLE'
+        problem = 0;
+    case 'DUAL_INFEASIBLE'
+        problem = 1;
+    case 'PRIMAL_INFEASIBLE'
+        problem = 2;
+    case 'UNKNOWN'
+        problem = 9;
+    otherwise
+        problem = -1;
+end
+
+function model = appendBounds(model);
+
+FstrucNew = [];
+if ~isempty(model.lb)
+    ii = find(~isinf(model.lb));
+    FstrucNew = [-model.lb(ii) sparse(1:length(ii),ii,size(model.F_struc,2)-1,length(ii))];
+end
+if ~isempty(model.ub)
+    ii = find(~isinf(model.ub));
+    FstrucNew = [model.lb(ii) -sparse(1:length(ii),ii,size(model.F_struc,2)-1,length(ii))];
+end
+

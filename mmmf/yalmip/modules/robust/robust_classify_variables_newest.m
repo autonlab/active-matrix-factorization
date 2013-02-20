@@ -11,7 +11,7 @@ if ~isempty(h_w)
     base = base(2:end);base = base(:);
     sdpvar t
     
-    F = [F,base(h_w(:))'*recover(h_variables(h_w)) < t];
+    F = [F,base(h_w(:))'*recover(h_variables(h_w)) <= t];
     base(h_w) = 0;
     h = base(:)'*recover(h_variables) + t;
     

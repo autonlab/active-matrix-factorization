@@ -1,5 +1,9 @@
 function varargout=quadratic_over_affine(varargin)
 %quadratic_over_affine (overloaded)
+%
+% p = quadratic_over_affine(x,t)
+%
+% Returns p = (x.^2)./t
 
 % Author Johan Löfberg
 % $Id: quadratic_over_affine.m,v 1.28 2008-11-11 13:29:20 joloef Exp $
@@ -7,47 +11,39 @@ function varargout=quadratic_over_affine(varargin)
 switch class(varargin{1})
     case 'double'
         varargout{1} = varargin{1}/varargin{2};
-
-    case 'sdpvar' % Overloaded operator for SDPVAR objects. Pass on args and save them.        
-        if is(varargin{1},'quadratic') & ~is(varargin{1},'linear') & is(varargin{2},'linear')            
+        
+    case 'sdpvar' % Overloaded operator for SDPVAR objects. Pass on args and save them.
+        if is(varargin{1},'quadratic') & ~is(varargin{1},'linear') & is(varargin{2},'linear')
             p = varargin{1};
-            [Q,c,f,x,info] = quaddecomp(p);
-            q = chol(Q)*x;
-            varargin{1} = q;            
-            varargout{1} = yalmip('define',mfilename,varargin{:});       
+            t = varargin{2};
+            if length(p)>1
+                if length(t)==1
+                    t = repmat(t,size(p,1),size(p,2));
+                end
+                temp = [];
+                for i = 1:length(p)
+                    temp = [temp;quadratic_over_affine(p(i),t(i))];
+                end
+                temp = reshape(temp,size(p,1),size(p,2));
+                varargout{1} = temp;
+            elseif length(t)>1
+                temp = [];
+                for i = 1:length(t)
+                    temp = [temp;quadratic_over_affine(p,t(i))];
+                end
+                temp = reshape(temp,size(t,1),size(t,2));
+                varargout{1} = temp;
+            else
+                [Q,c,f,x,info] = quaddecomp(p);
+                q = chol(Q)*x;
+                varargin{1} = q;
+                varargout{1} = yalmip('define','quadratic_over_affine_expanded',varargin{:});
+            end
         else
             error('First argument should be quadratic and second affine')
         end
         
-    case 'char' % YALMIP send 'graph' when it wants the epigraph or hypograph
-        switch varargin{1}
-            case 'graph'
-                % Description using epigraphs
-                t = varargin{2};
-                q = varargin{3};
-                y = varargin{4};
-                %[M,m] = derivebounds(y);
-                %if m<0
-                %    varargout{1} = [];
-                %    varargout{2} = [];
-                %    varargout{3} = [];
-                %else
-                    varargout{1} = [cone([2*q;t-y],t+y)];
-                    varargout{2} = struct('convexity','convex','monotonicity','none','definiteness','positive','model','graph');
-                    varargout{3} = [q;y];
-                %end
-            case {'exact','integer','callback'}
-                
-                t = varargin{2};
-                q = varargin{3};
-                y = varargin{4};
-                varargout{1} = [];
-                varargout{2} = struct('convexity','none','monotonicity','none','definiteness','positive','model','callback');
-                varargout{3} = [q;y];
-
-            otherwise
-                error('SDPVAR/ABS called with CHAR argument?');
-        end
+        
     otherwise
-        error('Strange type on first argument in SDPVAR/ABS');
+        error('SDPVAR/ABS called with CHAR argument?');
 end

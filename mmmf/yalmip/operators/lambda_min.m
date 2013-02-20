@@ -33,7 +33,7 @@ switch class(varargin{1})
         if isequal(varargin{1},'graph')
             t = varargin{2}; % Second arg is the extended operator variable
             X = varargin{3}; % Third arg and above are the args user used when defining t.
-            varargout{1} = set(t*eye(size(X,1)) < X);
+            varargout{1} = set(t*eye(size(X,1)) <= X);
             varargout{2} = struct('convexity','concave','monotonicity','none','definiteness','none','model','graph');
             varargout{3} = X;
         else

@@ -1,10 +1,9 @@
 function output = callgurobi(interfacedata)
 
 % Author Johan Löfberg 
-% $Id: callgurobimex.m,v 1.2 2010-03-23 11:11:46 joloef Exp $
 
 options = interfacedata.options;
-n_original = length(interfacedata.c);
+nOriginal = length(interfacedata.c);
 model = yalmip2gurobi(interfacedata);
 
 if interfacedata.options.savedebug
@@ -16,25 +15,24 @@ solvertime = clock;
 result = gurobi(model,model.params);
 if interfacedata.getsolvertime solvertime = etime(clock,solvertime);else solvertime = 0;end
 
-if isfield(result,'x')
-    x = result.x;
-    x = x(1:n_original);
-else
-    x = zeros(n_original,1);
-end
-
 % Gurobi assumes semi-continuous variables only can take negative values so
 % we negate semi-continuous violating this
-if length(x) == length(model.obj)
-     if ~isempty(model.NegativeSemiVar)
-        x(model.NegativeSemiVar) = -x(model.NegativeSemiVar);
-     end
+if isfield(result,'x')
+    x = result.x;
+    if length(x) == length(model.obj)
+        if ~isempty(model.NegativeSemiVar)
+            x(model.NegativeSemiVar) = -x(model.NegativeSemiVar);
+        end
+    end
+    x = x(1:nOriginal);
+else
+    x = zeros(nOriginal,1);
 end
 
 problem = 0;
 if isfield(result,'pi')
-    if length(model.obj) == n_original
-    D_struc = result.pi;
+    if length(model.obj) == nOriginal
+        D_struc = -result.pi;
     else
     D_struc = [];
     end

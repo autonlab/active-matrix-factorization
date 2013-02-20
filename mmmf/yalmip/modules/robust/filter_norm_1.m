@@ -11,7 +11,7 @@ for i = 1:length(all_f)
     Bi = 2*all_Q_xw(:,length(x)*(i-1)+1:length(x)*i)';
     bi = all_c_x(length(x)*(i-1)+1:length(x)*i);
     if (nnz(ci_basis(:,i))==0) & nnz(Bi)==0
-        F = F + set(X(i)>0);        
+        F = F + set(X(i)>=0);        
     else
         ci = ci_basis(:,i);
         di = all_f(i);
@@ -27,15 +27,15 @@ for i = 1:length(all_f)
         %di = di + ci'*center;
         %bi = bi + Bi*center;
         if isequal(lastBici,[Bi' ci])
-            F = F + set(x'*Q_xx{i}*x+bi'*x + di - r*s > 0);% + set(-s<Bi'*x+ci<s);
+            F = F + set(x'*Q_xx{i}*x+bi'*x + di - r*s >= 0);% + set(-s<Bi'*x+ci<s);
         else
             if nnz(Bi)==0
                 s = norm(full(ci),inf);
             else
                 s = sdpvar(1,1);
-                F =  F + set(-s<Bi'*x+ci<s);
+                F =  F + set(-s<=Bi'*x+ci<=s);
             end
-            F = F + set(x'*Q_xx{i}*x+bi'*x + di - r*s > 0);
+            F = F + set(x'*Q_xx{i}*x+bi'*x + di - r*s >= 0);
             lastBici = [Bi' ci];
         end
     end

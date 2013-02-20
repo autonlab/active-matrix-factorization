@@ -1,19 +1,16 @@
 function YESNO = ismember_internal(x,p)
 %ISMEMBER_INTERNAL Helper for ISMEMBER
 
-% Author Johan Löfberg
-% $Id: ismember_internal.m,v 1.10 2007-08-08 08:14:28 joloef Exp $
-
-if isa(x,'sdpvar') & isa(p,'polytope')
+if isa(x,'sdpvar') & (isa(p,'polytope') | isa(p,'Polyhedron'))
 
     if length(p) == 1
-        [H,K] = double(p);
+        [H,K,Ae,be] = poly2data(p);
         if min(size(x))>1
             error('first argument should be a vector');
         end
         if length(x) == size(H,2)
             x = reshape(x,length(x),1);
-            YESNO = set(H*x <= K);
+            YESNO = [H*x <= K,Ae*x == be];
             return
         else
             disp('The polytope in the ismember condition has wrong dimension')
@@ -23,18 +20,21 @@ if isa(x,'sdpvar') & isa(p,'polytope')
     else
         d = binvar(length(p),1);
         YESNO = set(sum(d)==1);
-        [temp,L,U] = bounding_box(p(1));
+        [L,U] = safe_bounding_box(p(1));
         for i = 1:length(p)
-            [temp,Li,Ui] = bounding_box(p(i));
+            [Li,Ui] = safe_bounding_box(p(i));
             L = min([L Li],[],2);
             U = max([U Ui],[],2);
         end
         for i = 1:length(p)
-            [H,K] = double(p(i));
+            [H,K,Ae,be] = poly2data(p(i));
+            % Merge equalities into inequalities
+            H = [H;Ae;-Ae];
+            K = [K;be;-be];
             if min(size(x))>1
                 error('first argument should be a vector');
             end
-            if length(x) == size(H,2)
+            if length(x) == size([H],2)
                 x = reshape(x,length(x),1);
                 lhs = H*x-K;
                 % Derive bounds based on YALMIPs knowledge on bounds on
@@ -58,16 +58,46 @@ end
 if isa(x,'sdpvar') & isa(p,'double')
     
     x = reshape(x,prod(x.dim),1);
-    p = p(:);
-
-    if length(p)==1
+   
+    
+    if numel(p)==1
         F = set(x == p);
     else
-        Delta = binvar(length(x),length(p),'full');
-        F = set(sum(Delta,2) == 1);       
-        F = F + set(x == Delta*p);
+        if size(p,1)==length(x) & size(p,2)>1
+            Delta = binvar(size(p,2),1);
+            F = [sum(Delta) == 1, x == p*Delta];
+        else
+            p = p(:);
+            Delta = binvar(length(x),length(p),'full');
+            F = [sum(Delta,2) == 1, x == Delta*p];
+        end
     end
 
     YESNO = F;
     return
+end
+
+function [H,K,Ae,be] = poly2data(p);
+
+if isa(p,'polytope')
+    [H,K] = double(p);
+    Ae = [];
+    be = [];
+    
+else
+    p = convexHull(p);
+    H = p.A;
+    K = p.b;
+    Ae = p.Ae;
+    be = p.be;   
+end
+
+function [L,U] = safe_bounding_box(P)
+
+if isa(P,'polytope')
+     [temp,L,U] = bounding_box(P);
+else
+    S = outerApprox(P);
+    L = S.Internal.lb;
+    U = S.Internal.ub;
 end

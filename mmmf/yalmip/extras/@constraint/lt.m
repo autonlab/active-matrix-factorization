@@ -7,6 +7,22 @@ function F = lt(X,Y)
 superiorto('sdpvar');
 superiorto('double');
 
+warned = 0;
+if isa(X,'constraint')    
+    if ~is(sdpvar(X),'quantized')    
+       warning('YALMIP:strict','Strict inequalities will only (if at all) be supported on binvar/intvar variables in future versions of YALMIP. Turn off this warning using warning(''off'',''YALMIP:strict'')');
+       %error('Non-strict inequalities will only be supported on binvar/intvar variables in future versions of YALMIP');
+    end
+end
+if warned == 0
+    if isa(Y,'constraint')        
+        if ~is(sdpvar(Y),'quantized')        
+           warning('YALMIP:strict','Strict inequalities will only (if at all) be supported on binvar/intvar variables in future versions of YALMIP. Turn off this warning using warning(''off'',''YALMIP:strict'')');
+           %error('Non-strict inequalities will only be supported on binvar/intvar variables in future versions of YALMIP');
+        end
+    end
+end
+
 % Try to evaluate
 try
     if isa(X,'constraint')

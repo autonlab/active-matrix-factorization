@@ -27,8 +27,8 @@ switch class(varargin{1})
         % d(i) = 0  ==> x1>x2
         % d(i) = 1  ==> x2>x1
 
-        F =     set(x1 - x2 > 1-(1+M(pairs(:,2))-m(pairs(:,1))).*d);
-        F = F + set(x2 - x1 > 1-(1+M(pairs(:,1))-m(pairs(:,2))).*(1-d));
+        F =     set(x1 - x2 >= 1-(1+M(pairs(:,2))-m(pairs(:,1))).*d);
+        F = F + set(x2 - x1 >= 1-(1+M(pairs(:,1))-m(pairs(:,2))).*(1-d));
 
         varargout{1} = F;
         varargout{2} = struct('convexity','none','monotonicity','none','definiteness','none','extra','marker','model','integer');

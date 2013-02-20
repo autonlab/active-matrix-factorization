@@ -1,4 +1,4 @@
-function [Fhull,t] = hull(varargin)
+function [Fhull,t,y] = hull(varargin)
 % HULL  Construct a model of the convex hull
 %
 % H = hull(F1,F2,...)
@@ -12,8 +12,6 @@ function [Fhull,t] = hull(varargin)
 % Note that the convex representation of the convex hull requires a lifting
 % (introduction of auxially variables). Hence, if you have many set of
 % constraints, your problem rapidly grows large.
-
-% $Id: hull.m,v 1.9 2010-03-09 14:51:21 joloef Exp $   
 
 if nargin==1
     Fhull = varargin{1};
@@ -72,7 +70,9 @@ for i = 1:nargin
     Fhull = Fhull + Fi;
 end
 Fhull = Fhull + set(sum([y{:}],2) == recover(variables));
-Fhull = Fhull + set(sum(t)==1) + set(t>0);
+Fhull = Fhull + set(sum(t)==1) + set(t>=0);
 Fhull = expanded(Fhull,1);
 yalmip('setdependence',[reshape([y{:}],[],1);t(:)],recover(variables));
+%yalmip('setdependence',recover([10 11]),recover(variables));
 yalmip('addauxvariables',getvariables([reshape([y{:}],[],1);t(:)]));
+y = [y{:}];

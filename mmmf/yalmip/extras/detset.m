@@ -9,7 +9,7 @@ function F = detset(t,P)
 [n,m]=size(P);
 
 if max(n,m)==1
-    F = set(P>0) + set(t<P);
+    F = set(P>=0) + set(t<=P);
 else
     if min(n,m)==1
         % Vector version (copy and pasted from below)
@@ -34,7 +34,7 @@ else
 
         D = tril(sdpvar(n,n));
         delta = diag(D);
-        F = set([P D;D' diag(delta)] > 0);
+        F = set([P D;D' diag(delta)] >= 0);
         p = 2^ceil(log2(n));
         x = [delta;ones(p-n,1)];
     end

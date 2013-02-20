@@ -15,6 +15,12 @@ else
     %       Fi = F.clauses{i};
     YESNO=zeros(length(F.clauses),1);
     switch property
+        case 'chance'
+            for i = 1:length(F.clauses)
+                Fi = F.clauses{i};
+                YESNO(i,1) = ~isempty(Fi.confidencelevel);
+            end
+            
            case 'meta'
             for i = 1:length(F.clauses)
                 Fi = F.clauses{i};
@@ -120,6 +126,12 @@ else
                 Fi = F.clauses{i};
                 YESNO(i,1) = Fi.type ==  15;
             end
+        case 'random'
+            for i = 1:length(F.clauses)
+                Fi = F.clauses{i};
+                YESNO(i,1) = Fi.type ==  16;
+            end
+            
             
         case 'logic'
             allextvars = yalmip('extvariables');

@@ -1,4 +1,4 @@
-function varargout = sumabsk(varargin)
+function varargout = invpos(varargin)
 % INVPOS  Returns model of 1./x
 
 % Author Johan Löfberg
@@ -18,7 +18,7 @@ switch class(varargin{1})
             X = varargin{3}; % Third arg and above are the args user used when defining t.
             
             varargout{1} = set(cone([2;X-t],X+t));
-            varargout{2} = struct('convexity','convex','monotonicity','none','definiteness','positive','model','graph');
+            varargout{2} = struct('convexity','convex','monotonicity','decreasing','definiteness','positive','model','graph');
             varargout{3} = X;
         else
         end

@@ -182,6 +182,13 @@ end
 % *************************************************************************
 ParametricVariables = uniquestripped([depends(obj) depends(F_parametric) depends(params) ParametricBefore]);
 
+if any(find(is(F_parametric,'parametric')))
+    F_parametric(find(is(F_parametric,'parametric')))=[];
+end
+if any(find(is(F,'parametric')))
+    F(find(is(F,'parametric')))=[];
+end
+
 if options.verbose>0;
     disp('-------------------------------------------------------------------------');
     disp('YALMIP SOS module started...');
@@ -270,7 +277,7 @@ noRANK = all(isinf(ranks));
 switch options.sos.model
     case 0
         constraint_classes = constraintclass(F);
-        noCOMPLICATING = ~any(ismember([7 8 9 10 12 13 14 15],constraint_classes));
+        noCOMPLICATING = ~any(ismember([7 8 9 10 12 14 15],constraint_classes));
         if noCOMPLICATING & ~NonLinearParameterization & noRANK & ~IntegerData & ~IntervalData
             options.sos.model = 1;
             if options.verbose>0;disp('Using kernel representation (options.sos.model=1).');end
@@ -373,7 +380,7 @@ if options.sos.newton
     tempops.solver = 'cdd,glpk,*';  % CDD is generally robust on these problems
     tempops.verbose = 0;
     tempops.saveduals = 0;
-    [aux1,aux2,aux3,LPmodel] = export(set(temp>0),temp,tempops);   
+    [aux1,aux2,aux3,LPmodel] = export(set(temp>=0),temp,tempops);   
 else
     LPmodel = [];
 end
@@ -1136,7 +1143,25 @@ for i = 1:matrixSOSsize
         end
     end
 end
-        
+
+
+function H = testnice(A_equ)
+[L,U,P] = lu(A_equ);
+[L,U,P] = lu(A_equ');
+r = colspaces(L');
+AA = L';
+H1 = AA(:,r);
+H2 = AA(:,setdiff(1:size(AA,2),r));
+H = P'*[-H1\H2;eye(size(H2,2))];
+    
+function  [indx]=colspaces(A)
+indx = [];
+for i = 1:size(A,2)
+    s = max(find(A(:,i)));
+    indx = [indx s];
+end
+indx = unique(indx);
+    
 
 function [Z,Q1,R] = sparsenull(A)
 
@@ -1277,12 +1302,14 @@ else
         end
     end
     [Bnull,Q1,R1] = sparsenull(B);Bnull(abs(Bnull) < 1e-12) = 0;
+   % H = testnice(B);
     t = sdpvar(size(Bnull,2),1);
     if isa(A,'intval')
         % Limitation in INTLAB
         imQ = -Q1*(full(R1')\(A+C*recover(x_vars)))+Bnull*t;
     else
         imQ = -Q1*(R1'\(A+C*recover(x_vars)))+Bnull*t;
+    %    imQ = -B\(A+C*recover(x_vars))+H*t;
     end
 end
 notUsed = find(sum(abs(B),2)==0);

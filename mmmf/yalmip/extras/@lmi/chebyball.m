@@ -29,11 +29,11 @@ if nargin < 2
     ops = sdpsettings('verbose',0);
 end
 
-sol = solvesdp(A*x+r*sqrt(sum(A.^2,2))<b,-r,ops);
+sol = solvesdp(A*x+r*sqrt(sum(A.^2,2))<=b,-r,ops);
 
 xc = double(x);
 R = double(r);
-C = (x-xc)'*(x-xc) < R^2;
+C = (x-xc)'*(x-xc) <= R^2;
 if sol.problem == 1;
     R = 0;
 elseif sol.problem == 2

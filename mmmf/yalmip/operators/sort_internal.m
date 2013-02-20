@@ -29,12 +29,12 @@ X = reshape(X,1,n);
 % Standard model
 F = set(sum(D,1) == 1) + set(sum(D,2) == 1);
 F = F + set(t == sum(V,2));
-F = F + set(diff(t) > 0);
+F = F + set(diff(t) >= 0);
 for i = 1:n
    di = D(i,:);
    vi = V(i,:);
-   F = F + set(-(-m)'.*(1-di) < X-vi < (M)'.*(1-di));
-   F = F + set(m'.*di <  vi < M'.*di);   
+   F = F + set(-(-m)'.*(1-di) <= X-vi <= (M)'.*(1-di));
+   F = F + set(m'.*di <=  vi <= M'.*di);   
 end
 
 % Cuts

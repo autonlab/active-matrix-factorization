@@ -1,166 +1,38 @@
-function output = call_cplexibm_miqcp(interfacedata)
+function output = call_cplexibm_qcmiqp(interfacedata)
 
 % Author Johan Löfberg
-% $Id: call_cplexibm_miqcp.m,v 1.21 2009-11-03 11:08:47 joloef Exp $
 
-% Retrieve needed data
+% This is a gateway to all CPLEX interfaces
+% Call LP/QP solver if sufficient
+if isempty(interfacedata.K.q) | interfacedata.K.q(1)==0
+    output = call_cplexibm_miqp(interfacedata);
+    return
+end
+
 options = interfacedata.options;
-F_struc = interfacedata.F_struc;
-c       = interfacedata.c;
-Q       = interfacedata.Q;
-K       = interfacedata.K;
-x0      = interfacedata.x0;
-integer_variables = interfacedata.integer_variables;
-binary_variables = interfacedata.binary_variables;
-semicont_variables = interfacedata.semicont_variables;
-
-UB      = interfacedata.ub;
-LB      = interfacedata.lb;
-
-showprogress('Calling CPLEX',options.showprogress);
-
-if ~isempty(semicont_variables)
-    % Bounds must be placed in LB/UB
-    [LB,UB,cand_rows_eq,cand_rows_lp] = findulb(F_struc,K,LB,UB);
-    F_struc(K.f+cand_rows_lp,:)=[];
-    F_struc(cand_rows_eq,:)=[];
-    K.l = K.l-length(cand_rows_lp);
-    K.f = K.f-length(cand_rows_eq);
-    
-    redundant = find(LB<=0 & UB>=0);
-    semicont_variables = setdiff(semicont_variables,redundant);
-end
-
-n_original = length(c);
-if K.q(1)>0
-    % To simplify code, we currently normalize everything to z'*z<x0^2
-    nNEW = sum(K.q);
-    if ~isempty(x0)
-        x0 = [x0;full(F_struc(1+K.f+K.l:end,:))*[1;x0]];
-    end
-        
-    Ftemp = F_struc(1+K.f+K.l:end,:);
-    F_strucSOCP = [Ftemp -speye(nNEW)];
-    F_struc = [F_struc(1:K.f+K.l,:) spalloc(K.f+K.l,nNEW,0)];
-    UB = [UB;inf(nNEW,1)];
-    c = [c;spalloc(nNEW,1,0)];
-    Q = blkdiag(Q,spalloc(nNEW,nNEW,0));
-    
-    iCone = n_original+1;
-    ri = zeros(1,length(K.q));
-    Li = spalloc(n_original+nNEW,length(K.q),0);
-    for i = 1:length(K.q);
-        Qi{i} = sparse(iCone:iCone+K.q(i)-1,iCone:iCone+K.q(i)-1,[-1 ones(1,K.q(i)-1)],n_original+nNEW,n_original+nNEW);
-        LB = [LB;0;-inf(K.q(i)-1,1)];
-        iCone = iCone + K.q(i);
-    end
-    F_struc = [F_strucSOCP;F_struc];
-    K.f = K.f + nNEW;
-else
-    Qi = [];
-    ri = [];
-    Li = [];
-end
-
-if K.l+K.f>0
-    A =-(F_struc(1:K.f+K.l,2:end));
-    B = full(F_struc(1:K.f+K.l,1));
-end
-
-if K.f > 0
-    Aeq = A(1:K.f,:);
-    beq = B(1:K.f);
-else
-    Aeq = [];
-    beq = [];
-end
-if K.l > 0
-    Aineq = A(1+K.f:K.f+K.l,:);
-    bineq = B(1+K.f:K.f+K.l);
-else
-    Aineq = [];
-    bineq = [];
-end
-
-
-if nnz(Q)==0
-    H = [];
-else
-    H = full(2*Q);
-end
-
-NegativeSemiVar = [];
-if ~isempty(semicont_variables)
-    NegativeSemiVar = find(LB(semicont_variables) < 0);
-    if ~isempty(NegativeSemiVar)
-        temp = UB(semicont_variables(NegativeSemiVar));
-        UB(semicont_variables(NegativeSemiVar)) = -LB(semicont_variables(NegativeSemiVar));
-        LB(semicont_variables(NegativeSemiVar)) = -temp;
-        if ~isempty(Aineq)
-            Aineq(:,semicont_variables(NegativeSemiVar)) = -Aineq(:,semicont_variables(NegativeSemiVar));
-        end
-        if ~isempty(Aeq)
-            Aeq(:,semicont_variables(NegativeSemiVar)) = -Aeq(:,semicont_variables(NegativeSemiVar));
-        end
-        H(:,semicont_variables(NegativeSemiVar)) = -H(:,semicont_variables(NegativeSemiVar));
-        H(semicont_variables(NegativeSemiVar),:) = -H(semicont_variables(NegativeSemiVar),:);
-        for i = 1:length(Qi)
-            Qi{i}(:,semicont_variables(NegativeSemiVar)) = -Qi{i}(:,semicont_variables(NegativeSemiVar));
-            Qi{i}(semicont_variables(NegativeSemiVar),:) = -Qi{i}(semicont_variables(NegativeSemiVar),:);
-        end
-        c(semicont_variables(NegativeSemiVar)) = -c(semicont_variables(NegativeSemiVar));
-    end
-end
-
-% Bug in cplex 12.1
-if length(K.q) == 1
-    if isa(Qi,'cell')    
-        Qi = Qi{1};
-    end
-end    
-
-ctype = char(ones(length(c),1)*67);
-ctype(setdiff(integer_variables,semicont_variables)) = 'I';
-ctype(binary_variables)  = 'B';  % Should not happen except from bmibnb
-ctype(setdiff(semicont_variables,integer_variables)) = 'S';  % Should not happen except from bmibnb
-ctype(intersect(semicont_variables,integer_variables)) = 'N';
-
-options.cplex.simplex.display = options.verbose;
-options.cplex.mip.display = options.verbose;
-options.cplex.barrier.display = options.verbose;
-if str2num(interfacedata.solver.subversion)>=12.3
-    options.cplex.diagnostics = 'on';
-end
-
-if ~isempty(K.sos.type)
-    for i = 1:length(K.sos.weight)
-        K.sos.weight{i} = full(K.sos.weight{i}(:));
-    end
-    if length(K.sos.weight)==1
-        K.sos.weight = K.sos.weight{1};
-        K.sos.variables = K.sos.variables{1};
-    end
-end
+n_original = length(interfacedata.c);
+model = yalmip2cplex(interfacedata);
 
 if options.savedebug
-    save cplexintdebug H c Aineq bineq Aeq beq Li Qi ri LB UB ctype
+    save cplexdebug model
 end
 
 % Call mex-interface
+showprogress('Calling CPLEX',options.showprogress);
 solvertime = clock;
-if isempty(integer_variables) & isempty(binary_variables) & isempty(semicont_variables) & isempty(K.sos.type)
-    [x,fval,exitflag,output] = cplexqcp(H, c(:), Aineq,bineq,Aeq,beq,Li,Qi,ri,LB,UB,x0,options.cplex);    
-else   
-    [x,fval,exitflag,output] = cplexmiqcp(H, c(:), Aineq,bineq,Aeq,beq,Li,Qi,ri,K.sos.type,K.sos.variables,K.sos.weight,LB,UB,ctype',x0,options.cplex);   
+if isempty(model.integer_variables) & isempty(model.binary_variables) & isempty(model.semicont_variables) & isempty(model.K.sos.type)
+    [x,fval,exitflag,output] = cplexqcp(model.H, model.f, model.Aineq,model.bineq,model.Aeq,model.beq,model.Li,model.Qi,model.ri,model.lb,model.ub,model.x0,model.options);
+else
+    [x,fval,exitflag,output] = cplexmiqcp(model.H, model.f, model.Aineq,model.bineq,model.Aeq,model.beq,model.Li,model.Qi,model.ri,model.K.sos.type,model.K.sos.variables,model.K.sos.weight,model.lb,model.ub,model.ctype',model.x0,model.options);
 end
 if interfacedata.getsolvertime solvertime = etime(clock,solvertime);else solvertime = 0;end
 
-if length(x) == length(c)
-    if ~isempty(NegativeSemiVar)
-       x(NegativeSemiVar) = -x(NegativeSemiVar);
+if length(x) == length(model.f)
+    if ~isempty(model.NegativeSemiVar)
+        x(model.NegativeSemiVar) = -x(model.NegativeSemiVar);
     end
 end
- 
+
 if isempty(x)
     x = zeros(n_original,1);
 else
@@ -185,7 +57,7 @@ switch output.cplexstatus
     case {5,6,109,110}
         problem = 4; % Numerics
     case 119
-        problem = 15;        
+        problem = 15;
     otherwise
         problem = -1;
 end
@@ -194,17 +66,7 @@ infostr = yalmiperror(problem,'CPLEX-IBM');
 
 % Save all data sent to solver?
 if options.savesolverinput
-    solverinput.H = H;
-    solverinput.f = c(:);
-    solverinput.Aineq = Aineq;
-    solverinput.bineq = bineq;
-    solverinput.Aeq = Aeq;
-    solverinput.beq = beq;
-    solverinput.ctype = ctype;
-    solverinput.LB = LB;
-    solverinput.UB = UB;
-    solverinput.x0 = [];
-    solverinput.options = options.cplex;
+    solverinput.model = model;   
 else
     solverinput = [];
 end
@@ -212,13 +74,12 @@ end
 % Save all data from the solver?
 if options.savesolveroutput
     solveroutput.x = x;
-    solveroutput.FMIN = FMIN;
-    solveroutput.SOLSTAT = SOLSTAT;
-    solveroutput.DETAILS=DETAILS;
+    solveroutput.fval = fval;
+    solveroutput.exitflag = exitflag;
+    solveroutput.output=output;
 else
     solveroutput = [];
 end
-
 
 % Standard interface
 output.Primal      = x;
@@ -229,20 +90,3 @@ output.infostr     = infostr;
 output.solverinput = solverinput;
 output.solveroutput= solveroutput;
 output.solvertime  = solvertime;
-
-function nSOCP=countSOCP(F_struc,K)
-nSOCP = 0;
-top = K.f+K.l + 1;
-ri = zeros(1,length(K.q));
-Li = [];
-for i = 1:length(K.q)
-    % [cx+d;Ax+b]   |Ax+b|<cx+d, originally a QCQP
-    m = K.q(i);
-    ci = F_struc(top,2:end)';
-    di = F_struc(top,1);
-    Ai = F_struc(top+1:top+m-1,2:end);
-    if(min(eig(full(Ai'*Ai - ci*ci')))<0)
-        nSOCP = nSOCP + 1;
-    end
-    top = top+m;
-end

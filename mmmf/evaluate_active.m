@@ -19,10 +19,11 @@ if nargin < 3; steps = -1; end
 if nargin < 4; known = eye(size(Y)); end
 if nargin < 5; queryable = (Y ~= 0); end
 if nargin < 6; C = 1; end
-if nargin < 7; save_partial = false; else; save_partial = true; end
+% test_on handled later
+if nargin < 8; save_partial = false; else; save_partial = true; end
 
 addpath(genpath('yalmip'))
-addpath('~/share/csdp/matlab')
+addpath('~/share/sedumi')
 
 known = logical(known);
 [known_i, known_j] = find(known);
@@ -34,7 +35,7 @@ queryable(known) = false;
 Ytr_init = double(zeros(size(Y)));
 Ytr_init(known) = Y(known);
 
-if nargin < 7
+if nargin < 7 || numel(test_on) < 1
     test_on = (Y ~= 0) & (~known);
 else
     test_on = logical(test_on);
@@ -45,7 +46,7 @@ function [err] = get_misclass(X)
 end
 
 % initial fit
-[x_init, xu_init, xv_init] = solveD(Ytr_init, 'a', C);
+[x_init, xu_init, xv_init] = solveD(Ytr_init, 'a', C, 'sedumi');
 
 all_results = cell(1, length(selectors));
 
@@ -74,14 +75,14 @@ for selector_i = 1 : length(selectors)
         % learn the value of that query item
         Ytr(i, j) = Y(i, j);
         can_query(i, j) = 0;
-        [x, xu, xv] = solveD(Ytr, 'a', C);
+        [x, xu, xv] = solveD(Ytr, 'a', C, 'sedumi');
         num_known = num_known + 1;
 
         % save results
         results(stepnum, :) = {num_known, get_misclass(x), [i,j], evals, x};
         stepnum = stepnum + 1;
         if save_partial
-            save outfile results;
+            save(outfile, 'results');
         end
     end
 

@@ -78,7 +78,7 @@ K = model.K;
 Fimage = set([]);
 start = 1;
 if model.K.l > 0
-    Fimage = Fimage + set(vecF(start:start+K.l-1) > 0);
+    Fimage = Fimage + set(vecF(start:start+K.l-1) >= 0);
     start = start + K.l;
 end
 

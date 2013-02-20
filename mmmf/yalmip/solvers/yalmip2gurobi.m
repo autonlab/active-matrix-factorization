@@ -16,18 +16,20 @@ n = length(c);
 if ~isempty(ub)
     LB = lb;
     UB = ub;
-   if ~isempty(binary_variables)
-    LB(binary_variables)  = round(LB(binary_variables));
-    UB(binary_variables)  = round(UB(binary_variables));
+    if ~isempty(binary_variables)
+        LB(binary_variables)  = round(LB(binary_variables));
+        UB(binary_variables)  = round(UB(binary_variables));
     end
     if ~isempty(integer_variables)
-    LB(integer_variables) = round(LB(integer_variables));
-    UB(integer_variables) = round(UB(integer_variables));
+        LB(integer_variables) = round(LB(integer_variables));
+        UB(integer_variables) = round(UB(integer_variables));
     end
 else
     LB = -repmat(inf,n,1);
     UB = repmat(inf,n,1);
 end
+
+%[F_struc,K,LB,UB,semicont_variables] = extractSemiContBounds(F_struc,K,LB,UB,semicont_variables);
 
 if ~isempty(semicont_variables)
     % Bounds must be placed in LB/UB
@@ -44,8 +46,7 @@ n_original = length(c);
 [F_struc,K,c,Q,UB,LB] = append_normalized_socp(F_struc,K,c,Q,UB,LB);
 
 if size(F_struc,1)>0
-    B = full(F_struc(:,1));         % Must be full
-    %A =-F_struc(:,2:end);
+    B = full(F_struc(:,1));         % Must be full  
     A =-F_struc;
     A(:,1)=[];
 else
@@ -55,7 +56,6 @@ end
 
 % Optimized code, make a lot of difference when you make this call 10000
 % times in a branch and bound setting...
-%CTYPE = [char(ones(K.f,1)*61); char(ones(K.l,1)*60)];
 CTYPE = char([ones(K.f,1)*61; ones(K.l,1)*60]);
 VARTYPE = char(ones(length(c),1)*67);
 if isempty(semicont_variables)
@@ -70,6 +70,7 @@ end
 
 % Gurobi assumes semi-continuous variables only can take negative values so
 % we negate semi-continuous violating this
+%[NegativeSemiVar,Q,c,A,lb,ub,semicont_variables] = negateNegativeSemiContVariables(Q,c,A,lb,ub,semicont_variables,[]);
 NegativeSemiVar = [];
 if ~isempty(semicont_variables)
     NegativeSemiVar = find(UB(semicont_variables) < 0);
@@ -78,7 +79,7 @@ if ~isempty(semicont_variables)
         UB(semicont_variables(NegativeSemiVar)) = -LB(semicont_variables(NegativeSemiVar));
         LB(semicont_variables(NegativeSemiVar)) = -temp;
         A(:,semicont_variables(NegativeSemiVar)) = -A(:,semicont_variables(NegativeSemiVar));
-        C(semicont_variables(NegativeSemiVar)) = -C(semicont_variables(NegativeSemiVar));
+        c(semicont_variables(NegativeSemiVar)) = -c(semicont_variables(NegativeSemiVar));
         if ~isempty(x0)
             x0(NegativeSemiVar) = -NegativeSemiVar;
         end
@@ -126,4 +127,7 @@ else
      model.params.outputflag = 1;
 end
 
+if ~isempty(x0)
+    model.start = x0;
+end
 model.NegativeSemiVar=NegativeSemiVar;

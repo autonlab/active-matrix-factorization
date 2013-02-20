@@ -89,49 +89,31 @@ y.extra.opname='';
 y = unfactor(y);
 
 % Update the factors
-doublehere = [];
+% But first, check to see that factors exist in all terms, if not simply
+% exit
 for i = 1:length(varargin)
     if isa(varargin{i},'sdpvar')
         if length(varargin{i}.leftfactors)==0
             y = flush(y);
             return
         end
+    end
+end
+doublehere = [];
+for i = 1:length(varargin)
+    if isa(varargin{i},'sdpvar')      
         for j = 1:length(varargin{i}.leftfactors)
             w = size(varargin{i}.leftfactors{j},2);
             y.leftfactors{end+1} = [spalloc(sum(n(1:1:i-1)),w,0); varargin{i}.leftfactors{j}; spalloc(sum(n(i+1:1:end)),w,0)];
             y.midfactors{end+1} = varargin{i}.midfactors{j};
             y.rightfactors{end+1} = varargin{i}.rightfactors{j};
         end
-    elseif isa(varargin{i},'double')
-        %if ~doublehere
+    elseif isa(varargin{i},'double')       
         here = length(y.midfactors)+1;
-        doublehere = [doublehere here];
-        %end
-        y.leftfactors{here} = [zeros(sum(n(1:1:i-1)),size(varargin{i},1)); eye(size(varargin{i},1)); zeros(sum(n(i+1:1:end)),size(varargin{i},1))];
+        doublehere = [doublehere here];      
+        y.leftfactors{here} = [spalloc(sum(n(1:1:i-1)),size(varargin{i},1),0); speye(size(varargin{i},1)); spalloc(sum(n(i+1:1:end)),size(varargin{i},1),0)];
         y.midfactors{here}  = varargin{i};
-        y.rightfactors{here}  = eye(size(varargin{i},2));
+        y.rightfactors{here}  = speye(size(varargin{i},2));
     end
 end
 y = cleandoublefactors(y);
-
-% 
-% if length(y.midfactors)>1
-%     keep = ones(1,length(y.midfactors));
-%     for i = 1:length(y.midfactors)-1
-%         for j = 2:length(y.midfactors)
-%             if keep(j)
-%                 if isequal(y.midfactors{j},y.midfactors{i})
-%                     if isequal(y.rightfactors{j},y.rightfactors{i})
-%                         keep(j) = 0;
-%                         y.leftfactors{i} = y.leftfactors{i}+y.leftfactors{j};
-%                     end
-%                 end
-%             end
-%         end
-%     end
-%     if ~all(keep)
-%         y.leftfactors = {y.leftfactors{find(keep)}};
-%         y.midfactors = {y.midfactors{find(keep)}};
-%         y.rightfactors = {y.rightfactors{find(keep)}};
-%     end
-% end

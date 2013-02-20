@@ -110,11 +110,11 @@ if ~isempty(bilinear)
 
     if all(ismember(xi,allbinary)) & all(ismember(yi,allbinary))
         % fast case for binary*binary
-        F = F + set(binary(z_bilinear)) + set(x >= z_bilinear) + set(y >= z_bilinear) + set(1+z_bilinear > x + y) + set(0 <= z_bilinear <= 1);
+        F = F + set(binary(z_bilinear)) + set(x >= z_bilinear) + set(y >= z_bilinear) + set(1+z_bilinear >= x + y) + set(0 <= z_bilinear <= 1);
     else
         for i = 1:length(bilinear)
             if ismember(xi(i),allbinary) & ismember(yi(i),allbinary)
-                F = F + set(x(i) >= z_bilinear(i)) + set(y(i) >= z_bilinear(i)) + set(1+z_bilinear(i) > x(i) + y(i)) + set(0 <= z_bilinear(i) <= 1);
+                F = F + set(x(i) >= z_bilinear(i)) + set(y(i) >= z_bilinear(i)) + set(1+z_bilinear(i) >= x(i) + y(i)) + set(0 <= z_bilinear(i) <= 1);
             elseif ismember(xi(i),allbinary)
                 F = F + binary_times_cont(x(i),y(i), z_bilinear(i));
             else
@@ -152,7 +152,7 @@ if ~isempty(polynomial)
             % simple case, just binary terms
             [ii,jj] = find(the_monom);
             x = recover(jj);
-            F = F + set(x >= z_polynomial(i)) + set(length(x)-1+z_polynomial(i) > sum(x)) + set(0 <= z_polynomial(i) <= 1);
+            F = F + set(x >= z_polynomial(i)) + set(length(x)-1+z_polynomial(i) >= sum(x)) + set(0 <= z_polynomial(i) <= 1);
         end
     end
 else

@@ -2,8 +2,6 @@ function varargout=abs(varargin)
 %ABS (overloaded)
 
 % Author Johan Löfberg
-% $Id: abs.m,v 1.28 2008-11-11 13:29:20 joloef Exp $
-
 switch class(varargin{1})
     case 'double'
         error('Overloaded SDPVAR/ABS CALLED WITH DOUBLE. Report error')
@@ -11,6 +9,13 @@ switch class(varargin{1})
     case 'sdpvar' % Overloaded operator for SDPVAR objects. Pass on args and save them.
         if isreal(varargin{1})
             varargout{1} = yalmip('define',mfilename,varargin{1});
+            B = getbase(varargin{1});
+            if all(all(fix(B)==B))
+                CurrInt = yalmip('quantvariables');
+                if all(ismember(getvariables(varargin{1}),CurrInt))
+                    yalmip('setintvariables',[CurrInt getvariables(varargout{1})]);
+                end
+            end
         else
             % For complex args, abs(X) is defined [norm(X(i,j),2)] in MATLAB
             y = [];
@@ -30,8 +35,8 @@ switch class(varargin{1})
             case 'graph'
                 % Description using epigraphs
                 t = varargin{2};
-                X = varargin{3};
-                varargout{1} = set(-t <= X <= t);
+                X = varargin{3};             
+                varargout{1} = [1 -1;-1 -1]*[X;t] <= [0;0];                
                 varargout{2} = struct('convexity','convex','monotonicity','none','definiteness','positive','model','graph');
                 varargout{3} = X;
 
@@ -39,19 +44,32 @@ switch class(varargin{1})
                 % Exact description using binary variables
                 t = varargin{2};
                 X = varargin{3};
-                F = set([]);
+                d = varargin{4};
                 [M,m]=derivebounds(X);
                 if m>=0
-                    F = F + set(t == X);
+                    F = set(t == X);
                 elseif M<=0
-                    F = F + set(t == -X);
+                    F = set(t == -X);
                 else
-                    d = binvar(1,1);
+                   % d = binvar(1,1);
                     maxABSX = max([abs(m) abs(M)],[],2);
-                    F = F + set(0<= t <= maxABSX);
-                    F = F + set(X <= M*d)     + set(0 <= t+X <= 2*maxABSX*d);
-                    F = F + set(X >= m*(1-d)) + set(0 <= t-X <= 2*maxABSX*(1-d));
+                   % F = F + set(0<= t <= maxABSX);
+                   % F = F + set(X <= M*d)     + set(0 <= t+X <= 2*maxABSX*d);
+                   % F = F + set(X >= m*(1-d)) + set(0 <= t-X <= 2*maxABSX*(1-d));
+                    F = [[0 1 0;
+                     0 -1 0;   
+                     1 0 -M;
+                     1 1 -2*maxABSX;
+                     -1 -1 0;
+                     -1 0 -m;
+                     -1 1 2*maxABSX;1 -1 0]*[X;t;d] <= [maxABSX;0;0;0;0;-m;2*maxABSX;0]];
                 end
+%                 if all(all(getbase(X)==fix(getbase(X))))
+%                     xv = getvariables(X);
+%                     if all(ismember(xv,yalmip('intvariables')) | ismember(xv,yalmip('binvariables')))
+%                         F = [F,integer(t)];
+%                     end
+%                 end
                 varargout{1} = F;
                 varargout{2} = struct('convexity','convex','monotonicity','none','definiteness','positive','model','integer');
                 varargout{3} = X;

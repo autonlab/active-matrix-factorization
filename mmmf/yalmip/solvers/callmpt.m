@@ -1,7 +1,8 @@
 function output = callmpt(interfacedata)
 
 % Author Johan Löfberg
-% $Id: callmpt.m,v 1.84 2006-11-09 14:49:44 joloef Exp $
+
+% This file is kept for MPT2 compatability
 
 % Speeds up solving LPs in mpmilp
 global mptOptions

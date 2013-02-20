@@ -19,7 +19,14 @@ switch class(varargin{1})
 
     case 'char'
 
-        operator = struct('convexity','none','monotonicity','increasing','definiteness','positive','model','callback');
+        [M,m] = derivebounds(varargin{3});
+        if m >= 0
+            operator = struct('convexity','concave','monotonicity','increasing','definiteness','positive','model','callback');
+        elseif M <= 0
+            operator = struct('convexity','convex','monotonicity','increasing','definiteness','positive','model','callback');
+        else
+            operator = struct('convexity','none','monotonicity','increasing','definiteness','positive','model','callback');
+        end
         operator.convexhull = @convexhull;
         operator.bounds     = @bounds;
         operator.derivative = @(x)logistic(x).*(1-logistic(x));

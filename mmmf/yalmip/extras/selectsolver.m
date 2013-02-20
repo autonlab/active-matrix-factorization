@@ -1,4 +1,4 @@
-function [solver,problem] = selectsolver(options,ProblemClass,solvers,socp_are_really_qc);
+function [solver,problem,forced_choice] = selectsolver(options,ProblemClass,solvers,socp_are_really_qc);
 %SELECTSOLVER Internal function to select solver based on problem category
 
 % Author Johan Löfberg
@@ -14,8 +14,13 @@ end
 % ***************************************************
 % Maybe the user is stubborn and wants to pick solver
 % ***************************************************
+forced_choice = 0;
 if length(options.solver)>0 & isempty(findstr(options.solver,'*'))
     
+    if strfind(options.solver,'+')
+        forced_choice = 1;
+        options.solver = strrep(options.solver,'+','');
+    end
     % Create tags with version also        
     temp = solvers;
     for i = 1:length(temp)
@@ -52,31 +57,37 @@ if length(options.solver)>0 & isempty(findstr(options.solver,'*'))
     end    
 end
 
+% if forced_choice
+%     solver = solvers(end);
+%     problem = 0;
+%     return
+% end
+
 % ************************************************
 % Prune based on objective
 % ************************************************
-if ProblemClass.objective.sigmonial
+if ProblemClass.objective.sigmonial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) = solvers(i).objective.sigmonial;                         
     end
     solvers = solvers(find(keep));
 end    
-if ProblemClass.objective.polynomial
+if ProblemClass.objective.polynomial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) =  solvers(i).constraint.equalities.quadratic | solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex | solvers(i).objective.polynomial | solvers(i).objective.sigmonial;            
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.objective.quadratic.nonconvex
+if ProblemClass.objective.quadratic.nonconvex & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) = solvers(i).objective.polynomial | solvers(i).objective.sigmonial | solvers(i).objective.quadratic.nonconvex;        
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.objective.quadratic.convex
+if ProblemClass.objective.quadratic.convex & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         direct = solvers(i).objective.polynomial | solvers(i).objective.sigmonial | solvers(i).objective.quadratic.nonconvex | solvers(i).objective.quadratic.convex;
@@ -89,7 +100,7 @@ if ProblemClass.objective.quadratic.convex
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.objective.linear
+if ProblemClass.objective.linear & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) = solvers(i).objective.polynomial | solvers(i).objective.sigmonial | solvers(i).objective.quadratic.nonconvex | solvers(i).objective.quadratic.convex | solvers(i).objective.linear;
@@ -97,7 +108,7 @@ if ProblemClass.objective.linear
     solvers = solvers(find(keep));
 end  
 
-if ProblemClass.objective.maxdet.convex & ~ProblemClass.objective.linear & ~ProblemClass.objective.quadratic.convex
+if ProblemClass.objective.maxdet.convex & ~ProblemClass.objective.linear & ~ProblemClass.objective.quadratic.convex & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) = solvers(i).objective.maxdet.convex | solvers(i).constraint.inequalities.semidefinite.linear;
@@ -105,7 +116,7 @@ if ProblemClass.objective.maxdet.convex & ~ProblemClass.objective.linear & ~Prob
     solvers = solvers(find(keep));
 end  
 
-if ProblemClass.objective.maxdet.convex & (ProblemClass.objective.linear | ProblemClass.objective.quadratic.convex)
+if ProblemClass.objective.maxdet.convex & (ProblemClass.objective.linear | ProblemClass.objective.quadratic.convex) & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) = solvers(i).objective.maxdet.convex;
@@ -113,7 +124,7 @@ if ProblemClass.objective.maxdet.convex & (ProblemClass.objective.linear | Probl
     solvers = solvers(find(keep));
 end
 
-if ProblemClass.objective.maxdet.nonconvex
+if ProblemClass.objective.maxdet.nonconvex & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)
         keep(i) = solvers(i).objective.maxdet.nonconvex;
@@ -125,7 +136,7 @@ end
 % ******************************************************
 % Prune based on rank constraints
 % ******************************************************
-if ProblemClass.constraint.inequalities.rank
+if ProblemClass.constraint.inequalities.rank & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.rank;
@@ -136,53 +147,71 @@ end
 % ******************************************************
 % Prune based on semidefinite constraints
 % ******************************************************
-if ProblemClass.constraint.inequalities.semidefinite.sigmonial
+if ProblemClass.constraint.inequalities.semidefinite.sigmonial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.semidefinite.sigmonial;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.semidefinite.polynomial
+if ProblemClass.constraint.inequalities.semidefinite.polynomial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.semidefinite.sigmonial |  solvers(i).constraint.inequalities.semidefinite.polynomial;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.semidefinite.quadratic
+if ProblemClass.constraint.inequalities.semidefinite.quadratic & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.semidefinite.sigmonial |  solvers(i).constraint.inequalities.semidefinite.polynomial | solvers(i).constraint.inequalities.semidefinite.quadratic;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.semidefinite.linear
+if ProblemClass.constraint.inequalities.semidefinite.linear & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.semidefinite.sigmonial |  solvers(i).constraint.inequalities.semidefinite.polynomial | solvers(i).constraint.inequalities.semidefinite.quadratic | solvers(i).constraint.inequalities.semidefinite.linear;
     end        
     solvers = solvers(find(keep));
-end  
+end
+
+% If user has specified a, e.g., LP solver for an SDP when using OPTIMIZER,
+% we must bail out, as there is no chance this model instantiates as an LP.
+if forced_choice &  (ProblemClass.constraint.inequalities.semidefinite.linear | ProblemClass.constraint.inequalities.semidefinite.quadratic | ProblemClass.constraint.inequalities.semidefinite.polynomial | ProblemClass.constraint.inequalities.semidefinite.sigmonial)
+    keep = ones(length(solvers),1);
+    for i = 1:length(solvers)                      
+        keep(i) = solvers(i).constraint.inequalities.semidefinite.sigmonial |  solvers(i).constraint.inequalities.semidefinite.polynomial | solvers(i).constraint.inequalities.semidefinite.quadratic | solvers(i).constraint.inequalities.semidefinite.linear;
+    end        
+    solvers = solvers(find(keep));
+end
+% Similarily, we have a SOCP by definition. We must support that
+if forced_choice & ~socp_are_really_qc & ProblemClass.constraint.inequalities.secondordercone
+    keep = ones(length(solvers),1);
+    for i = 1:length(solvers)                      
+        keep(i) = solvers(i).constraint.inequalities.secondordercone;
+    end        
+    solvers = solvers(find(keep));
+end
 
 % ******************************************************
 % Prune based on cone constraints
 % ******************************************************
-if ProblemClass.constraint.inequalities.secondordercone & ~socp_are_really_qc
+if ProblemClass.constraint.inequalities.secondordercone & ~socp_are_really_qc & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
-         keep(i) = solvers(i).constraint.inequalities.secondordercone | solvers(i).constraint.inequalities.semidefinite.linear;
+         keep(i) = solvers(i).constraint.inequalities.secondordercone | solvers(i).constraint.inequalities.semidefinite.linear | solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.rotatedsecondordercone
+if ProblemClass.constraint.inequalities.rotatedsecondordercone & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.rotatedsecondordercone | solvers(i).constraint.inequalities.secondordercone | solvers(i).constraint.inequalities.semidefinite.linear;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.powercone
+if ProblemClass.constraint.inequalities.powercone & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.powercone;
@@ -193,35 +222,35 @@ end
 % ******************************************************
 % Prune based on element-wise inequality constraints
 % ******************************************************
-if ProblemClass.constraint.inequalities.elementwise.sigmonial
+if ProblemClass.constraint.inequalities.elementwise.sigmonial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.elementwise.sigmonial;            
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.elementwise.polynomial
+if ProblemClass.constraint.inequalities.elementwise.polynomial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex | solvers(i).constraint.inequalities.elementwise.sigmonial |  solvers(i).constraint.inequalities.elementwise.polynomial;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.inequalities.elementwise.quadratic.nonconvex
+if ProblemClass.constraint.inequalities.elementwise.quadratic.nonconvex & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.elementwise.sigmonial |  solvers(i).constraint.inequalities.elementwise.polynomial | solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex;
     end
     solvers = solvers(find(keep));
 end 
-if ProblemClass.constraint.inequalities.elementwise.quadratic.convex | (ProblemClass.constraint.inequalities.secondordercone & socp_are_really_qc)
+if ProblemClass.constraint.inequalities.elementwise.quadratic.convex | (ProblemClass.constraint.inequalities.secondordercone & socp_are_really_qc) & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.elementwise.sigmonial |  solvers(i).constraint.inequalities.elementwise.polynomial | solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex | solvers(i).constraint.inequalities.elementwise.quadratic.convex | solvers(i).constraint.inequalities.secondordercone | solvers(i).constraint.inequalities.semidefinite.linear;
     end
     solvers = solvers(find(keep));
 end 
-if ProblemClass.constraint.inequalities.elementwise.linear
+if ProblemClass.constraint.inequalities.elementwise.linear & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.elementwise.sigmonial |  solvers(i).constraint.inequalities.elementwise.polynomial | solvers(i).constraint.inequalities.semidefinite.quadratic | solvers(i).constraint.inequalities.elementwise.linear;
@@ -232,14 +261,14 @@ end
 % ******************************************************
 % Prune based on element-wise constraints
 % ******************************************************
-if ProblemClass.constraint.equalities.sigmonial
+if ProblemClass.constraint.equalities.sigmonial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.inequalities.elementwise.sigmonial | solvers(i).constraint.equalities.sigmonial;            
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.equalities.polynomial
+if ProblemClass.constraint.equalities.polynomial & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)    
         indirect = solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex | solvers(i).constraint.inequalities.elementwise.sigmonial |  solvers(i).constraint.inequalities.elementwise.polynomial;
@@ -249,7 +278,7 @@ if ProblemClass.constraint.equalities.polynomial
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.equalities.quadratic
+if ProblemClass.constraint.equalities.quadratic & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         indirect = solvers(i).constraint.inequalities.elementwise.sigmonial | solvers(i).constraint.inequalities.elementwise.polynomial | solvers(i).constraint.inequalities.elementwise.quadratic.nonconvex;
@@ -258,7 +287,7 @@ if ProblemClass.constraint.equalities.quadratic
     end
     solvers = solvers(find(keep));
 end 
-if ProblemClass.constraint.equalities.linear
+if ProblemClass.constraint.equalities.linear & ~forced_choice
     keep = ones(length(solvers),1);
     for i = 1:length(solvers) 
         indirect = solvers(i).constraint.inequalities.elementwise.linear | solvers(i).constraint.inequalities.elementwise.sigmonial |  solvers(i).constraint.inequalities.elementwise.polynomial;
@@ -271,21 +300,21 @@ end
 % ******************************************************
 % Discrete data
 % ******************************************************
-if ProblemClass.constraint.integer
+if ProblemClass.constraint.integer 
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
         keep(i) = solvers(i).constraint.integer;
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.binary
+if ProblemClass.constraint.binary 
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
          keep(i) = solvers(i).constraint.integer | solvers(i).constraint.binary;            
     end
     solvers = solvers(find(keep));
 end  
-if ProblemClass.constraint.sos1
+if ProblemClass.constraint.sos1 
     keep = ones(length(solvers),1);
     for i = 1:length(solvers)                      
          %keep(i) = solvers(i).constraint.integer | solvers(i).constraint.binary | solvers(i).constraint.sos2;            
@@ -336,20 +365,23 @@ end
 % ******************************************************
 % Parametric problem
 % ******************************************************
-keep = ones(length(solvers),1);
-for i = 1:length(solvers)                      
-    keep(i) = (ProblemClass.parametric == solvers(i).parametric);
+if ~forced_choice
+    keep = ones(length(solvers),1);
+    for i = 1:length(solvers)
+        keep(i) = (ProblemClass.parametric == solvers(i).parametric);
+    end
+    solvers = solvers(find(keep));
 end
-solvers = solvers(find(keep));
 
 % ******************************************************
 % General functions (exp, log,...)
 % ******************************************************
 keep = ones(length(solvers),1);
-for i = 1:length(solvers)                      
+for i = 1:length(solvers)
     keep(i) = (ProblemClass.evaluation <= solvers(i).evaluation);
 end
 solvers = solvers(find(keep));
+
 
 % FIX : UUUUUUGLY
 if isempty(solvers)

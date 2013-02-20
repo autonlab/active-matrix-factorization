@@ -53,9 +53,9 @@ nx = length(vars);
 X = recover(vars);
 
 if nargin == 1
-    Xdomain = set(-100 < X < 100);
+    Xdomain = set(-100 <= X <= 100);
 else
-    Xdomain = set(-10000 < X < 10000)+Xdomain;
+    Xdomain = set(-10000 <= X <= 10000)+Xdomain;
 end
 
 [Ai,Bi,Ci,Pn] = generate_pwa(F,t,X,Xdomain,nx);

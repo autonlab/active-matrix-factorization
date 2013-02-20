@@ -11,7 +11,7 @@ function varargout = or(varargin)
 % constraints add constraints to ensure that z,x and y satisfy the
 % truth-table for OR. 
 %
-% The model for OR is set(z>x) + set(z>y) + set(z<x+y) + set(binary(z))
+% The model for OR is [z>=x, z>=y, z<=x+y, binary(z)]
 %
 % It is assumed that x and y are binary variables (either explicitely
 % declared using BINVAR, or constrained using BINARY.)
@@ -48,15 +48,29 @@ switch class(varargin{1})
                  
         xy=[x y];
         
-        varargout{1} = set(sum(xy) > z) + set(z > xy) +set(binary(z)) ;
+        varargout{1} = set(sum(xy) >= z) + set(z >= xy) +set(binary(z));
         varargout{2} = struct('convexity','none','monotonicity','none','definiteness','none','model','integer');
         varargout{3} = xy;
 
     case 'sdpvar'
-        x = varargin{1};
-        y = varargin{2};
-        varargout{1} = yalmip('define','or',varargin{:});
-
+        if nargin == 1
+            if length(varargin{1})==1
+                varargout{1} = varargin{1}
+            else
+                x = varargin{1};
+                % bug in matlab...
+                %temp = or(x(1),x(2));
+                temp = or(extsubsref(x,1),extsubsref(x,2));
+                for i = 3:length(x)
+                    temp = or(temp,extsubsref(x,i));
+                end
+                 varargout{1} = temp;
+            end           
+        else
+            x = varargin{1};
+            y = varargin{2};
+            varargout{1} = yalmip('define','or',varargin{:});
+        end
     otherwise
 end
 

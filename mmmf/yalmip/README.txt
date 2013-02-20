@@ -42,9 +42,11 @@ Restart Matlab, or at least type "clear classes".
 
 6)
 Run yalmiptest.m and everything should work (as long as you have the 
-necessary solvers). Run yalmipdemo for some examples and a brief tutorial. 
+necessary solvers).
 
-The on-line Wiki http://control.ee.ethz.ch/~joloef/wiki/pmwiki.php is recommended 
+Learn more at
+http://users.isy.liu.se/johanl/yalmip
+
 
 *****************************************
 

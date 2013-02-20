@@ -1,5 +1,5 @@
 function output = bmibnb(p)
-%BMIBNB Branch-and-bound scheme for bilinear programs
+%BMIBNB Global solver based on branch-and-bound
 %
 % BMIBNB is never called by the user directly, but is called by YALMIP from
 % SOLVESDP, by choosing the solver tag 'bmibnb' in sdpsettings
@@ -25,7 +25,6 @@ function output = bmibnb(p)
 % bmibnb.maxtime        - Maximum CPU time (sec.) [int (3600)]
 
 % Author Johan Löfberg
-% $Id: bmibnb.m,v 1.83 2010-04-28 07:45:44 joloef Exp $
 
 bnbsolvertime = clock;
 showprogress('Branch and bound started',p.options.showprogress);
@@ -50,6 +49,10 @@ otherwise
     p.options.verbose = 0;
 end
 
+timing.total = tic;
+timing.uppersolve = 0;
+timing.lowersolve = 0;
+timing.domainreduce = 0;
 if ~isempty(p.F_struc)
     if any(isnan(p.F_struc) | isinf(p.F_struc))
         output = yalmip_default_output;
@@ -88,26 +91,19 @@ p = presolve_bounds_from_quadratics(p);
 p = update_eval_bounds(p);
 p = update_monomial_bounds(p);
 
-if p.K.f > 0
-    % Sort the equalities such that equalities with few terms are at the
-    % top. This will improve bound propagation from equalities. If a tie,
-    % place equality with least number of variables with infinite bound on
-    % top. 
-    s = p.lb-p.ub;
-    b = p.F_struc(1:p.K.f,1);
-    A = p.F_struc(1:p.K.f,2:end);
-    [i,j] = sortrows([sum(A | A,2) sum(A(:,find(isinf(s))) | A(:,find(isinf(s))),2)],[1 2]);
-    p.F_struc(1:p.K.f,:)=[];
-    p.F_struc = [b(j) A(j,:);p.F_struc];
-end
 
 % *************************************************************************
-% Improve the bounds by performing some standard presolve
+% Sort equalities in order to improve future bound propagation
 % *************************************************************************
-p = presolve_bounds_from_equalities(p); 
+p = presolve_sortrows(p);
+
+% *************************************************************************
+% Improve the bounds by performing some standard propagation
+% *************************************************************************
+p = propagate_bounds_from_equalities(p); 
 p = update_eval_bounds(p);
 p = update_monomial_bounds(p);
-%p = presolve_bounds_from_inequalities(p);
+p = presolve_bounds_from_inequalities(p);
 p = update_eval_bounds(p);
 p = update_monomial_bounds(p);
 
@@ -139,13 +135,13 @@ if solver_can_solve(p.solver.uppersolver,p) & any(p.variabletype>2)
     p = preprocess_bilinear_bounds(p);
     p = update_eval_bounds(p);
     p = updateboundsfromupper(p,upper);
-    p = propagatecomplementary(p);
+    p = propagate_bounds_from_complementary(p);
     p = updatemonomialbounds(p);
-    p = presolve_bounds_from_equalities(p);
+    p = propagate_bounds_from_equalities(p);
     p = updatemonomialbounds(p);   
     p = updatemonomialbounds(p);    
     p = update_eval_bounds(p);    
-    [upper,p.x0,info_text,numglobals] = solve_upper_in_node(p,p,x_min,upper,x_min,p.solver.uppersolver.call,'',0);
+    [upper,p.x0,info_text,numglobals,timing] = solve_upper_in_node(p,p,x_min,upper,x_min,p.solver.uppersolver.call,'',0,timing);
     if numglobals > 0
         x_min = p.x0;
     end
@@ -178,7 +174,7 @@ end
 
 p.EqualityConstraintState = ones(p.K.f,1);
 p.InequalityConstraintState = ones(p.K.l,1);
-p = propagatequadratics(p,inf,-inf);
+p = propagatequadratics(p);
     
 
 % *************************************************************************
@@ -224,7 +220,6 @@ p = reduce_bilinear_branching_variables(p);
 % ******************************************[******************************
 p = presolveloop(p,upper);
 
-
 % *************************************************************************
 % Try a little more root node tigthening
 % *************************************************************************
@@ -234,7 +229,7 @@ p.ub(close) = p.lb(close);
 p = root_node_tighten(p,upper);
 p = updatemonomialbounds(p);
 p = update_eval_bounds(p);
-p = presolve_bounds_from_equalities(p);
+p = propagate_bounds_from_equalities(p);
 p = updatemonomialbounds(p);
 output = yalmip_default_output;
 
@@ -323,7 +318,7 @@ if p.feasible
     % *******************************
     % RUN BILINEAR BRANCH & BOUND
     % *******************************
-    [x_min,solved_nodes,lower,upper,lower_hist,upper_hist] = branch_and_bound(p,x_min,upper);
+    [x_min,solved_nodes,lower,upper,lower_hist,upper_hist,timing] = branch_and_bound(p,x_min,upper,timing);
     
     % ********************************
     % CREATE SOLUTION AND DIAGNOSTICS
@@ -350,6 +345,13 @@ else
     upper_hist = [];
 end
 
+timing.total = toc(timing.total);
+if p.options.bmibnb.verbose
+    disp(['* Timing: ' num2str(ceil(100*timing.uppersolve/timing.total)) '% spent in upper solver']);
+    disp(['*         ' num2str(ceil(100*timing.lowersolve/timing.total)) '% spent in lower solver']);
+    disp(['*         ' num2str(ceil(100*timing.domainreduce/timing.total)) '% spent in LP-based domain reduction']);
+end
+
 x_min = dediagonalize(p,x_min);
 
 output = yalmip_default_output;
@@ -359,6 +361,7 @@ output.Primal        = zeros(length(p.kept),1);
 output.Primal(p.kept(1:n_in))= x_min(1:n_in);
 output.infostr      = yalmiperror(output.problem,'BMIBNB');
 output.solvertime   = etime(clock,bnbsolvertime);
+output.timing = timing;
 output.lower = lower;
 output.solveroutput.lower = lower;
 output.solveroutput.lower_hist = lower_hist;
@@ -490,9 +493,9 @@ while goon
     % 2
     p = updateboundsfromupper(p,upper);
     % 3
-    p = propagatecomplementary(p);
+    p = propagate_bounds_from_complementary(p);
     p = updatemonomialbounds(p);  
-    p = presolve_bounds_from_equalities(p);       
+    p = propagate_bounds_from_equalities(p);       
     p = updatemonomialbounds(p);
     p = updatemonomialbounds(p);        
     p = update_eval_bounds(p);

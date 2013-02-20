@@ -32,7 +32,7 @@ switch(X.typeflag)
             if is(X,'compound')
                 classification = [classification ', derived'];
                 if ~isequal(X.extra.opname,'')
-                classification = [classification ', models ''' X.extra.opname ''''];
+                    classification = [classification ', models ''' X.extra.opname ''''];
                 end
             end
 

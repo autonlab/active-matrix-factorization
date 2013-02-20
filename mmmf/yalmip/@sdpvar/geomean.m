@@ -66,7 +66,7 @@ switch class(varargin{1})
 
                     D = tril(sdpvar(n,n));
                     delta = diag(D);
-                    F = set([X D;D' diag(delta)] > 0);
+                    F = set([X D;D' diag(delta)] >= 0);
                     p = 2^ceil(log2(n));
                     if 1
                         x = [delta;ones(d,1)*t];
@@ -96,7 +96,7 @@ switch class(varargin{1})
 
                     D = tril(sdpvar(n,n));
                     delta = diag(D);
-                    F = set([X D;D' diag(delta)] > 0);
+                    F = set([X D;D' diag(delta)] >= 0);
                     p = 2^ceil(log2(n));
                     x = delta;
 

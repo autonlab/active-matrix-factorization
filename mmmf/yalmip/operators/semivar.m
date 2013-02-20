@@ -3,7 +3,7 @@ function sys = semivar(varargin)
 %
 %   SEMIVAR works exactly as SDPVAR, with the only difference that
 %   the elements in the variable automatically will be constrained
-%   to be semicontinous (x = 0 or [L < x < U]
+%   to be semicontinous (x = 0 or [L <= x <= U])
 %
 %   Thwe lower and upper bounds are defined separately.
 %

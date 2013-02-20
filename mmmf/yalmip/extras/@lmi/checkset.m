@@ -56,7 +56,7 @@ lmiinfo{9} = 'KYP constraint';
 lmiinfo{10} = 'Eigenvalue constraint';
 lmiinfo{11} = 'SOS constraint';
 lmiinfo{15} = 'Uncertainty declaration';
-
+lmiinfo{55} = 'Complementarity constraint';
 header = {'ID','Constraint','Type','Primal residual','Dual residual','Tag'};
 
 if nargout==0
@@ -117,7 +117,7 @@ for j = 1:nlmi
             res(j,1) = -full(max(max(abs(F0-round(F0)))));            
         case 8
             res(j,1) = -full(max(max(abs(F0-round(F0)))));
-            res(j,1) = min(res(j,1),-full(max(max(abs(F0-1)))));
+            res(j,1) = min(res(j,1),-(any(F0>1) | any(F0<0)));
         case 11
             if 0
                 p = F.clauses{j}.data;          

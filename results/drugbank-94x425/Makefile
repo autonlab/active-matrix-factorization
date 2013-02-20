@@ -46,7 +46,7 @@ run%/data.npz: | run%
 		drugbank/subset_94x425.npy \
 		$(RESULTS_BASE)/$@
 
-run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
+run%/results_stan_nolookahead_s200w100_150steps.pkl: | run%/data.npz
 	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) bpmf.py \
 		--note "git rev {{REV}}" \
@@ -61,11 +61,12 @@ run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
 		random pred-variance pred prob-ge-0 \
 		$(OUTPUT)
 
-run%/results_mmmf.pkl: | run%/data.npz
+run%/results_mmmf_150steps.pkl: | run%/data.npz
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_mmmf.py \
 		--note "git rev {{REV}}" \
 		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
+		--steps 150 \
 		-C 1 \
 		$(OUTPUT)

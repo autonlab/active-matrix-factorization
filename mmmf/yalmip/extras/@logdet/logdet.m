@@ -1,7 +1,7 @@
 function sys = logdet(P)
 
 % Create an object
-if isa(P,'sdpvar')   
+if isa(P,'sdpvar')
     if is(P,'hermitian')
         superiorto('double')
         superiorto('sdpvar')

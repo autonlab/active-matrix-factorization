@@ -56,11 +56,12 @@ run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
 		random pred-variance pred prob-ge-3.5 \
 		$(OUTPUT)
 
-run%/results_mmmf.pkl: | run%/data.npz
+run%/results_mmmf_200steps.pkl: | run%/data.npz
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_mmmf.py \
 		--note "git rev {{REV}}" \
 		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
 		--matlab $(MATLAB) \
 		-C 1 --cutoff 3.5 \
+		--steps 200 \
 		$(OUTPUT)

@@ -18,9 +18,6 @@ function varargout = xor(varargin)
 % Author Johan Löfberg
 % $Id: xor.m,v 1.3 2007-07-29 17:32:29 joloef Exp $
 
-% Author Johan Löfberg
-% $Id: xor.m,v 1.3 2007-07-29 17:32:29 joloef Exp $
-
 % Models OR using a nonlinear operator definition
 switch class(varargin{1})
     case 'char'
@@ -54,7 +51,7 @@ switch class(varargin{1})
                 T2(i,t(i,1)) = 1;
                 T2(i,t(i,2)) = -1;
             end
-            varargout{1} = set(2 - T2*reshape(xy,n,1) > z) + set(z > T1*reshape(xy,n,1)) +set(binary(z));
+            varargout{1} = set(2 - T2*reshape(xy,n,1) >= z) + set(z >= T1*reshape(xy,n,1)) +set(binary(z));
         end
 
         varargout{2} = struct('convexity','none','monotonicity','none','definiteness','none','model','integer');

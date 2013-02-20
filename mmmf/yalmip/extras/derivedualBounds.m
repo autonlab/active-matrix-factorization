@@ -17,7 +17,7 @@ mu = sdpvar(me,1);
 
 F = [];
 if ~isempty(b)
-F = [F, A*x < b];
+    F = [F, A*x <= b];
 end
 if ~isempty(f)
     F = [F, E*x == f];
@@ -46,23 +46,7 @@ if ~isempty(f)
     rhs =  rhs + E'*mu;
 end
 
-[dummy,L,U] = boundingbox([F,parametricDomain,H*x + c + rhs==0,Lambda>0],ops2,xz);
-
-% sol = solvesdp([F,parametricDomain,H*x + c + rhs==0,Lambda>0],[xz;-xz],ops2);
-% for i = 1:nTOT
-%     if sol.problem(i)==0
-%         selectsolution(i);
-%         L(i,1) = double(xz(i));
-%     else
-%         L(i,1) = -inf;
-%     end
-%     if sol.problem(nTOT+i)==0
-%         selectsolution(nTOT+i);
-%         U(i,1) = double(xz(i));
-%     else
-%         U(i,1) = inf;
-%     end
-% end
+[dummy,L,U] = boundingbox([F,parametricDomain,H*x + c + rhs==0,Lambda>=0],ops2,xz);
 
 c0C = full(getbase(c));
 c0 = c0C(:,1);
@@ -92,9 +76,6 @@ else
     end
 end
     
-
-
-
 if isa(b,'sdpvar')
     if ops.verbose
         disp(['*Computing ' num2str(length(b)) ' bounds on parameterized RHS (required for dual bounds)']);
@@ -107,19 +88,20 @@ Hlift = [H C/2;C'/2 zeros(size(C,2))];
 if ops.kkt.dualpresolve.lplift
     XZ = sdpvar(nTOT);
 end
-constraints = [Lambda > 0,parametricDomain,F];
+constraints = [Lambda >= 0,parametricDomain,F];
 constraints = [constraints,H*x + c + rhs==0];
 finiteL = find(~isinf(L));
 if ~isempty(finiteL)
-    constraints = [constraints,L(finiteL)<xz(finiteL)];
+    constraints = [constraints,L(finiteL)<=xz(finiteL)];
 end
 finiteU = find(~isinf(U));
 if ~isempty(finiteU)
-    constraints = [constraints,xz(finiteU) < U(finiteU)];
+    constraints = [constraints,xz(finiteU) <= U(finiteU)];
 end
 
 if ~isa(f,'double')
-    disp('parameterized RHS in equality not yet supported')
+    disp('Parameterized RHS in equality not yet supported in lifting based bounds')
+    ops.kkt.dualpresolve.lplift = 0;
 end
 
 if ops.kkt.dualpresolve.lplift
@@ -148,31 +130,35 @@ if ops.kkt.dualpresolve.lplift
                 else
                     % (xi-Li)(xj-Lj)>0                    
                     if ~isinf(L(i)) & ~isinf(L(j))
-                        constraints = [constraints, XZ(i,j)-L(i)*xz(j)-L(j)*xz(i)+L(i)*L(j)>0];
+                        constraints = [constraints, XZ(i,j)-L(i)*xz(j)-L(j)*xz(i)+L(i)*L(j)>=0];
                     end
                     % (xi-Li)(Uj-xj)>0
                     if ~isinf(L(i)) & ~isinf(U(j))
-                        constraints = [constraints, xz(i)*U(j)+L(i)*xz(j)-L(i)*U(j)-XZ(i,j)>0];
+                        constraints = [constraints, xz(i)*U(j)+L(i)*xz(j)-L(i)*U(j)-XZ(i,j)>=0];
                     end
                     % (xj-Lj)(Ui-xi)>0
                     if ~isinf(U(i)) & ~isinf(L(j))
-                        constraints = [constraints, xz(j)*U(i)+L(j)*xz(i)-L(j)*U(i)-XZ(j,i)>0];
+                        constraints = [constraints, xz(j)*U(i)+L(j)*xz(i)-L(j)*U(i)-XZ(j,i)>=0];
                     end
                     % (Uj-xj)(Ui-xi)>0
                     if ~isinf(U(i)) & ~isinf(U(j))
-                        constraints = [constraints, U(j)*U(i)-U(j)*xz(i)-xz(j)*U(i)+XZ(j,i)>0];
+                        constraints = [constraints, U(j)*U(i)-U(j)*xz(i)-xz(j)*U(i)+XZ(j,i)>=0];
                     end
                 end
             end
         end
     end
     
-     if isa(b,'sdpvar')        
-        constraints = [constraints,-(trace(Hlift*XZ) + c0'*x+temp) <= bmax'*Lambda];
-        constraints = [constraints,-(trace(Hlift*XZ) + c0'*x+temp) >= bmin'*Lambda];
+    if isa(b,'sdpvar')
+        if ~any(isinf(bmax))
+            constraints = [constraints,-(trace(Hlift*XZ) + c0'*x+temp) <= bmax'*Lambda];
+        end
+        if ~any(isinf(bmin))
+            constraints = [constraints,-(trace(Hlift*XZ) + c0'*x+temp) >= bmin'*Lambda];
+        end
     else
         constraints = [constraints,trace(Hlift*XZ) + c0'*x + temp + b'*Lambda==0];
-     end
+    end
     
 end
 
@@ -186,45 +172,6 @@ dualUpper = inf(length(Lambda),1);
 % always exploit disjoint constraints
 disjoints = zeros(length(b));
 s = sdpvar(length(b),1);
-
-
-
-
-% gi = b - A*x; 
-% lambda = Lambda;
-% m = length(gi);
-% ops = sdpsettings('verbose',0);
-% for i = 1:m
-%     sol = solvesdp(parametricDomain,-gi(i),ops);
-%     if sol.problem == 0
-%         Mx(i,1) = double(gi(i));
-%     else
-%         Mx(i,1) = inf;
-%     end
-% end
-% if any(isinf(Mx))
-%     theU = []
-%     disp('Parametric domain not bounded')
-%     return
-% end
-% 
-% yy = sdpvar(m,1);
-% mu = sdpvar(m,1);
-% delta = binvar(m,1);
-% S = [];
-% xx = gi-lambda
-% for i = 1:m
-%     S = [S,yy(i)-xx(i)+mu(i)==0];
-%     S = [S,Mx(i)*delta(i) > mu(i) > 0];
-%     S = [S,mu(i)>xx(i)];
-%     S = [S,xx(i) < Mx(i)*delta(i)];
-%     S = [S,yy(i) < 0, yy(i) < xx(i)];
-% end
-% 
-
-
-
-
 
 % Create an optimizer object which takes no input and returns optimal
 % Lambda. We will use some hacks to update this model and resolving
@@ -240,8 +187,7 @@ sIndicies = [ find(Model.used_variables==getvariables(s(1))): find(Model.used_va
 
 for dualPass = 1:ops.kkt.dualpresolve.passes    
     for i = 1:m
-        if dualUpper(i)>0
-            
+        if dualUpper(i)>0           
             iModel = Model;
             % Maximize Lambda(i)...
             iModel.c = Model.c*0;

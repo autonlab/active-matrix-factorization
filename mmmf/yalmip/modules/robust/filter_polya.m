@@ -37,7 +37,7 @@ if any(sum(mt(Fvars,wvars),2)>1)
                 error('Polya filter not yet implemented for all SDP cone cases. Please report bug')                
             end
             for k = 1:size(C,1)
-                F_new = F_new + set(reshape(C(k,:),size(P,1),size(P,1)) > 0);
+                F_new = F_new + set(reshape(C(k,:),size(P,1),size(P,1)) >= 0);
             end
             removeF(i) = 1;
         else
@@ -51,7 +51,7 @@ if any(sum(mt(Fvars,wvars),2)>1)
 
                         ci = coefficients(p_polya,w);
                         if isa(ci,'sdpvar')
-                            F_polya = F_polya + set(ci > 0);
+                            F_polya = F_polya + set(ci >= 0);
                         else
                             if any(ci)<0
                                 error('Trivially infeasible. there are unparameterized negative coefficients in Polya relaxation')
@@ -72,7 +72,7 @@ if any(sum(mt(Fvars,wvars),2)>1)
                 removeF(i) = 1;
             else
                 % Keep some of the elements
-                F_xw(i) = set(Fi(find(~removeFi)) > 0);
+                F_xw(i) = set(Fi(find(~removeFi)) >= 0);
             end
         end
     end
