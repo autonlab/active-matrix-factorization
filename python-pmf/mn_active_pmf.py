@@ -277,8 +277,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         Mean absolute difference between the means of the normal approximation
         and the MAP values.
         '''
-        p = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
-        return np.abs(self.mean - p).mean()
+        return np.abs(self.mean - np.vstack((self.users, self.items))).mean()
 
     def approx_pred_mean_var(self, i, j):
         '''
@@ -715,7 +714,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         # TODO: use np.save instead of pickle to transfer data
         # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
 
-        evaluator = ActivePMFEvaluator(self, key)
+        evaluator = MNActivePMFEvaluator(self, key)
 
         if procs == 1 or not getattr(key, 'spawn_processes', True):
             if worker_pool is not None:
@@ -765,6 +764,13 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
 ################################################################################
 ### Testing code
 
+def _mean_info(apmf):
+    return "Mean diff of means: %g; mean useritems cov %g, latents cov %g" % (
+        apmf.mean_meandiff(),
+        np.abs(apmf.cov_useritems.mean()),
+        np.abs(apmf.cov_latents.mean()))
+
+
 # TODO: could share the gradient-descent work for the first step, or any case
 #       where they've made the same choices
 
@@ -782,9 +788,8 @@ def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
     if fit_normal:
         print("Fitting normal")
         apmf.fit_normal()
+        print(_mean_info(apmf))
 
-        print("Mean diff of means: %g; mean cov %g" % (
-                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
     total = apmf.num_users * apmf.num_items
     rmse = apmf.rmse(real)
@@ -816,9 +821,7 @@ def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
             for kl in apmf.fit_normal_kls():
                 pass  # print "\tKL: %g" % kl
                 assert kl > -1e5
-
-            print("Mean diff of means: %g; mean cov %g" % (
-                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
+            print(_mean_info(apmf))
 
         rmse = apmf.rmse(real)
         print("RMSE: {:.5}".format(rmse))
@@ -1026,8 +1029,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             apmf.initialize_approx()
             print("Initial approximation fit")
             apmf.fit_normal()
-            print("Mean diff of means: {}; mean cov {}\n".format(
-                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
+            print(_mean_info(apmf))
 
     results = {
         '_real': real,
