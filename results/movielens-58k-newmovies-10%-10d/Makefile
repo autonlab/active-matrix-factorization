@@ -83,7 +83,7 @@ run%/results_stan_nolookahead_s200w100_200steps.pkl: | run%/data.npz
 		--note "git rev {{REV}}" \
 		$(PDB_ERR) \
 		--latent-d $(LATENT_D) --discrete --subtract-mean \
-		--model-filename bpmf_newitems_w0identity.stan \
+		--model-filename bpmf_w0identity.stan \
 		--samps 200 --warmup 100 \
 		--steps 200 \
 		--test-set-from-file --test-set crash-if-none-in-file \
