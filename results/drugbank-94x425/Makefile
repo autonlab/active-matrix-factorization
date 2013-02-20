@@ -69,3 +69,49 @@ run%/results_mmmf.pkl: | run%/data.npz
 		--matlab $(MATLAB) \
 		-C 1 \
 		$(OUTPUT)
+
+# TODO: must be a better makefile way to do this...
+run%/results_mmmf_random.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 \
+		random \
+		$(OUTPUT)
+run%/results_mmmf_min-margin.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 \
+		min-margin \
+		$(OUTPUT)
+run%/results_mmmf_min-margin-pos.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 \
+		min-margin-pos \
+run%/results_mmmf_max-margin.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 \
+		max-margin \
+		$(OUTPUT)
+run%/results_mmmf_max-margin-pos.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 \
+		max-margin-pos \
+		$(OUTPUT)
