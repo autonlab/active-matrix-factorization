@@ -128,8 +128,8 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
 
         # parameters of the normal approximation
         self.mean = None
-        self.cov_rows = None
-        self.cov_cols = None
+        self.cov_useritems = None
+        self.cov_latents = None
 
         n = self.num_users
         m = self.num_items
@@ -183,15 +183,24 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
     ############################################################################
     ### Gradient descent to find the normal approximation
 
-    def initialize_approx(self):
+    def initialize_approx(self, random_cov=False):
         '''
         Sets up the normal approximation to be near the MAP PMF result
         (throwing away any old approximation).
         '''
         # set mean to PMF's MAP values, identity covariances
         self.mean = np.vstack((self.users, self.items))
-        self.cov_rows = np.eye(self.num_users + self.num_items)
-        self.cov_cols = np.eye(self.latent_d)
+
+        n_useritems = self.num_users + self.num_items
+
+        if random_cov:
+            a = np.random.normal(size=(n_useritems, n_useritems))
+            b = np.random.normal(size=(self.latent_d, self.latent_d))
+            self.cov_useritems = np.dot(a, a.T)
+            self.cov_latents = np.dot(b, b.T)
+        else:
+            self.cov_useritems = np.eye(self.num_users + self.num_items)
+            self.cov_latents = np.eye(self.latent_d)
 
     def kl_divergence(self, mean=None, cov_useritems=None, cov_latents=None):
         '''KL(approximation || PMF model), up to an additive constant'''

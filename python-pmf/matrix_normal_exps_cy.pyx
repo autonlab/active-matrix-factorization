@@ -203,7 +203,7 @@ def mn_kl_divergence(int num_users,
         j = <int> ratings[rating_idx, 1]
         rating = ratings[rating_idx, 2]
 
-        bit += exp_dotprod_sq(num_users, cov_useritems, cov_latents, i, j)
+        bit += exp_dotprod_sq(num_users, mean, cov_useritems, cov_latents, i, j)
         bit -= 2 * rating * (  # - 2 R_ij \sum_k E[U_ki V_kj]
                 (mean[i, :] * mean[num_users + j, :]).sum()
                 + cov_useritems[i, num_users + j] * tr_cov_latents)
@@ -213,8 +213,6 @@ def mn_kl_divergence(int num_users,
     return kl
 
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
 def matrixnormal_gradient(mn_apmf not None):  # TODO
     '''
     Find the gradient of the KL divergence w.r.t. to the passed MNActivePMF
@@ -225,7 +223,7 @@ def matrixnormal_gradient(mn_apmf not None):  # TODO
     Will do nasty things if the shapes of the various arrays are wrong.
     '''
     if (mn_apmf.mean is None
-            or mn_apmf.cov_rows is None or mn_apmf.cov_cols is None):
+            or mn_apmf.cov_useritems is None or mn_apmf.cov_latents is None):
         raise TypeError("mean, cov are None; run initialize_approx first")
 
     cdef np.ndarray mean = mn_apmf.mean
@@ -272,7 +270,7 @@ def _quadexp_grad(int num_users,
 
     cdef DTYPE_t cov_ij = cov_useritems[i, j_]
     cdef DTYPE_t var_i = cov_useritems[i, i]
-    cdef DTYPE_t var_j = cov_useritems[j, j]
+    cdef DTYPE_t var_j = cov_useritems[j_, j_]
 
     cdef DTYPE_t cov_kl = cov_latents[k, l]
     cdef DTYPE_t var_k = cov_latents[k, k]
@@ -290,13 +288,13 @@ def _quadexp_grad(int num_users,
         + M_jk * cov_ij * cov_kl
         + M_ik * var_j * cov_kl
     )
-    g_mean[j, k] += mult * (
+    g_mean[j_, k] += mult * (
           M_ik * M_il * M_jl
         + M_jl * var_i * cov_kl
         + M_il * cov_ij * cov_kl
         + M_ik * cov_ij * var_l
     )
-    g_mean[j, l] += mult * (
+    g_mean[j_, l] += mult * (
           M_ik * M_jk * M_il
         + M_il * cov_ij * var_k
         + M_jk * var_i * cov_kl
@@ -307,7 +305,7 @@ def _quadexp_grad(int num_users,
           M_jk * M_jl * cov_kl
         + var_j * cov_kl**2
     )
-    g_cov_useritems[j, j] += mult * (
+    g_cov_useritems[j_, j_] += mult * (
         + M_ik * M_il * cov_kl
         + var_i * cov_kl**2
     )
@@ -319,8 +317,8 @@ def _quadexp_grad(int num_users,
         + 2 * cov_ij * var_k * var_l
         + 2 * cov_ij * cov_kl**2
     )
-    g_cov_useritems[i, j] += inc
-    g_cov_useritems[j, i] += inc
+    g_cov_useritems[i, j_] += inc
+    g_cov_useritems[j_, i] += inc
 
     g_cov_latents[k, k] += mult * (
           M_il * M_jl * cov_ij
@@ -338,23 +336,23 @@ def _quadexp_grad(int num_users,
         + 2 * var_i * var_j * cov_kl
         + 2 * cov_ij**2 * cov_kl
     )
-    g_cov_useritems[k, l] += inc
-    g_cov_useritems[l, k] += inc
+    g_cov_latents[k, l] += inc
+    g_cov_latents[l, k] += inc
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def _squareexp_grad(int num_users,
-                  np.ndarray[DTYPE_t, ndim=2] mean,
-                  np.ndarray[DTYPE_t, ndim=2] cov_useritems,
-                  np.ndarray[DTYPE_t, ndim=2] cov_latents,
-                  np.ndarray[DTYPE_t, ndim=2] g_mean,
-                  np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
-                  np.ndarray[DTYPE_t, ndim=2] g_cov_latents,
-                  int i, int j, int k, int l,
-                  double mult):
+                    np.ndarray[DTYPE_t, ndim=2] mean,
+                    np.ndarray[DTYPE_t, ndim=2] cov_useritems,
+                    np.ndarray[DTYPE_t, ndim=2] cov_latents,
+                    np.ndarray[DTYPE_t, ndim=2] g_mean,
+                    np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
+                    np.ndarray[DTYPE_t, ndim=2] g_cov_latents,
+                    int i, int j, int k,
+                    double mult):
     """
     Updates the passed gradients for mult * the gradient of
-    E[U_ik V_jk U_il V_jl]
+    E[U_ik^2 V_jk^2]
      = 4 M_ik M_jk Sigma_ij Omega_kk
        + 2 Sigma_ij^2 Omega_kk^2
        + (M_ik^2 + Sigma_ii Omega_kk) (M_jk^2 + Sigma_jj Omega_kk)
@@ -367,15 +365,15 @@ def _squareexp_grad(int num_users,
 
     cdef DTYPE_t cov_ij = cov_useritems[i, j_]
     cdef DTYPE_t var_i = cov_useritems[i, i]
-    cdef DTYPE_t var_j = cov_useritems[j, j]
+    cdef DTYPE_t var_j = cov_useritems[j_, j_]
 
     cdef DTYPE_t var_k = cov_latents[k, k]
 
     cdef double e_ik_sq = M_ik * M_ik + var_i * var_k
     cdef double e_jk_sq = M_jk * M_jk + var_j * var_k
 
-    g_mean[i, k] += mult * (4 * M_jk * cov_ij * var_k + 2 * M_ik * e_ik_sq)
-    g_mean[j_, k] += mult * (4 * M_ik * cov_ij * var_k + 2 * M_jk * e_jk_sq)
+    g_mean[i, k] += mult * (4 * M_jk * cov_ij * var_k + 2 * M_ik * e_jk_sq)
+    g_mean[j_, k] += mult * (4 * M_ik * cov_ij * var_k + e_ik_sq * 2 * M_jk)
 
     g_cov_useritems[i, i] += mult * (var_k * e_jk_sq)
     g_cov_useritems[j_, j_] += mult * (e_ik_sq * var_k)
@@ -435,18 +433,19 @@ cdef _mnormal_grad(np.ndarray[DTYPE_t, ndim=2] mean,
             _squareexp_grad(num_users, mean, cov_useritems, cov_latents,
                             g_mean, g_cov_useritems, g_cov_latents,
                             i, j, k,
-                            one_over_sig_sq * 2)
+                            one_over_sig_sq / 2)
 
-            # gradient of -2 R_ij E[U_ik V_jk] / sigma^2
-            #   = -2 R_ij (M_ik M_jk + Sigma_ij Omega_kk) / sigma^2
-            mult = -2 * rating * one_over_sig_sq
+            # gradient of -R_ij E[U_ik V_jk] / sigma^2
+            #   = -R_ij (M_ik M_jk + Sigma_ij Omega_kk) / sigma^2
+            mult = -rating * one_over_sig_sq
             g_mean[i, k] += mult * mean[j_, k]
             g_mean[j_, k] += mult * mean[i, k]
             g_cov_useritems[i, j_] += mult * cov_latents[k, k]
             g_cov_useritems[j_, i] += mult * cov_latents[k, k]
             g_cov_latents[k, k] += mult * cov_useritems[i, j_]
 
-    # gradient of \sum_i \sum_k E[U_ki^2] / (2 sigma_u^2), same for V
+    # gradient of \sum_i \sum_k E[U_ik^2] / (2 sigma_u^2), same for V
+    #           = \sum_i \sum_k (M_ik^2 + Sigma_ii Omega_kk) / (2 sigma^2)
     g_mean[:num_users, :] += mean[:num_users, :] / sig_u_sq
     g_mean[num_users:, :] += mean[num_users:, :] / sig_v_sq
 
@@ -460,7 +459,7 @@ cdef _mnormal_grad(np.ndarray[DTYPE_t, ndim=2] mean,
     g_cov_latents[latent_idx, latent_idx] += \
             cov_useritems[user_idx, user_idx].sum() / (2 * sig_u_sq)
     g_cov_latents[latent_idx, latent_idx] += \
-            cov_useritems[item_idx, item_idx].sum() / (2 * sig_u_sq)
+            cov_useritems[item_idx, item_idx].sum() / (2 * sig_v_sq)
 
     # gradient of entropy = D/2 ln(det(Sigma)) + (N+M)/2 ln(det(Omega))
     #
