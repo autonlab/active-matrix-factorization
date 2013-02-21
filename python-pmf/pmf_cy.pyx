@@ -419,8 +419,11 @@ cdef class ProbabilisticMatrixFactorization:
             pred += self.mean_rating
         return pred
 
-    cpdef double rmse(self, np.ndarray real) except -1:
-        return rmse(self.predicted_matrix(), real)
+    cpdef double rmse(self, np.ndarray real, np.ndarray on=None) except -1:
+        if on is None:
+            return rmse(self.predicted_matrix(), real)
+        else:
+            return rmse_on(self.predicted_matrix(), real, on)
 
     def print_latent_vectors(self):
         cdef int i, j

@@ -33,4 +33,4 @@ cdef class ProbabilisticMatrixFactorization:
 
     cpdef np.ndarray predicted_matrix(self, np.ndarray u=*, np.ndarray v=*)
 
-    cpdef double rmse(self, np.ndarray real) except -1
+    cpdef double rmse(self, np.ndarray real, np.ndarray on=*) except -1
