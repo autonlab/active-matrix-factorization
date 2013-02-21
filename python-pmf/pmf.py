@@ -13,11 +13,11 @@ import random
 
 import numpy as np
 
-def rmse(exp, obs, on=None):
-    if on is None:
-        return np.sqrt(np.mean((obs - exp) ** 2))
-    else:
-        return np.sqrt(np.mean((obs[on] - exp[on]) ** 2))
+def rmse(exp, obs):
+    return np.sqrt(np.mean((obs - exp) ** 2))
+
+def rmse_on(exp, obs, on):
+    return np.sqrt(np.mean((obs[on] - exp[on]) ** 2))
 
 class ProbabilisticMatrixFactorization(object):
     def __init__(self, rating_tuples, latent_d=1, subtract_mean=False,
@@ -316,7 +316,10 @@ class ProbabilisticMatrixFactorization(object):
         return pred
 
     def rmse(self, real, on=None):
-        return rmse(self.predicted_matrix(), real, on)
+        if on is None:
+            return rmse(self.predicted_matrix(), real)
+        else:
+            return rmse_on(self.predicted_matrix(), real, on)
 
     def print_latent_vectors(self):
         print("Users:")

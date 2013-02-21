@@ -22,11 +22,11 @@ from libc.math cimport log
 
 cimport cython
 
-cpdef float rmse(np.ndarray exp, np.ndarray obs, np.ndarray on=None) except -1:
-    if on is None:
-        return np.sqrt(np.mean((obs - exp) ** 2))
-    else:
-        return np.sqrt(np.mean((obs[on] - exp[on]) ** 2))
+cpdef float rmse(np.ndarray exp, np.ndarray obs) except -1:
+    return np.sqrt(np.mean((obs - exp) ** 2))
+
+cpdef float rmse_on(np.ndarray exp, np.ndarray obs, np.ndarray on) except -1:
+    return np.sqrt(np.mean((obs[on] - exp[on]) ** 2))
 
 DTYPE = np.float
 ctypedef np.float_t DTYPE_t
