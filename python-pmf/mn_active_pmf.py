@@ -1073,9 +1073,8 @@ def main():
     # get results
     try:
         results = compare(args.keys,
-                num_users=args.num_users, num_items=args.num_items,
                 real=real, ratings=ratings, rating_vals=rating_vals,
-                test_on=test_on,
+                knowable=knowable, test_on=test_on,
                 latent_d=args.latent_d,
                 discrete_exp=args.discrete_integration,
                 refit_lookahead=args.refit_lookahead,
