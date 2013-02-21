@@ -367,7 +367,7 @@ def load_results(filename, kind=None):
         return {rep.sub(kind + '_', k): v for k, v in r.items()}
 
 
-def main():
+def main(argstr=None):
     import argparse
     import os
     import pickle
@@ -396,7 +396,11 @@ def main():
             metavar='DIR')
     add_bool_opt(parser, 'interactive', None)
 
-    args = parser.parse_args()
+    if argstr is not None:
+        import shlex
+        args = parser.parse_args(shlex.split(argstr))
+    else:
+        args = parser.parse_args()
 
     if args.all_plots:
         args.real = True

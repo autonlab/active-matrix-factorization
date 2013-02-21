@@ -186,7 +186,7 @@ def plot_aucs(aucs, ylabel=None):
 ################################################################################
 
 
-def main():
+def main(argstr=None):
     import argparse
 
     # helper for boolean flags
@@ -233,7 +233,11 @@ def main():
     g.add_argument('--ge-cutoff-auc', nargs='+', type=float)
 
     #parser.add_argument('--save')
-    args = parser.parse_args()
+    if argstr is not None:
+        import shlex
+        args = parser.parse_args(shlex.split(argstr))
+    else:
+        args = parser.parse_args()
 
     #if args.save:
     #    import matplotlib
