@@ -13,6 +13,11 @@ import operator
 import random
 import warnings
 
+try:
+    from _thread import interrupt_main
+except ImportError:
+    from thread import interrupt_main
+
 import numpy as np
 from scipy import stats
 import scipy.integrate
@@ -956,10 +961,15 @@ def compare(key_names, real, ratings, rating_vals=None, latent_d=5,
         def eval_key(key_name):
             key = KEY_FUNCS[key_name]
 
-            res = _full_test_threaded(
-                    deepcopy(apmf), real, key, key.do_normal_fit,
-                    fit_sigmas, worker_pool, test_on)
-            results[key_name] = list(itertools.islice(res, steps))
+            try:
+                res = _full_test_threaded(
+                        deepcopy(apmf), real, key, key.do_normal_fit,
+                        fit_sigmas, worker_pool, test_on)
+                results[key_name] = list(itertools.islice(res, steps))
+            except:
+                worker_pool.terminate()
+                interrupt_main()
+                raise
 
         threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
                    for key_name in key_names]
