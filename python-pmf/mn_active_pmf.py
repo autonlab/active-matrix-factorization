@@ -13,6 +13,11 @@ import operator
 import random
 import warnings
 
+try:
+    from _thread import interrupt_main
+except ImportError:
+    from thread import interrupt_main
+
 import numpy as np
 from scipy import stats
 import scipy.integrate
@@ -128,8 +133,8 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
 
         # parameters of the normal approximation
         self.mean = None
-        self.cov_rows = None
-        self.cov_cols = None
+        self.cov_useritems = None
+        self.cov_latents = None
 
         n = self.num_users
         m = self.num_items
@@ -183,15 +188,24 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
     ############################################################################
     ### Gradient descent to find the normal approximation
 
-    def initialize_approx(self):
+    def initialize_approx(self, random_cov=False):
         '''
         Sets up the normal approximation to be near the MAP PMF result
         (throwing away any old approximation).
         '''
         # set mean to PMF's MAP values, identity covariances
         self.mean = np.vstack((self.users, self.items))
-        self.cov_rows = np.eye(self.num_users + self.num_items)
-        self.cov_cols = np.eye(self.latent_d)
+
+        n_useritems = self.num_users + self.num_items
+
+        if random_cov:
+            a = np.random.normal(size=(n_useritems, n_useritems))
+            b = np.random.normal(size=(self.latent_d, self.latent_d))
+            self.cov_useritems = np.dot(a, a.T)
+            self.cov_latents = np.dot(b, b.T)
+        else:
+            self.cov_useritems = np.eye(self.num_users + self.num_items)
+            self.cov_latents = np.eye(self.latent_d)
 
     def kl_divergence(self, mean=None, cov_useritems=None, cov_latents=None):
         '''KL(approximation || PMF model), up to an additive constant'''
@@ -268,8 +282,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         Mean absolute difference between the means of the normal approximation
         and the MAP values.
         '''
-        p = np.hstack((self.users.reshape(-1), self.items.reshape(-1)))
-        return np.abs(self.mean - p).mean()
+        return np.abs(self.mean - np.vstack((self.users, self.items))).mean()
 
     def approx_pred_mean_var(self, i, j):
         '''
@@ -706,7 +719,7 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
         # TODO: use np.save instead of pickle to transfer data
         # (or maybe shared mem? http://stackoverflow.com/q/5033799/344821)
 
-        evaluator = ActivePMFEvaluator(self, key)
+        evaluator = MNActivePMFEvaluator(self, key)
 
         if procs == 1 or not getattr(key, 'spawn_processes', True):
             if worker_pool is not None:
@@ -756,11 +769,18 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
 ################################################################################
 ### Testing code
 
+def _mean_info(apmf):
+    return "Mean diff of means: %g; mean useritems cov %g, latents cov %g" % (
+        apmf.mean_meandiff(),
+        np.abs(apmf.cov_useritems.mean()),
+        np.abs(apmf.cov_latents.mean()))
+
+
 # TODO: could share the gradient-descent work for the first step, or any case
 #       where they've made the same choices
 
 def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
-              fit_normal=True, fit_sigmas=False, processes=None):
+              fit_normal=True, fit_sigmas=False, processes=None, test_on=None):
     print("Training PMF")
 
     if fit_sigmas:
@@ -773,14 +793,13 @@ def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
     if fit_normal:
         print("Fitting normal")
         apmf.fit_normal()
+        print(_mean_info(apmf))
 
-        print("Mean diff of means: %g; mean cov %g" % (
-                apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
 
     total = apmf.num_users * apmf.num_items
-    rmse = apmf.rmse(real)
+    rmse = apmf.rmse(real, test_on)
     print("RMSE: {:.5}".format(rmse))
-    yield len(apmf.rated), rmse, None, None
+    yield len(apmf.rated), rmse, None, None, None
 
     while apmf.unrated:
         print()
@@ -807,13 +826,11 @@ def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
             for kl in apmf.fit_normal_kls():
                 pass  # print "\tKL: %g" % kl
                 assert kl > -1e5
+            print(_mean_info(apmf))
 
-            print("Mean diff of means: %g; mean cov %g" % (
-                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
-
-        rmse = apmf.rmse(real)
+        rmse = apmf.rmse(real, test_on)
         print("RMSE: {:.5}".format(rmse))
-        yield len(apmf.rated), rmse, (i, j), vals
+        yield len(apmf.rated), rmse, (i, j), vals, apmf.predicted_matrix()
 
 
 def _in_between_work(apmf, i, j, realval, total, fit_normal,
@@ -835,13 +852,13 @@ def _in_between_work(apmf, i, j, realval, total, fit_normal,
 
 
 def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
-                        worker_pool):
+                        worker_pool, test_on=None):
     total = real.size
     name = picker_key.nice_name
 
-    rmse = apmf.rmse(real)
+    rmse = apmf.rmse(real, test_on)
     print("{:<40} Initial RMSE: {:.5}".format(name, rmse))
-    yield len(apmf.rated), rmse, None, None
+    yield len(apmf.rated), rmse, None, None, None
 
     while apmf.unrated:
         n = len(apmf.rated) + 1
@@ -859,9 +876,9 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
                 (apmf, i, j, real[i, j], total,
                  fit_normal, fit_sigmas, name))
 
-        rmse = apmf.rmse(real)
+        rmse = apmf.rmse(real, test_on)
         print("{:<40} RMSE {}: {:.5}".format(picker_key.nice_name, n, rmse))
-        yield len(apmf.rated), rmse, (i, j), vals
+        yield len(apmf.rated), rmse, (i, j), vals, apmf.predicted_matrix()
 
 
 KEY_FUNCS = {
@@ -889,112 +906,23 @@ KEY_FUNCS = {
 }
 
 
-def make_fake_data(noise=.25, num_users=10, num_items=10,
-                   mask_type=0, data_type='float', rank=5,
-                   u_mean=0, u_std=2, v_mean=0, v_std=2):
-    # generate the true fake data
-    u = np.random.normal(u_mean, u_std, (num_users, rank))
-    v = np.random.normal(v_mean, v_std, (num_items, rank))
-
-    real = np.dot(u, v.T)
-    if noise:
-        real += np.random.normal(0, noise, (num_users, num_items))
-
-    # TODO: better options for data_type
-    if data_type == 'float':
-        vals = None
-    elif data_type == 'int':
-        real = np.round(real).astype(int)
-        vals = None  # TODO: support integrating over all integers?
-    elif data_type == 'int-bounds':
-        real = np.round(real).astype(int)
-        minval = real.min()
-        maxval = real.max()
-        vals = range(int(np.floor(minval * 1.2 if minval < 0 else minval * .8)),
-                     int(np.ceil(maxval * 1.2 if maxval > 0 else maxval * .8)))
-    elif data_type == 'binary':
-        real = (real > .5).astype(int)
-        vals = {0, 1}
-    elif isinstance(data_type, numbers.Integral):
-        real = np.minimum(np.maximum(np.round(real), 0), data_type).astype(int)
-        vals = range(data_type + 1)
-    else:
-        raise ValueError("Don't know how to interpret data_type '{}'".format(
-            data_type))
-
-    ratings = get_ratings(real, mask_type)
-    return real, ratings, vals
-
-
-def get_ratings(real, mask_type=0):
-    # make the mask deciding on which things are rated
-    num_users, num_items = real.shape
-
-    if isinstance(mask_type, numbers.Real):
-        mask = np.random.binomial(1, mask_type, real.shape)
-
-    elif mask_type in {'diag', 'diagonal', 'diag-plus', 'diag-block'}:
-        mask = np.zeros_like(real)
-        np.fill_diagonal(mask, 1)
-
-        if mask_type == 'diag-plus':
-            if num_users != num_items:
-                warnings.warn("can't do diag-plus for non-square; doing diag")
-            else:
-                # set the k=1 diagonal, except do (-1, 1) instead of (0, 1)
-                # then all rows and columns have two entries, except first has 1
-                n = num_users
-                mask[-1, 1] = 1
-                mask[range(1, n - 1), range(2, n)] = 1
-
-        elif mask_type == 'diag-block':
-            if num_users != num_items:
-                warnings.warn("can't do diag-block for non-square; doing diag")
-            else:
-                # nxn matrix with the top-left quarter also full (rounding down)
-                mask[:num_users//2, :num_items//2] = 1
-
-    else:
-        raise ValueError("Don't know how to interpret mask_type '{}'".format(
-            mask_type))
-
-    # make sure every row/col has at least one rating
-    for zero_col in np.logical_not(mask.sum(axis=0)).nonzero()[0]:
-        mask[random.randrange(num_users), zero_col] = 1
-
-    for zero_row in np.logical_not(mask.sum(axis=1)).nonzero()[0]:
-        mask[zero_row, random.randrange(num_items)] = 1
-
-    assert np.all(mask.sum(axis=0) > 0)
-    assert np.all(mask.sum(axis=1) > 0)
-
-    # convert into the list-of-ratings form we want
-    ratings = np.zeros((mask.sum(), 3))
-    for idx, (i, j) in enumerate(np.transpose(mask.nonzero())):
-        ratings[idx] = [i, j, real[i, j]]
-
-    return ratings
-
-
-def compare(key_names, latent_d=5, processes=None, do_threading=True,
-            steps=None, discrete_exp=False, refit_lookahead=False,
-            fit_sigmas=False, real_ratings_vals=None, apmf=None, knowable=None,
+def compare(key_names, real, ratings, rating_vals=None, latent_d=5,
+            knowable=None, test_on=None,
+            processes=None, do_threading=True, steps=None,
+            discrete_exp=False, refit_lookahead=False,
+            fit_sigmas=False, apmf=None,
             sig_u_mean=0, sig_u_var=-1, sig_v_mean=0, sig_v_var=-1,
-            fit_type=('batch',), **kwargs):
+            fit_type=('batch',)):
     import multiprocessing as mp
     from threading import Thread, Lock
 
-    if real_ratings_vals is None:
-        real, ratings, rating_vals = make_fake_data(**kwargs)
-    else:
-        real, ratings, rating_vals = real_ratings_vals
-        if apmf:
-            assert (apmf.num_users, apmf.num_items) == real.shape
-            assert np.all(apmf.ratings == ratings)
-            assert set(apmf.rating_values) == set(rating_vals)
-            apmf.discrete_expectations = discrete_exp
+    if apmf:
+        assert (apmf.num_users, apmf.num_items) == real.shape
+        assert np.all(apmf.ratings == ratings)
+        assert set(apmf.rating_values) == set(rating_vals)
+        apmf.discrete_expectations = discrete_exp
 
-    if apmf is None:
+    elif apmf is None:
         apmf = MNActivePMF(ratings, latent_d=latent_d,
                 rating_values=rating_vals,
                 discrete_expectations=discrete_exp,
@@ -1017,8 +945,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             apmf.initialize_approx()
             print("Initial approximation fit")
             apmf.fit_normal()
-            print("Mean diff of means: {}; mean cov {}\n".format(
-                    apmf.mean_meandiff(), np.abs(apmf.cov.mean())))
+            print(_mean_info(apmf))
 
     results = {
         '_real': real,
@@ -1034,10 +961,15 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
         def eval_key(key_name):
             key = KEY_FUNCS[key_name]
 
-            res = _full_test_threaded(
-                    deepcopy(apmf), real, key, key.do_normal_fit,
-                    fit_sigmas, worker_pool)
-            results[key_name] = list(itertools.islice(res, steps))
+            try:
+                res = _full_test_threaded(
+                        deepcopy(apmf), real, key, key.do_normal_fit,
+                        fit_sigmas, worker_pool, test_on)
+                results[key_name] = list(itertools.islice(res, steps))
+            except:
+                worker_pool.terminate()
+                interrupt_main()
+                raise
 
         threads = [Thread(name=key_name, target=eval_key, args=(key_name,))
                    for key_name in key_names]
@@ -1052,7 +984,7 @@ def compare(key_names, latent_d=5, processes=None, do_threading=True,
             key = KEY_FUNCS[key_name]
             res = full_test(
                     deepcopy(apmf), real, key, key.do_normal_fit,
-                    fit_sigmas, processes)
+                    fit_sigmas, processes, test_on)
             results[key_name] = list(itertools.islice(res, steps))
 
     return results
@@ -1073,6 +1005,7 @@ def main():
     types = {'float', 'int', 'int-bounds', 'binary'}
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--load-data', default=None, metavar='FILE')
 
     model = parser.add_argument_group("Model Options")
     model.add_argument('--latent-d', '-D', type=int, default=5)
@@ -1093,32 +1026,13 @@ def main():
     model.add_argument('keys', nargs='*',
             help="Choices: {}.".format(', '.join(sorted(key_names))))
 
-    problem_def = parser.add_argument_group("Problem Definiton")
-    problem_def.add_argument('--load-data', default=None, metavar='FILE')
-    add_bool_opt(problem_def, 'load-model', default=False)
-    problem_def.add_argument('--gen-rank', '-R', type=int, default=5)
-    problem_def.add_argument('--type', default='float',
-            help="An integer (meaning values are from 0 to that integer) or "
-                 "one of {}".format(', '.join(sorted(types))))
-
-    problem_def.add_argument('--u-mean', type=float, default=0)
-    problem_def.add_argument('--u-std', type=float, default=2)
-    problem_def.add_argument('--v-mean', type=float, default=0)
-    problem_def.add_argument('--v-std', type=float, default=2)
-
-    problem_def.add_argument('--noise', '-n', type=float, default=.25)
-    problem_def.add_argument('--num-users', '-N', type=int, default=10)
-    problem_def.add_argument('--num-items', '-M', type=int, default=10)
-    problem_def.add_argument('--mask', '-m', default=0)
-
     running = parser.add_argument_group("Running")
     running.add_argument('--processes', '-P', type=int, default=None)
     add_bool_opt(running, 'threading', True)
     running.add_argument('--steps', '-s', type=int, default=None)
 
     results = parser.add_argument_group("Results")
-    results.add_argument('--save-results', nargs='?', default=None, const=True,
-            metavar='FILE')
+    results.add_argument('--save-results', default=True, metavar='FILE')
     results.add_argument('--no-save-results',
             action='store_false', dest='save_results')
     results.add_argument('--note', action='append',
@@ -1126,20 +1040,6 @@ def main():
              "in the results file.")
 
     args = parser.parse_args()
-
-    # is args.mask supposed to be a float?
-    try:
-        args.mask = float(args.mask)
-    except ValueError:
-        pass
-
-    # check args.type
-    try:
-        args.type = int(args.type)
-    except ValueError:
-        if args.type not in types:
-            raise ValueError("--type must be integer or one of {}".format(
-                ', '.join(sorted(types))))
 
     # check that args.keys are valid
     for k in args.keys:
@@ -1159,46 +1059,38 @@ def main():
         if dirname and not os.path.exists(dirname):
             os.makedirs(dirname)
 
-    # load previous data, if we're doing that
-    real_ratings_vals = None
-    apmf = None
-    knowable = None
-    if args.load_data:
-        with open(args.load_data, 'rb') as f:
-            data = np.load(f)
+    # load previous data
+    with open(args.load_data, 'rb') as f:
+        data = np.load(f)
 
-            if isinstance(data, np.ndarray):
-                data = {'_real': data}
+        if isinstance(data, np.ndarray):
+            data = {'_real': data}
 
-            real = data['_real']
-            real_ratings_vals = (
-                real,
-                data['_ratings'] if '_ratings' in data
-                    else get_ratings(real, args.mask),
-                data['_rating_vals'] if '_rating_vals' in data else None,
-            )
-            if args.load_model:
-                apmf = data['_initial_mnapmf']
+        real = data['_real']
+        ratings = data['_ratings']
+        rating_vals = data['_rating_vals'] if '_rating_vals' in data else None
+        test_on = data['_test_on'] if '_test_on' in data else None
+        is_new_item = data['_is_new_item'] if '_is_new_item' in data else None
+        # XXX handle is_new_item
 
-        knowable = np.isfinite(real)
-        knowable[real == 0] = 0
-        knowable = zip(*knowable.nonzero())
+    knowable = np.isfinite(real)
+    knowable[real == 0] = False
+    if test_on is not None:
+        print("using test set from file")
+        knowable[test_on] = False
+    knowable = zip(*knowable.nonzero())
 
     # get results
     try:
         results = compare(args.keys,
-                num_users=args.num_users, num_items=args.num_items,
-                real_ratings_vals=real_ratings_vals, apmf=apmf,
-                u_mean=args.u_mean, u_std=args.u_std,
-                v_mean=args.v_mean, v_std=args.v_std,
-                noise=args.noise, mask_type=args.mask,
-                rank=args.gen_rank, latent_d=args.latent_d,
+                real=real, ratings=ratings, rating_vals=rating_vals,
+                knowable=knowable, test_on=test_on,
+                latent_d=args.latent_d,
                 discrete_exp=args.discrete_integration,
                 refit_lookahead=args.refit_lookahead,
                 fit_sigmas=args.fit_sigmas,
                 sig_u_mean=args.sig_u_mean, sig_u_var=args.sig_u_var,
                 sig_v_mean=args.sig_v_mean, sig_v_var=args.sig_v_var,
-                data_type=args.type,
                 steps=args.steps,
                 fit_type=parse_fit_type(args.fit),
                 processes=args.processes, do_threading=args.threading)

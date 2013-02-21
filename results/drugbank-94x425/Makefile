@@ -61,6 +61,20 @@ run%/results_stan_nolookahead_s200w100_150steps.pkl: | run%/data.npz
 		random pred-variance pred prob-ge-0 \
 		$(OUTPUT)
 
+# Don't subtract the mean, because of gradient descent problems
+# but also because it's hardcoded :)
+run%/results_mnpmf_nolookahead_150steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) mn_active_pmf.py \
+		--note "git rev {{REV}}" \
+		--latent-d $(LATENT_D) --discrete-integration \
+		--refit-lookahead \
+		--processes $(PROCS) \
+		--steps 150 \
+		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
+		-- random pred-variance pred prob-ge-3.5 \
+		$(OUTPUT)
+
 run%/results_mmmf_150steps.pkl: | run%/data.npz
 	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_mmmf.py \

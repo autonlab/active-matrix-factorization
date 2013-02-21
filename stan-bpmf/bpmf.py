@@ -842,7 +842,12 @@ class MainProgram(object):
             print("test and query sets are distinct")
 
         if rating_vals is not None:
-            for s, thing in [("test", test_on), ("query", query_on)]:
+            known = np.zeros_like(test_on, dtype=bool)
+            known[ratings[:, 0].astype(int), ratings[:, 1].astype(int)] = True
+
+            for s, thing in [("known", known),
+                             ("test", test_on),
+                             ("query", query_on)]:
                 counts = Counter(real[thing].flat)
                 counts.update(dict((k, 0) for k in rating_vals))
                 print("{} set distribution: {}"

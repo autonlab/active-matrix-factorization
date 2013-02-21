@@ -1,6 +1,7 @@
 cimport numpy as np
 
-cpdef float rmse(np.ndarray exp, np.ndarray obs) except? 1492
+cpdef float rmse(np.ndarray exp, np.ndarray obs) except -1
+cpdef float rmse_on(np.ndarray exp, np.ndarray obs, np.ndarray on) except -1
 
 cdef class ProbabilisticMatrixFactorization:
     cdef public int latent_d, num_users, num_items
@@ -32,4 +33,4 @@ cdef class ProbabilisticMatrixFactorization:
 
     cpdef np.ndarray predicted_matrix(self, np.ndarray u=*, np.ndarray v=*)
 
-    cpdef double rmse(self, np.ndarray real) except -1
+    cpdef double rmse(self, np.ndarray real, np.ndarray on=*) except -1

@@ -22,10 +22,11 @@ from libc.math cimport log
 
 cimport cython
 
+cpdef float rmse(np.ndarray exp, np.ndarray obs) except -1:
+    return np.sqrt(np.mean((obs - exp) ** 2))
 
-cpdef float rmse(np.ndarray exp, np.ndarray obs) except? 1492:
-    return np.sqrt(((obs - exp) ** 2).sum() / exp.size)
-
+cpdef float rmse_on(np.ndarray exp, np.ndarray obs, np.ndarray on) except -1:
+    return np.sqrt(np.mean((obs[on] - exp[on]) ** 2))
 
 DTYPE = np.float
 ctypedef np.float_t DTYPE_t
@@ -418,8 +419,11 @@ cdef class ProbabilisticMatrixFactorization:
             pred += self.mean_rating
         return pred
 
-    cpdef double rmse(self, np.ndarray real) except -1:
-        return rmse(self.predicted_matrix(), real)
+    cpdef double rmse(self, np.ndarray real, np.ndarray on=None) except -1:
+        if on is None:
+            return rmse(self.predicted_matrix(), real)
+        else:
+            return rmse_on(self.predicted_matrix(), real, on)
 
     def print_latent_vectors(self):
         cdef int i, j
