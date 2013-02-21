@@ -9,8 +9,9 @@ import sys
 
 import numpy as np
 
-from plot_results import (KEY_NAMES, ActivePMF, BayesianPMF, BPMF, NewItemsBPMF,
-                          linestyle_color_marker, load_results)
+from plot_results import (KEY_NAMES,
+    ActivePMF, MNActivePMF, BayesianPMF, BPMF, NewItemsBPMF,  # for pickle
+    linestyle_color_marker, load_results)
 
 ################################################################################
 ### loading data

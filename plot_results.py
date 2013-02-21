@@ -35,6 +35,8 @@ sys.path.append(os.path.join(_dirname, 'mmmf'))
 import active_mmmf
 
 KEY_NAMES = {k: f.nice_name for k, f in active_pmf.KEY_FUNCS.items()}
+KEY_NAMES.update({'mnpmf_' + k: 'MN: ' + f.nice_name
+                  for k, f in mn_active_pmf.KEY_FUNCS.items()})
 KEY_NAMES.update({'rc_' + k: 'RC: ' + f.nice_name
                   for k, f in active_rc.KEY_FUNCS.items()})
 KEY_NAMES.update({'mmmf_' + k: 'MMMF: ' + f.nice_name
@@ -45,7 +47,7 @@ KEY_NAMES.update({'stan_' + k: 'Stan: ' + f.nice_name
                   for k, f in bpmf.KEYS.items()})
 KEY_NAMES.update({'stan_straightforward_' + k: 'SStan: ' + f.nice_name
                   for k, f in bpmf.KEYS.items()})
-KINDS = {'apmf', 'rc', 'mmmf', 'bayes', 'stan', 'stan_straightforward'}
+KINDS = {'apmf', 'mnpmf', 'rc', 'mmmf', 'bayes', 'stan', 'stan_straightforward'}
 
 
 from matplotlib import cm
