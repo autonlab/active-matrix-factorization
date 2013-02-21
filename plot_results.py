@@ -18,6 +18,8 @@ _dirname = os.path.dirname(__file__)
 sys.path.append(os.path.join(_dirname, 'python-pmf'))
 import active_pmf
 from active_pmf import ActivePMF
+import mn_active_pmf
+from mn_active_pmf import MNActivePMF
 import bayes_pmf
 from bayes_pmf import BayesianPMF
 
