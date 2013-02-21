@@ -32,7 +32,7 @@ GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
 
 LATENT_D=10
 
-.SECONDARY: run% run%/data.npz run%/data.npz.initfit_s200w200.npz
+.SECONDARY:
 
 run%:
 	mkdir -p $@
