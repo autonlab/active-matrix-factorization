@@ -179,7 +179,7 @@ def mn_kl_divergence(int num_users,
     # entropy term
     det_sign_useritems, log_det_useritems = np.linalg.slogdet(cov_useritems)
     det_sign_latents, log_det_latents = np.linalg.slogdet(cov_latents)
-    kl += (log_det_useritems * latent_d + log_det_latents * num_useritems) / 2.
+    kl -= (log_det_useritems * latent_d + log_det_latents * num_useritems) / 2.
 
     # regularization terms, exploiting tr(A x B) = (tr A) (tr B)
     cdef double tr_cov_latents = cov_latents.trace()
@@ -475,11 +475,11 @@ cdef _mnormal_grad(np.ndarray[DTYPE_t, ndim=2] mean,
     # come into play, so don't add that on.)
 
     inv_cov_useritems = np.linalg.inv(cov_useritems)
-    g_cov_useritems += latent_d / 2. * (
+    g_cov_useritems -= latent_d / 2. * (
         inv_cov_useritems
         + inv_cov_useritems.T * (1 - np.eye(num_useritems)))
 
     inv_cov_latents = np.linalg.inv(cov_latents)
-    g_cov_latents += num_useritems / 2. * (
+    g_cov_latents -= num_useritems / 2. * (
         inv_cov_latents
         + inv_cov_latents.T * (1 - np.eye(latent_d)))

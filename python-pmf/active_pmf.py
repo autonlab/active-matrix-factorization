@@ -235,7 +235,7 @@ class ActivePMF(ProbabilisticMatrixFactorization):
 
         # entropy term
         det_sign, log_det = np.linalg.slogdet(cov)
-        div += log_det / 2
+        div -= log_det / 2
 
         return div
 

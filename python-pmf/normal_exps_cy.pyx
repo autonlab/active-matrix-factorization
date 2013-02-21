@@ -300,4 +300,4 @@ cdef _normal_grad(np.ndarray[DTYPE_t, ndim=1] mean,
     # the [i,j]th element of the inverse. (For the diagonal, this doesn't
     # come into play, so don't add that on.)
     inv = np.linalg.inv(cov)
-    grad_cov += (inv + inv.T * (1 - np.eye(cov.shape[0]))) / 2
+    grad_cov -= (inv + inv.T * (1 - np.eye(cov.shape[0]))) / 2
