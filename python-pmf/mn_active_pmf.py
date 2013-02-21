@@ -799,7 +799,7 @@ def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
     total = apmf.num_users * apmf.num_items
     rmse = apmf.rmse(real, test_on)
     print("RMSE: {:.5}".format(rmse))
-    yield len(apmf.rated), rmse, None, None
+    yield len(apmf.rated), rmse, None, None, None
 
     while apmf.unrated:
         print()
@@ -830,7 +830,7 @@ def full_test(apmf, real, picker_key=MNActivePMF.pred_variance,
 
         rmse = apmf.rmse(real, test_on)
         print("RMSE: {:.5}".format(rmse))
-        yield len(apmf.rated), rmse, (i, j), vals
+        yield len(apmf.rated), rmse, (i, j), vals, apmf.predicted_matrix()
 
 
 def _in_between_work(apmf, i, j, realval, total, fit_normal,
@@ -858,7 +858,7 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
 
     rmse = apmf.rmse(real, test_on)
     print("{:<40} Initial RMSE: {:.5}".format(name, rmse))
-    yield len(apmf.rated), rmse, None, None
+    yield len(apmf.rated), rmse, None, None, None
 
     while apmf.unrated:
         n = len(apmf.rated) + 1
@@ -878,7 +878,7 @@ def _full_test_threaded(apmf, real, picker_key, fit_normal, fit_sigmas,
 
         rmse = apmf.rmse(real, test_on)
         print("{:<40} RMSE {}: {:.5}".format(picker_key.nice_name, n, rmse))
-        yield len(apmf.rated), rmse, (i, j), vals
+        yield len(apmf.rated), rmse, (i, j), vals, apmf.predicted_matrix()
 
 
 KEY_FUNCS = {
