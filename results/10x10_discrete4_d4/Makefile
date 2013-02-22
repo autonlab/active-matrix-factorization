@@ -58,9 +58,9 @@ run%/results_mnpmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) mn_active_pmf.py \
 		--note "git rev {{REV}}" \
-		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--latent-d $(LATENT_D) --discrete \
 		--refit-lookahead \
-		--procs $(PROCS) \
+		--processes $(PROCS) \
 		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
 		$(OUTPUT)
 
@@ -68,9 +68,9 @@ run%/results_apmf.pkl: | run%/data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_pmf.py \
 		--note "git rev {{REV}}" \
-		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--latent-d $(LATENT_D) --discrete \
 		--refit-lookahead \
-		--procs $(PROCS) \
+		--processes $(PROCS) \
 		--load-data $(RESULTS_BASE)/$| --save-results $(RESULTS_BASE)/$@ \
 		$(OUTPUT)
 
