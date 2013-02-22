@@ -79,3 +79,54 @@ run%/results_mmmf_200steps.pkl: | run%/data.npz
 		-C 1 --cutoff 3.5 \
 		--steps 200 \
 		$(OUTPUT)
+
+run%/results_mmmf_random_200steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		--steps 200 \
+		random \
+		$(OUTPUT)
+run%/results_mmmf_min-margin_200steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		--steps 200 \
+		min-margin \
+		$(OUTPUT)
+run%/results_mmmf_min-margin-pos_200steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		--steps 200 \
+		min-margin-pos \
+		$(OUTPUT)
+run%/results_mmmf_max-margin_200steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		--steps 200 \
+		max-margin \
+		$(OUTPUT)
+run%/results_mmmf_max-margin-pos_200steps.pkl: | run%/data.npz
+	cd $(CODE_BASE)/mmmf && $(GIT_SCRIPT) | head -n 1 | \
+		xargs -I '{{REV}}' $(PY) active_mmmf.py \
+		--note "git rev {{REV}}" \
+		--data-file $(RESULTS_BASE)/$| --results-file $(RESULTS_BASE)/$@ \
+		--matlab $(MATLAB) \
+		-C 1 --cutoff 3.5 \
+		--steps 200 \
+		max-margin-pos \
+		$(OUTPUT)
