@@ -25,13 +25,13 @@ def tripexpect(np.ndarray[DTYPE_t, ndim=2] mean not None,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def quadexpect(np.ndarray[DTYPE_t, ndim=2] mean not None,
-               np.ndarray[DTYPE_t, ndim=2] cov_rows not None,
-               np.ndarray[DTYPE_t, ndim=2] cov_cols not None,
-               int a_i, int a_j,
-               int b_i, int b_j,
-               int c_i, int c_j,
-               int d_i, int d_j):
+cpdef double quadexpect(np.ndarray[DTYPE_t, ndim=2] mean,
+                        np.ndarray[DTYPE_t, ndim=2] cov_rows,
+                        np.ndarray[DTYPE_t, ndim=2] cov_cols,
+                        int a_i, int a_j,
+                        int b_i, int b_j,
+                        int c_i, int c_j,
+                        int d_i, int d_j):
     '''
     E[a b c d] for MN(mean, cov_rows, cov_cols) and distinct a,b,c,d.
 
@@ -70,11 +70,11 @@ def quadexpect(np.ndarray[DTYPE_t, ndim=2] mean not None,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def exp_squared(np.ndarray[DTYPE_t, ndim=2] mean not None,
-                np.ndarray[DTYPE_t, ndim=2] cov_rows not None,
-                np.ndarray[DTYPE_t, ndim=2] cov_cols not None,
-                int a_i, int a_j,
-                int b_i, int b_j):
+cpdef double exp_squared(np.ndarray[DTYPE_t, ndim=2] mean,
+                         np.ndarray[DTYPE_t, ndim=2] cov_rows,
+                         np.ndarray[DTYPE_t, ndim=2] cov_cols,
+                         int a_i, int a_j,
+                         int b_i, int b_j):
     '''E[a^2 b^2] for MN(mean, cov_rows, cov_cols)
 
     Assumes that a,b are within bounds and not negative; will do
@@ -123,11 +123,11 @@ def exp_a2bc(np.ndarray[DTYPE_t, ndim=2] mean not None,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def exp_dotprod_sq(int num_users,
-                   np.ndarray[DTYPE_t, ndim=2] mean not None,
-                   np.ndarray[DTYPE_t, ndim=2] cov_useritems not None,
-                   np.ndarray[DTYPE_t, ndim=2] cov_latents not None,
-                   int i, int j):
+cpdef double exp_dotprod_sq(int num_users,
+                            np.ndarray[DTYPE_t, ndim=2] mean,
+                            np.ndarray[DTYPE_t, ndim=2] cov_useritems,
+                            np.ndarray[DTYPE_t, ndim=2] cov_latents,
+                            int i, int j):
     '''E[ (U_i^T V_j)^2 ]
     = E[ (\sum_k U_ik V_jk)^2 ]
     = E[ \sum_k \sum_l U_ik V_jk U_il V_jl ]
@@ -247,15 +247,15 @@ def matrixnormal_gradient(mn_apmf not None):  # TODO
 # TODO: vectorize 'n stuff
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def _quadexp_grad(int num_users,
-                  np.ndarray[DTYPE_t, ndim=2] mean,
-                  np.ndarray[DTYPE_t, ndim=2] cov_useritems,
-                  np.ndarray[DTYPE_t, ndim=2] cov_latents,
-                  np.ndarray[DTYPE_t, ndim=2] g_mean,
-                  np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
-                  np.ndarray[DTYPE_t, ndim=2] g_cov_latents,
-                  int i, int j, int k, int l,
-                  double mult):
+cpdef int _quadexp_grad(int num_users,
+                        np.ndarray[DTYPE_t, ndim=2] mean,
+                        np.ndarray[DTYPE_t, ndim=2] cov_useritems,
+                        np.ndarray[DTYPE_t, ndim=2] cov_latents,
+                        np.ndarray[DTYPE_t, ndim=2] g_mean,
+                        np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
+                        np.ndarray[DTYPE_t, ndim=2] g_cov_latents,
+                        int i, int j, int k, int l,
+                        double mult):
     """
     Updates the passed gradients for mult * the gradient of
     E[U_ik V_jk U_il V_jl]
@@ -341,15 +341,15 @@ def _quadexp_grad(int num_users,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def _squareexp_grad(int num_users,
-                    np.ndarray[DTYPE_t, ndim=2] mean,
-                    np.ndarray[DTYPE_t, ndim=2] cov_useritems,
-                    np.ndarray[DTYPE_t, ndim=2] cov_latents,
-                    np.ndarray[DTYPE_t, ndim=2] g_mean,
-                    np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
-                    np.ndarray[DTYPE_t, ndim=2] g_cov_latents,
-                    int i, int j, int k,
-                    double mult):
+cpdef int _squareexp_grad(int num_users,
+                          np.ndarray[DTYPE_t, ndim=2] mean,
+                          np.ndarray[DTYPE_t, ndim=2] cov_useritems,
+                          np.ndarray[DTYPE_t, ndim=2] cov_latents,
+                          np.ndarray[DTYPE_t, ndim=2] g_mean,
+                          np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
+                          np.ndarray[DTYPE_t, ndim=2] g_cov_latents,
+                          int i, int j, int k,
+                          double mult):
     """
     Updates the passed gradients for mult * the gradient of
     E[U_ik^2 V_jk^2]
@@ -392,15 +392,15 @@ def _squareexp_grad(int num_users,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision
-cdef _mnormal_grad(np.ndarray[DTYPE_t, ndim=2] mean,
-                   np.ndarray[DTYPE_t, ndim=2] cov_useritems,
-                   np.ndarray[DTYPE_t, ndim=2] cov_latents,
-                   np.ndarray[DTYPE_t, ndim=2] ratings,
-                   int num_users, int latent_d,
-                   double sig_sq, double sig_u_sq, double sig_v_sq,
-                   np.ndarray[DTYPE_t, ndim=2] g_mean,
-                   np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
-                   np.ndarray[DTYPE_t, ndim=2] g_cov_latents):
+cpdef int _mnormal_grad(np.ndarray[DTYPE_t, ndim=2] mean,
+                        np.ndarray[DTYPE_t, ndim=2] cov_useritems,
+                        np.ndarray[DTYPE_t, ndim=2] cov_latents,
+                        np.ndarray[DTYPE_t, ndim=2] ratings,
+                        int num_users, int latent_d,
+                        double sig_sq, double sig_u_sq, double sig_v_sq,
+                        np.ndarray[DTYPE_t, ndim=2] g_mean,
+                        np.ndarray[DTYPE_t, ndim=2] g_cov_useritems,
+                        np.ndarray[DTYPE_t, ndim=2] g_cov_latents):
     cdef int i, j, j_, k, l, idx
     cdef np.ndarray mu_i, mv_j, inc
     cdef double rating
