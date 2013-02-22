@@ -39,20 +39,31 @@ except ImportError:
 ################################################################################
 ### Helpers
 
-def project_psd(mat, min_eig=0):
+def project_psd(mat, min_eig=0, destroy=False):
     '''
     Project a real symmetric matrix to PSD by discarding any negative
     eigenvalues from its spectrum. Passing min_eig > 0 lets you similarly make
     it positive-definite, though this may not technically be a projection...?
 
     Symmetrizes the matrix before projecting.
+
+    If destroy is True, turns the passed-in matrix into gibberish. If the
+    matrix is very large, passing in a weakref.proxy to it will use the least
+    amount of memory.
     '''
-    #TODO: better way to project to strictly positive definite?
-    mat = (mat + mat.T) / 2
-    vals, vecs = np.linalg.eigh(mat)
+    if not destroy:
+        mat = mat.copy()
+    mat += mat.T
+    mat /= 2
+
+    # TODO: be smart and only get negative eigs?
+    vals, vecs = scipy.linalg.eigh(mat)
     if vals.min() < min_eig:
+        del mat
         mat = np.dot(vecs, np.dot(np.diag(np.maximum(vals, min_eig)), vecs.T))
-        mat = (mat + mat.T) / 2
+        del vals, vecs
+        mat += mat.T
+        mat /= 2
     return mat
 
 
@@ -247,10 +258,12 @@ class MNActivePMF(ProbabilisticMatrixFactorization):
                 new_mean = self.mean - lr * g_mean
                 new_cov_useritems = project_psd(
                     self.cov_useritems - lr * g_cov_useritems,
-                    min_eig=self.min_eig)
+                    min_eig=self.min_eig,
+                    destroy=True)
                 new_cov_latents = project_psd(
                     self.cov_latents - lr * g_cov_latents,
-                    min_eig=self.min_eig)
+                    min_eig=self.min_eig,
+                    destroy=True)
                 new_kl = self.kl_divergence(
                     new_mean, new_cov_useritems, new_cov_latents)
 
