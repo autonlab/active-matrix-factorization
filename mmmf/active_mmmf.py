@@ -224,7 +224,8 @@ def main():
                       mat_cmd=args.matlab,
                       tempdir_base=args.tempdir_base,
                       return_tempdir=return_tempdir,
-                      delete_tempdir_if_success=delete_tempdir_if_success)
+                      delete_tempdir_if_success=delete_tempdir_if_success,
+                      partial_results=False)
     if return_tempdir:
         results, tempdir = results
         if not delete_tempdir_if_success:

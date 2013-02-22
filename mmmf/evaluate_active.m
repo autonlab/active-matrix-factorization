@@ -81,7 +81,7 @@ for selector_i = 1 : length(selectors)
         % save results
         results(stepnum, :) = {num_known, get_misclass(x), [i,j], evals, x};
         stepnum = stepnum + 1;
-        if save_partial
+        if save_partial & mod(stepnum, 20) == 0
             save(outfile, 'results');
         end
     end
