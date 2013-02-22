@@ -313,7 +313,7 @@ def plot_criteria_firsts(result_items, cmap=default_cmap, share_cbar=False):
     for idx, (name, data) in enumerate(result_items):
         assert data[0][3] is None
 
-        n, rmse, (i, j), vals = data[1]
+        n, rmse, (i, j), vals, *rest = data[1]
 
         im = grid[idx].matshow(vals, cmap=cmap, origin='upper', aspect='equal',
                                vmin=vmin, vmax=vmax)
