@@ -64,10 +64,11 @@ function [x,xu,xv,Qval,Dval] = solveD(y,maxoravg,C,solver)
   if (nargin>2) & (C<inf)
     c = c+set(q<=C);
   end
-  settings = sdpsettings('showprogress', 1, 'solver', solver, 'cachesolvers', 1);
+  settings = sdpsettings('showprogress', 1, 'solver', solver, ...
+                         'savesolveroutput', 1, 'cachesolvers', 1);
   d = solvesdp(c, -sum(q), settings);
   num_runs = 1;
-  while d.problem ~= 0
+  while d.problem ~= 0 & d.solveroutput.info.numerr ~= 0
       disp(d.info);
       if num_runs > 5
           error()
