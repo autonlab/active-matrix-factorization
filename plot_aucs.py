@@ -19,7 +19,8 @@ from plot_results import (KEY_NAMES,
 def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                          do_cutoffs=None, do_cutoff_aucs=None,
                          ret_rmse_traces=False, ret_cutoff_traces=False,
-                         rmse_over_random=False):
+                         rmse_over_random=False,
+                         already_loaded=False):
     desired_ns = None
 
     want_rmses = do_rmse or do_rmse_auc or ret_rmse_traces
@@ -38,7 +39,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
     if not want_rmses and not cutoff_vals:  # not asked to do anything!
         return {}
 
-    for r in map(load_results, filenames):
+    for r in (filenames if already_loaded else map(load_results, filenames)):
         if cutoff_vals:
             real = r['_real']
             ratings = r['_ratings']
