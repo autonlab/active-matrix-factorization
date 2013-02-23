@@ -182,7 +182,7 @@ def plot_lines(ns, data, ylabel=None, names=None, ax=None):
 
     nice_results = sorted(
             ((names[k], v) for k, v in data.items()),
-            key=lambda kv: kv[1][-1], reverse=True)
+            key=lambda kv: np.trapz(kv[1]), reverse=True)
 
     # offset lines a bit so you can see when some of them overlap
     total = len(ns)
