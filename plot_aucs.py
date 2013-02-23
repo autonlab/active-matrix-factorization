@@ -11,14 +11,16 @@ import numpy as np
 
 from plot_results import (KEY_NAMES,
     ActivePMF, MNActivePMF, BayesianPMF, BPMF, NewItemsBPMF,  # for pickle
-    linestyle_color_marker, load_results)
+    linestyle_color_marker, load_results, auc_roc)
 
 ################################################################################
 ### loading data
 
 def load_data(filenames, do_rmse=False, do_rmse_auc=False,
+                         do_predauc=False, do_predauc_auc=False,
                          do_cutoffs=None, do_cutoff_aucs=None,
                          ret_rmse_traces=False, ret_cutoff_traces=False,
+                         ret_predauc_traces=False,
                          rmse_over_random=False,
                          already_loaded=False):
     desired_ns = None
@@ -26,6 +28,10 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
     want_rmses = do_rmse or do_rmse_auc or ret_rmse_traces
     if want_rmses:
         rmse_traces = defaultdict(list)
+
+    want_predaucs = do_predauc or do_predauc_auc or ret_predauc_traces
+    if want_predaucs:
+        predauc_traces = deafultdict(list)
 
     cutoff_vals = set()
     if do_cutoffs:
@@ -44,10 +50,19 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             real = r['_real']
             ratings = r['_ratings']
 
-        if want_rmses and rmse_over_random:
-            random = [(k, v) for k, v in r.items() if k.endswith('random')]
-            assert len(random) == 1
-            random_rmse = np.asarray([r[1] for r in random[0][1]])
+        if want_predaucs:
+            test_on = r['_test_on']
+            label = r['_real'][test_on] > 0
+
+        if rmse_over_random:
+            random, = [v for k, v in r.items() if k.endswith('random')]
+            if want_rmses:
+                random_rmse = np.asarray([r[1] for r in random])
+            if want_predaucs:
+                random_predauc = np.asarray([
+                    auc_roc(r[4], label)[0]
+                    for r in random
+                ])
 
         for k, v in r.items():
             if k.startswith('_'):
@@ -70,6 +85,15 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                     rmses -= random_rmse
                 rmse_traces[k].append(rmses)
 
+            if want_predaucs:
+                predaucs = np.array([
+                    np.nan if pred is None else auc_roc(pred[test_on], label)[0]
+                    for pred in preds
+                ])
+                if rmse_over_random:
+                    predaucs -= random_predauc
+                predauc_traces[k].append(predaucs)
+
             if cutoff_vals:
                 assert ijs[0] is None
                 for cutoff in cutoff_vals:
@@ -88,6 +112,16 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
     if do_rmse_auc:  # name => array of area under RMSE curves
         results['rmse_auc'] = {
             k: np.trapz(v, axis=1) for k, v in rmse_traces.items()
+        }
+
+    if do_predauc:  # name => mean predauc curve
+        results['predauc'] = {
+            k: np.mean(v, axis=0) for k, v in predauc_traces.items()
+        }
+
+    if do_rmse_auc:  # name => array of area under RMSE curves
+        results['predauc_auc'] = {
+            k: np.trapz(v, axis=1) for k, v in predauc_traces.items()
         }
 
     if do_cutoffs:  # cutoff => name => curve of # positives
@@ -110,6 +144,8 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             ret.append({k: np.asarray(v) for k, v in rmse_traces.items()})
         if ret_cutoff_traces:
             ret.append({k: np.asarray(v) for k, v in cutoff_traces.items()})
+        if ret_predauc_traces:
+            ret.append({k: np.asarray(v) for k, v in predauc_traces.items()})
         return ret
 
 
@@ -231,6 +267,8 @@ def main(argstr=None):
     g._add_action(ActionNoYes('rmses', default=False))
     g._add_action(ActionNoYes('rmse-fboxplots', default=False))
     g._add_action(ActionNoYes('auc', default=True))
+    g._add_action(ActionNoYes('predaucs', default=False))
+    g._add_action(ActionNoYes('predauc-auc', default=False))
     g.add_argument('--ge-cutoff', nargs='+', type=float)
     g.add_argument('--ge-cutoff-auc', nargs='+', type=float)
 
@@ -249,6 +287,7 @@ def main(argstr=None):
 
     res = load_data(args.files,
         do_rmse=args.rmses, do_rmse_auc=args.auc,
+        do_predauc=args.predaucs, do_predauc_auc=args.predauc_auc,
         do_cutoffs=args.ge_cutoff, do_cutoff_aucs=args.ge_cutoff_auc,
         rmse_over_random=args.over_random,
         ret_rmse_traces=args.rmse_fboxplots)
@@ -265,11 +304,12 @@ def main(argstr=None):
                 if any(r.search(k) for r in args.key_regexes)
                 and not any(r.search(k) for r in args.key_exclude_regexes)}
 
-    rmse_name = 'RMSE over random' if args.over_random else 'RMSE'
+    over_random = ' over_random' if args.over_random else ''
 
+    # rmse stuff
     if args.rmses:
         plt.figure()
-        plot_lines(ns, filter_keys(data['rmse']), rmse_name)
+        plot_lines(ns, filter_keys(data['rmse']), 'RMSE' + over_random)
         show_legend(args.legend)
 
     if args.rmse_fboxplots:
@@ -279,12 +319,26 @@ def main(argstr=None):
             plt.hlines(0, *plt.xlim(), color='k')
             plt.title(KEY_NAMES.get(name, name))
             plt.xlabel("# of rated elements")
-            plt.ylabel(rmse_name)
+            plt.ylabel('RMSE' + over_random)
 
     if args.auc:
         plt.figure()
-        plot_aucs(filter_keys(data['rmse_auc']), 'AUC ({})'.format(rmse_name))
+        plot_aucs(filter_keys(data['rmse_auc']),
+                  'AUC ({})'.format('RMSE' + over_random))
 
+    # prediction auc stuff
+    if args.predaucs:
+        plt.figure()
+        plot_lines(ns, filter_keys(data['predauc']),
+                   'Prediction AUC' + over_random)
+        show_legend(args.legend)
+
+    if args.auc:
+        plt.figure()
+        plot_aucs(filter_keys(data['predauc_auc']),
+                  'AUC ({})'.format('Prediction AUC' + over_random))
+
+    # # >= cutoff stuff
     if args.ge_cutoff:
         for cutoff in args.ge_cutoff:
             plt.figure()
