@@ -49,9 +49,9 @@ parameters {
 
   // covariances on latent factors; see model sec for details
   vector<lower=0>[rank] cov_u_c;
-  vector[(rank * (rank - 1)) / 2] cov_u_z;
+  vector[max((rank * (rank - 1)) / 2, 1)] cov_u_z;
   vector<lower=0>[rank] cov_v_c;
-  vector[(rank * (rank - 1)) / 2] cov_v_z;
+  vector[max((rank * (rank - 1)) / 2, 1)] cov_v_z;
 }
 
 model {
@@ -74,8 +74,10 @@ model {
   // (the "multivariate reparameterizations" section).
   cov_u_c ~ chi_square(nu_0_minus_i); // diagonals are chi-squared
   cov_v_c ~ chi_square(nu_0_minus_i);
-  cov_u_z ~ normal(0, 1); // lower triangle is standard normal
-  cov_v_z ~ normal(0, 1);
+  if (rank > 1) {
+    cov_u_z ~ normal(0, 1); // lower triangle is standard normal
+    cov_v_z ~ normal(0, 1);
+  }
 
   // Build up those lower-triangular matrices from their elements.
   count <- 1;
