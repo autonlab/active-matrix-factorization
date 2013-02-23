@@ -178,7 +178,7 @@ def plot_lines(ns, data, ylabel=None, names=None):
         names = KEY_NAMES
 
     nice_results = sorted(
-            ((KEY_NAMES[k], v) for k, v in data.items()),
+            ((names[k], v) for k, v in data.items()),
             key=lambda kv: kv[1][-1], reverse=True)
 
     # offset lines a bit so you can see when some of them overlap
