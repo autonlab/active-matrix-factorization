@@ -679,6 +679,9 @@ class MainProgram(object):
 
         parser._add_action(ActionNoYes('subtract-mean', default=True))
 
+        parser.add_argument('--hyperparams', default={}, type=lambda x: eval(x))
+        parser._add_action(ActionNoYes('initialize-at-pmf-map', default=False))
+
         parser.add_argument('--samps', '-S', type=int, default=100)
         parser.add_argument('--warmup', type=int, default=50)
 
@@ -768,13 +771,44 @@ class MainProgram(object):
         return Data(real, ratings, rating_vals, test_set, is_new_item)
 
     def initialize_bpmf(self, args, data, query_set):
-        return BPMF(data.ratings, args.latent_d,
+        bpmf = BPMF(data.ratings, args.latent_d,
                 subtract_mean=args.subtract_mean,
                 rating_values=data.rating_vals,
                 discrete_expectations=args.discrete,
                 num_integration_pts=args.num_integration_pts,
                 knowable=query_set,
                 model_filename=args.model_filename)
+        for k, v in args.hyperparams.items():
+            assert hasattr(bpmf, k)
+            setattr(bpmf, k, v)
+
+        if args.initialize_at_pmf_map:
+            import sys
+            sys.path.append(
+                os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                             '../python-pmf')))
+            try:
+                from pmf_cy import ProbabilisticMatrixFactorization
+            except ImportError:
+                warnings.warn("cython PMF not available; "
+                              "using pure-python version")
+                from pmf import ProbabilisticMatrixFactorization
+
+            print("getting PMF MAP fit with default hyperparams")
+            p = ProbabilisticMatrixFactorization(
+                data.ratings, latent_d=args.latent_d,
+                subtract_mean=args.subtract_mean)
+            p.fit()  # TODO: support also doing SGD
+
+            print("okay; BPMF will start from here now")
+            # set the mode to the PMF mode
+            bpmf.samples(num_samps=1, warmup=0, update_mode=True)
+            bpmf.sampled_mode['U'] = p.users
+            bpmf.sampled_mode['V'] = p.items
+            bpmf.sampled_mode['predictions'] = p.predicted_matrix()
+            bpmf.sampled_mode_lp = -np.inf
+
+        return bpmf
 
     def pick_query_test_sets(self, args, data):
         real = data.real
