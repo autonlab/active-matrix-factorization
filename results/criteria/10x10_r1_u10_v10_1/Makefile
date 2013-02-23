@@ -28,21 +28,23 @@ GIT_SCRIPT = $(CODE_BASE)/get_git_rev.sh $(IGNORE_GIT)
 #       on modification time of the data file, to avoid very expensive ops
 #       just in case. if you want to rerun, just delete the data files.
 
-LATENT_D=2
+LATENT_D=1
 
 .SECONDARY:
 
 data.pkl:
 	$(PY) gen.py $@
 
-stan.pkl: data.pkl
+results_stan.pkl: data.pkl
 	cd $(CODE_BASE)/stan-bpmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) bpmf.py \
 		--note "git rev {{REV}}" \
-		--latent-d $(LATENT_D) --discrete --no-subtract-mean \
+		--latent-d $(LATENT_D) --no-discrete --no-subtract-mean \
 		--test-set all \
 		--samps 200 --warmup 100 \
 		--lookahead-samps 100 --lookahead-warmup 50 \
+		--initialize-at-pmf-map \
+		--hyperparams '{"mu_0": np.array([10])}' \
 		--num-integration-pts 25 \
 		--steps 2 \
 		--procs $(PROCS) \
@@ -50,11 +52,11 @@ stan.pkl: data.pkl
 		pred-variance exp-variance exp-entropy-est \
 		$(OUTPUT)
 
-mnpmf.pkl: data.pkl
+results_mnpmf.pkl: data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) mn_active_pmf.py \
 		--note "git rev {{REV}}" \
-		--latent-d $(LATENT_D) --discrete \
+		--latent-d $(LATENT_D) --continuous \
 		--refit-lookahead \
 		--steps 2 \
 		--processes $(PROCS) \
@@ -63,11 +65,11 @@ mnpmf.pkl: data.pkl
 		uv-entropy uv-entropy-approx \
 		$(OUTPUT)
 
-apmf.pkl: data.pkl
+results_apmf.pkl: data.pkl
 	cd $(CODE_BASE)/python-pmf && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_pmf.py \
 		--note "git rev {{REV}}" \
-		--latent-d $(LATENT_D) --discrete \
+		--latent-d $(LATENT_D) --continuous \
 		--refit-lookahead \
 		--steps 2 \
 		--processes $(PROCS) \
@@ -77,7 +79,7 @@ apmf.pkl: data.pkl
 		pred-entropy-bound pred-entropy-bound-approx \
 		$(OUTPUT)
 
-rc.pkl: data.pkl
+results_rc.pkl: data.pkl
 	cd $(CODE_BASE)/ratingconcentration && $(GIT_SCRIPT) | head -n 1 | \
 		xargs -I '{{REV}}' $(PY) active_rc.py \
 		--notes "git rev {{REV}}" \
@@ -88,5 +90,10 @@ rc.pkl: data.pkl
 		entropy random \
 		$(OUTPUT)
 
-%.png: %.pkl
-	cd $(CODE_BASE) && $(PY) ./plot_results.py 
+%/firsts.png: results_%.pkl
+	mkdir -p $*
+	cd $(CODE_BASE) && $(PY) ./plot_results.py \
+		--outdir $(RESULTS_BASE)/$* \
+		--criteria-firsts \
+		--cmap YlOrRd \
+		$(RESULTS_BASE)/$<
