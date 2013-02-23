@@ -60,7 +60,9 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                 random_rmse = np.asarray([r[1] for r in random])
             if want_predaucs:
                 random_predauc = np.asarray([
-                    auc_roc(r[4], label)[0]
+                    auc_roc(r[4][test_on], label)[0]
+                    if len(r) >= 5
+                    else np.nan
                     for r in random
                 ])
 
