@@ -244,7 +244,6 @@ def plot_aucs(aucs, ylabel=None, names=None, rotation=90, ha='center'):
         plt.hlines(0, *plt.xlim(), color='k')
     if ylabel:
         plt.ylabel(ylabel)
-    plt.tight_layout()
 
 ################################################################################
 
