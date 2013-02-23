@@ -174,7 +174,8 @@ def plot_lines(ns, data, ylabel=None, names=None, ax=None):
         ax = plt.gca()
 
     ax.set_xlabel("# of rated elements")
-    ax.set_ylabel(ylabel)
+    if ylabel:
+        ax.set_ylabel(ylabel)
 
     if names is None:
         names = KEY_NAMES
