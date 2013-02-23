@@ -138,9 +138,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             for cutoff, c_vals in cutoff_traces.items()
         }
 
-    if not ret_rmse_traces and not ret_cutoff_traces:
-        return results
-    else:
+    if ret_rmse_traces or ret_predauc_traces or ret_cutoff_traces:
         ret = [results]
         if ret_rmse_traces:
             ret.append({k: np.asarray(v) for k, v in rmse_traces.items()})
@@ -149,6 +147,8 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
         if ret_predauc_traces:
             ret.append({k: np.asarray(v) for k, v in predauc_traces.items()})
         return ret
+    else:
+        return results
 
 
 ################################################################################
