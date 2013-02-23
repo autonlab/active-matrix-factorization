@@ -215,7 +215,7 @@ def plot_lines(ns, data, ylabel=None, names=None, ax=None):
     #plt.tight_layout()
 
 
-def plot_aucs(aucs, ylabel=None, names=None, rotation=90):
+def plot_aucs(aucs, ylabel=None, names=None, rotation=90, ha='center'):
     import matplotlib.pyplot as plt
     if names is None:
         names = KEY_NAMES
@@ -236,7 +236,7 @@ def plot_aucs(aucs, ylabel=None, names=None, rotation=90):
                     for grp in aucs]
             beanplot(aucs, ax=plt.gca(), plot_opts={'cutoff': True})
         indices = np.arange(len(names)) + 1
-    plt.xticks(indices, names, rotation=rotation)
+    plt.xticks(indices, names, rotation=rotation, ha=ha)
     plt.xlim(indices[0] - .5, indices[-1] + .5)
 
     bot, top = plt.ylim()
