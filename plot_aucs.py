@@ -168,11 +168,14 @@ def show_legend(where='outside', fontsize=11):
         plt.legend(loc='best', prop=FontProperties(size=fontsize))
 
 
-def plot_lines(ns, data, ylabel=None):
+def plot_lines(ns, data, ylabel=None, names=None):
     import matplotlib.pyplot as plt
 
     plt.xlabel("# of rated elements")
     plt.ylabel(ylabel)
+
+    if names is None:
+        names = KEY_NAMES
 
     nice_results = sorted(
             ((KEY_NAMES[k], v) for k, v in data.items()),
@@ -198,9 +201,11 @@ def plot_lines(ns, data, ylabel=None):
     plt.tight_layout()
 
 
-def plot_aucs(aucs, ylabel=None):
+def plot_aucs(aucs, ylabel=None, names=None, rotation=90):
     import matplotlib.pyplot as plt
-    names, aucs = list(zip(*sorted((KEY_NAMES[k], v) for k, v in aucs.items())))
+    if names is None:
+        names = KEY_NAMES
+    names, aucs = list(zip(*sorted((names[k], v) for k, v in aucs.items())))
 
     if all(a.size == 1 for a in aucs):
         plt.plot(aucs, linestyle='None', marker='o')
@@ -217,7 +222,7 @@ def plot_aucs(aucs, ylabel=None):
                     for grp in aucs]
             beanplot(aucs, ax=plt.gca(), plot_opts={'cutoff': True})
         indices = np.arange(len(names)) + 1
-    plt.xticks(indices, names, rotation=90)
+    plt.xticks(indices, names, rotation=rotation)
     plt.xlim(indices[0] - .5, indices[-1] + .5)
     plt.hlines(0, *plt.xlim(), color='k')
     plt.ylabel(ylabel)
