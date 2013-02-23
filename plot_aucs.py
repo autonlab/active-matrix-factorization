@@ -121,7 +121,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             k: np.mean(v, axis=0) for k, v in predauc_traces.items()
         }
 
-    if do_rmse_auc:  # name => array of area under RMSE curves
+    if do_predauc_auc:  # name => array of area under RMSE curves
         results['predauc_auc'] = {
             k: np.trapz(v, axis=1) for k, v in predauc_traces.items()
         }
