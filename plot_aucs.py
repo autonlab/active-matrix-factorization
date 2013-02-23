@@ -22,8 +22,11 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                          ret_rmse_traces=False, ret_cutoff_traces=False,
                          ret_predauc_traces=False,
                          rmse_over_random=False,
+                         rmse_div_random=False,
                          already_loaded=False):
     desired_ns = None
+
+    assert not rmse_over_random or not rmse_div_random
 
     want_rmses = do_rmse or do_rmse_auc or ret_rmse_traces
     if want_rmses:
@@ -54,7 +57,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             test_on = r['_test_on']
             label = r['_real'][test_on] > 0
 
-        if rmse_over_random:
+        if rmse_over_random or rmse_div_random:
             random, = [v for k, v in r.items() if k.endswith('random')]
             if want_rmses:
                 random_rmse = np.asarray([r[1] for r in random])
@@ -85,6 +88,8 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             if want_rmses:
                 if rmse_over_random:
                     rmses -= random_rmse
+                elif rmse_div_random:
+                    rmses /= random_rmse
                 rmse_traces[k].append(rmses)
 
             if want_predaucs:
@@ -94,6 +99,8 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                 ])
                 if rmse_over_random:
                     predaucs -= random_predauc
+                if rmse_div_random:
+                    predaucs /= random_predauc
                 predauc_traces[k].append(predaucs)
 
             if cutoff_vals:
