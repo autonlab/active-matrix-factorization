@@ -168,11 +168,12 @@ def show_legend(where='outside', fontsize=11):
         plt.legend(loc='best', prop=FontProperties(size=fontsize))
 
 
-def plot_lines(ns, data, ylabel=None, names=None):
-    import matplotlib.pyplot as plt
+def plot_lines(ns, data, ylabel=None, names=None, fig=None):
+    if fig is None:
+        import matplotlib.pyplot as fig
 
-    plt.xlabel("# of rated elements")
-    plt.ylabel(ylabel)
+    fig.xlabel("# of rated elements")
+    fig.ylabel(ylabel)
 
     if names is None:
         names = KEY_NAMES
@@ -192,13 +193,13 @@ def plot_lines(ns, data, ylabel=None, names=None):
         nums = ns + (idx - total / 2) * offset
 
         l, c, m = next(l_c_m)
-        plt.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker=m)
+        fig.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker=m)
 
     # only show integer values for x ticks
     #xmin, xmax = plt.xlim()
-    #plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
+    #fig.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
-    plt.tight_layout()
+    #plt.tight_layout()
 
 
 def plot_aucs(aucs, ylabel=None, names=None, rotation=90):
