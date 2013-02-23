@@ -238,7 +238,10 @@ def plot_aucs(aucs, ylabel=None, names=None, rotation=90):
         indices = np.arange(len(names)) + 1
     plt.xticks(indices, names, rotation=rotation)
     plt.xlim(indices[0] - .5, indices[-1] + .5)
-    plt.hlines(0, *plt.xlim(), color='k')
+
+    bot, top = plt.ylim()
+    if bot < 0 < top:
+        plt.hlines(0, *plt.xlim(), color='k')
     plt.ylabel(ylabel)
     plt.tight_layout()
 
