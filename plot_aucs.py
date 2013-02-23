@@ -168,12 +168,13 @@ def show_legend(where='outside', fontsize=11):
         plt.legend(loc='best', prop=FontProperties(size=fontsize))
 
 
-def plot_lines(ns, data, ylabel=None, names=None, fig=None):
-    if fig is None:
-        import matplotlib.pyplot as fig
+def plot_lines(ns, data, ylabel=None, names=None, ax=None):
+    if ax is None:
+        import matplotlib.pyplot as plt
+        ax = plt.gca()
 
-    fig.xlabel("# of rated elements")
-    fig.ylabel(ylabel)
+    ax.set_xlabel("# of rated elements")
+    ax.set_ylabel(ylabel)
 
     if names is None:
         names = KEY_NAMES
@@ -193,11 +194,11 @@ def plot_lines(ns, data, ylabel=None, names=None, fig=None):
         nums = ns + (idx - total / 2) * offset
 
         l, c, m = next(l_c_m)
-        fig.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker=m)
+        ax.plot(nums, vals, linestyle=l, color=c, label=nice_name, marker=m)
 
     # only show integer values for x ticks
     #xmin, xmax = plt.xlim()
-    #fig.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
+    #plt.xticks(range(math.ceil(xmin), math.floor(xmax) + 1))
 
     #plt.tight_layout()
 
