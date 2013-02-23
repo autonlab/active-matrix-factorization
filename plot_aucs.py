@@ -61,6 +61,8 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
             random, = [v for k, v in r.items() if k.endswith('random')]
             if want_rmses:
                 random_rmse = np.asarray([r[1] for r in random])
+                if rmse_div_random:
+                    random_rmse_finite = np.isfinite(random_rmse)
             if want_predaucs:
                 random_predauc = np.asarray([
                     auc_roc(r[4][test_on], label)[0]
@@ -68,6 +70,8 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                     else np.nan
                     for r in random
                 ])
+                if rmse_predauc_random:
+                    random_predauc_finite = np.isfinite(random_predauc)
 
         for k, v in r.items():
             if k.startswith('_'):
@@ -89,7 +93,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                 if rmse_over_random:
                     rmses -= random_rmse
                 elif rmse_div_random:
-                    rmses /= random_rmse
+                    rmses[random_rmse_finite] /= random_rmse[random_rmse_finite]
                 rmse_traces[k].append(rmses)
 
             if want_predaucs:
@@ -100,7 +104,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
                 if rmse_over_random:
                     predaucs -= random_predauc
                 if rmse_div_random:
-                    predaucs /= random_predauc
+                    predaucs[random_predauc_finite] /= random_predauc[random_predauc_finite]
                 predauc_traces[k].append(predaucs)
 
             if cutoff_vals:
