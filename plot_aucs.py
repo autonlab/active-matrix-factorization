@@ -242,7 +242,8 @@ def plot_aucs(aucs, ylabel=None, names=None, rotation=90, ha='center'):
     bot, top = plt.ylim()
     if bot < 0 < top:
         plt.hlines(0, *plt.xlim(), color='k')
-    plt.ylabel(ylabel)
+    if ylabel:
+        plt.ylabel(ylabel)
     plt.tight_layout()
 
 ################################################################################
