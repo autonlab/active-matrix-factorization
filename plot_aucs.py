@@ -31,7 +31,7 @@ def load_data(filenames, do_rmse=False, do_rmse_auc=False,
 
     want_predaucs = do_predauc or do_predauc_auc or ret_predauc_traces
     if want_predaucs:
-        predauc_traces = deafultdict(list)
+        predauc_traces = defaultdict(list)
 
     cutoff_vals = set()
     if do_cutoffs:
