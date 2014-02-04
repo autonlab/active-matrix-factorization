@@ -669,51 +669,105 @@ class MainProgram(object):
         # set up arguments
         parser = argparse.ArgumentParser()
 
-        parser.add_argument('--latent-d', '-D', type=int, default=5)
-        parser.add_argument('--steps', '-s', type=int, default=None)
+        parser.add_argument('--latent-d', '-D', type=int, default=5,
+            help="The rank of the factorization. Default %(default)s.")
+        parser.add_argument('--steps', '-s', type=int, default=None,
+            help="How many active learning steps to perform. "
+                 "Default: until fully known.")
 
-        parser._add_action(ActionNoYes('discrete', default=None))
-        parser.add_argument('--num-integration-pts', type=int, default=50)
+        parser._add_action(ActionNoYes('discrete', default=None,
+            help="Whether the output matrix is discrete (affects the "
+                 "integration during lookahead). Default: true if the data "
+                 "file contains _rating_vals."))
+        parser.add_argument('--num-integration-pts', type=int, default=50,
+            help="Number of points to do in numerical integration for "
+                 "continuous outputs; default %(default)s.")
 
-        parser._add_action(ActionNoYes('binary-acc', default=False))
+        parser._add_action(ActionNoYes('binary-acc', default=False,
+            help="Evaluate accuracy by treating positive outputs as 1 and "
+                 "negative outputs as 0, and getting the accuracy. Default: "
+                 "evaluate accuracy via RMSE."))
 
-        parser._add_action(ActionNoYes('subtract-mean', default=True))
+        parser._add_action(ActionNoYes('subtract-mean', default=True,
+            help="Center the output matrix; default yes. Usually a good idea, "
+                 "but can cause problems when there are very few known "
+                 "points."))
 
-        parser.add_argument('--hyperparams', default={}, type=lambda x: eval(x))
-        parser._add_action(ActionNoYes('initialize-at-pmf-map', default=False))
+        parser.add_argument('--hyperparams', default={}, type=lambda x: eval(x),
+            help="Hyperparameters (class attributes of the BPMF object), "
+                 "written as a literal python dictionary.")
+        parser._add_action(ActionNoYes('initialize-at-pmf-map', default=False,
+            help="Start the learning process at a MAP estimate, obtained via "
+                 "the code in ../python-pmf/pmf.py. Default false."))
 
-        parser.add_argument('--samps', '-S', type=int, default=100)
-        parser.add_argument('--warmup', type=int, default=50)
+        parser.add_argument('--samps', '-S', type=int, default=100,
+            help="How many samples to take for MCMC inference; "
+                 "default %(default)s.")
+        parser.add_argument('--warmup', type=int, default=50,
+            help="How many samples to warm up with for MCMC. More important "
+                 "for NUTS than traditional MCMC because it adapts parameters "
+                 "only during warmup. Default %(default)s.")
 
-        parser.add_argument('--lookahead-samps', type=int, default=100)
-        parser.add_argument('--lookahead-warmup', type=int, default=50)
+        parser.add_argument('--lookahead-samps', type=int, default=100,
+            help="How many samples to take during lookahead MCMC.")
+        parser.add_argument('--lookahead-warmup', type=int, default=50,
+            help="How much warmup to do during lookahead MCMC.")
 
-        parser._add_action(ActionNoYes('threaded', 'unthreaded', default=True))
-        parser.add_argument('--procs', '-P', type=int, default=None)
+        parser._add_action(ActionNoYes('threaded', 'unthreaded', default=True,
+            help="Evaluate different criteria in different threads, rather "
+                 "than sequentially. Default: true."))
+        parser.add_argument('--procs', '-P', type=int, default=None,
+            help="How many total processes to fork for evaluation. These are "
+                 "shared across all the threads if --threaded. Default: one "
+                 "per CPU core.")
 
-        parser._add_action(ActionNoYes('test-set-from-file', default=True))
+        parser._add_action(ActionNoYes('test-set-from-file', default=True,
+            help="Load test sets from the data file."))
         parser.add_argument('--test-set', default="all",
-            help="'all', an integer, or a real 0 < x <= 1. "
+            help="'all' (the default, meaning get test evals on all known "
+                 "points), "
+                 "an integer (meaning choose that many points to make a "
+                 "a distinct test set), "
+                 "or a real 0 < x <= 1 (to choose that portion of points for a "
+                 "distinct test set. "
                  "If --test-set-from-file this is overridden by any "
                  "in-file test sets.")
 
-        parser._add_action(ActionNoYes('query-new-only', default=False))
+        parser._add_action(ActionNoYes('query-new-only', default=False,
+            help="Only query points that are labeled 'new' in _is_new_item "
+                 "in the data file. Default off."))
 
-        parser.add_argument('--model-filename', default=None)
+        parser.add_argument('--model-filename', default=None,
+            help="The filename to use as a Stan model for BPMF. Default: "
+                 "bpmf_w0identity.stan.")
 
-        parser.add_argument('--load-data', required='True', metavar='FILE')
+        parser.add_argument('--load-data', required='True', metavar='FILE',
+            help="Load data from this file. Should be either an npz archive "
+                 "or a pickle file of a dictionary, containing keys "
+                 "_real (an output data matrix, where 0 or nan means unknown), "
+                 "_ratings (an n x 3 array of [row, col, value] initially "
+                    "known entries), "
+                 "_rating_vals (optional, the list of possible output vals), "
+                 "_test_on (optional, a boolean mask array of same shape as "
+                    "_real defining which points are the test set), "
+                 "and _is_new_item (optional, a vector determining whether "
+                    "each column is 'new').")
         parser.add_argument('--save-results', nargs='?', default=True,
-                const=True, metavar='FILE')
+                const=True, metavar='FILE',
+                help="Save results to FILE, or results.pkl if no FILE given.")
         parser.add_argument('--no-save-results',
-                action='store_false', dest='save_results')
+                action='store_false', dest='save_results',
+                help="Don't save any results.")
 
         parser.add_argument('--note', action='append',
             help="Doesn't do anything, just there to save any notes you'd like "
                  "in the results file.")
-        parser._add_action(ActionNoYes('pdb-on-error', default=True))
+        parser._add_action(ActionNoYes('pdb-on-error', default=True,
+            help="If there's an error somewhere, drop down into the debugger."))
 
         parser.add_argument('keys', nargs='*',
-                help="Choices: {}.".format(', '.join(sorted(KEYS.keys()))))
+                help="The selection criteria to try. "
+                     "Choices: {}.".format(', '.join(sorted(KEYS.keys()))))
         return parser
 
     def parse_args(self):
